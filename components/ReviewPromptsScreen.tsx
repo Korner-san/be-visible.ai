@@ -122,9 +122,11 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
 
           <div className="mb-6">
             <h2 className="text-xl font-medium text-foreground mb-2">Review and Select Your Prompts</h2>
-            <p className="text-muted-foreground">
-              Choose up to {maxSelections} prompts from your custom prompts and our recommendations (
-              {selectedPrompts.size}/{maxSelections} selected)
+            <p className="text-muted-foreground mb-2">
+              Choose up to {maxSelections} prompts from your custom prompts and our recommendations.
+            </p>
+            <p className="text-sm font-medium text-foreground">
+              {selectedPrompts.size} of {maxSelections} selected
             </p>
           </div>
         </div>
@@ -151,7 +153,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
               </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
               {customPrompts.map((prompt, index) => (
                 <Card
                   key={`user-${index}`}
@@ -177,7 +179,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
                 <span className="text-xs text-muted-foreground">Recommended by our system</span>
               </div>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
               {systemPrompts.map((prompt, index) => (
                 <div key={`system-${index}`} className="relative">
                   {index < 15 && (
