@@ -31,24 +31,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No pending brand found' }, { status: 404 })
     }
 
-    // Clear existing prompts for this brand
+    // Update existing prompts to inactive, then insert selected ones
     await supabase
       .from('brand_prompts')
-      .delete()
+      .update({ status: 'inactive' })
       .eq('brand_id', brand.id)
 
-    // Insert selected prompts
+    // Insert selected prompts (use upsert to handle duplicates)
     const promptsToInsert = selectedPrompts.map((prompt: string) => ({
       brand_id: brand.id,
       raw_prompt: prompt,
       status: 'active',
-      source: 'user_added',
+      source: 'user_selected',
       created_at: new Date().toISOString()
     }))
 
     const { error: insertError } = await supabase
       .from('brand_prompts')
-      .insert(promptsToInsert)
+      .upsert(promptsToInsert, { 
+        onConflict: 'brand_id,raw_prompt',
+        ignoreDuplicates: false 
+      })
 
     if (insertError) {
       console.error('Error inserting prompts:', insertError)

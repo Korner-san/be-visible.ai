@@ -206,9 +206,9 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
             </div>
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
               {systemPrompts.map((prompt, index) => (
-                <div key={`system-${index}`} className="relative">
+                <div key={`system-${index}`} className="relative pl-8">
                   {index < 15 && (
-                    <div className="absolute -left-6 top-4 w-3 h-3 bg-yellow-400 rounded-full animate-pulse shadow-lg"></div>
+                    <div className="absolute left-2 top-4 w-3 h-3 bg-yellow-400 rounded-full animate-pulse shadow-lg"></div>
                   )}
                   <Card
                     className={`p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${
