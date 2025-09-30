@@ -20,8 +20,8 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
   const router = useRouter()
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-3 overflow-y-auto">
-      <div className="w-full max-w-2xl py-8">
+    <div className="min-h-screen bg-background p-3">
+      <div className="w-full max-w-2xl mx-auto py-8">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <button 

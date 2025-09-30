@@ -45,11 +45,11 @@ export default async function OnboardingLayout({
   // Full-screen onboarding layout - no top bar, no sidebar, no navigation
   // Override any parent background with full white using fixed positioning
   return (
-    <div className="fixed inset-0 bg-white w-full h-full z-50">
-      <div className="flex min-h-screen w-full bg-white overflow-y-auto">
+    <div className="fixed inset-0 bg-white w-full h-full z-50 overflow-y-auto">
+      <div className="min-h-screen w-full bg-white">
         {/* Full-screen onboarding content */}
-        <main className="flex-1 flex items-center justify-center p-4 bg-white w-full min-h-screen">
-          <div className="w-full max-w-2xl">
+        <main className="w-full bg-white min-h-screen">
+          <div className="w-full max-w-2xl mx-auto">
             {children}
           </div>
         </main>

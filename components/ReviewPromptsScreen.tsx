@@ -98,7 +98,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   }
 
   return (
-    <div className="min-h-screen bg-background overflow-y-auto">
+    <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
