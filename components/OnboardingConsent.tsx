@@ -55,12 +55,12 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
             <div className="space-y-4 mb-6">
               {/* Brief Explanation */}
               <p className="text-sm text-foreground leading-normal">
-                We scanned your website and pre-filled the upcoming onboarding questions (e.g., industry, products, features, use cases, competitors). On the next screens, you'll review each answer and edit anything that isn't accurate.
+                We scanned your website and pre-filled the upcoming onboarding questions (industry, products, features, use cases, competitors). On the next screens, you'll review each answer and edit anything that isn't accurate.
               </p>
 
               {/* What you need to do */}
               <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">What you need to do:</p>
+                <p className="text-sm font-medium text-foreground">What you need to do</p>
                 <ul className="space-y-1 ml-4">
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
@@ -77,9 +77,12 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
               <div className="bg-muted/30 border border-border rounded-lg p-3">
                 <div className="flex gap-2">
                   <InfoIcon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-muted-foreground leading-normal">
-                    <strong>You're in control:</strong> You can edit these answers later, and you can change your selected prompts anytime from your dashboard.
-                  </p>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">You're in control</p>
+                    <p className="text-sm text-muted-foreground leading-normal">
+                      You can edit these answers later, and you can change your selected prompts anytime from your dashboard.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -99,9 +102,17 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
                     {/* Why this matters */}
                     <div className="space-y-3">
                       <h3 className="text-sm font-semibold text-foreground">Why this matters</h3>
-                      <p className="text-sm text-foreground leading-normal">
-                        Your confirmed answers guide what we track and report. We use them to generate up to 15 daily prompts and to build your visibility reports over time.
-                      </p>
+                      <ul className="space-y-2 ml-4">
+                        <li className="text-sm text-foreground leading-normal">
+                          Your confirmed answers are used to generate prompts.
+                        </li>
+                        <li className="text-sm text-foreground leading-normal">
+                          We ask these prompts to AI models every day and store the responses.
+                        </li>
+                        <li className="text-sm text-foreground leading-normal">
+                          This powers your reports: your dashboard shows how your brand appears for those prompts, trends over time, and which content influences AI answers.
+                        </li>
+                      </ul>
                     </div>
 
                     {/* How your answers shape results */}
@@ -109,7 +120,7 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
                       <div className="space-y-2">
                         <h3 className="text-sm font-semibold text-foreground">How your answers shape results</h3>
                         <p className="text-xs text-foreground leading-normal">
-                          Your inputs determine what we measure and compare. For example, if you list competitors, your reports will compare your brand against those competitors.
+                          Your inputs determine what we measure and compare. For example, if you list competitors, your dashboard will include insights and comparisons related to those competitors.
                         </p>
                       </div>
                     </Card>
@@ -120,8 +131,22 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
                         <InfoIcon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                         <div className="space-y-1">
                           <h3 className="text-xs font-medium text-foreground">What you can change later</h3>
+                          <ul className="text-xs text-muted-foreground leading-normal ml-2 space-y-1">
+                            <li>Which prompts are selected and powering your dashboard</li>
+                            <li>Your competitors</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* About the rest of the questions */}
+                    <div className="bg-muted/30 border border-border rounded-lg p-3">
+                      <div className="flex gap-2">
+                        <InfoIcon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <div className="space-y-1">
+                          <h3 className="text-xs font-medium text-foreground">About the rest of the questions</h3>
                           <p className="text-xs text-muted-foreground leading-normal">
-                            You can update crucial items like competitors and your selected prompts (points). You can also add more brands and create additional reports based on your subscription.
+                            They help us generate realistic, customer-style prompts—the kinds of queries your ideal customers are likely to ask.
                           </p>
                         </div>
                       </div>
