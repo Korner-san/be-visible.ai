@@ -39,7 +39,7 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
             {/* Title Section */}
             <div className="mb-4">
               <h1 className="text-xl md:text-2xl font-semibold mb-1 text-balance leading-tight">
-                We've pre-filled your answers. Now help us make them perfect.
+                Next: review pre-filled answers about your brand
               </h1>
               <p className="text-sm text-muted-foreground">Step {currentStep} of {totalSteps}</p>
             </div>
@@ -55,9 +55,33 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
             <div className="space-y-4 mb-6">
               {/* Brief Explanation */}
               <p className="text-sm text-foreground leading-normal">
-                Based on your website, we've automatically filled in answers about your brand. On the next screens, you'll
-                review and refine these answers.
+                We scanned your website and pre-filled the upcoming onboarding questions (e.g., industry, products, features, use cases, competitors). On the next screens, you'll review each answer and edit anything that isn't accurate.
               </p>
+
+              {/* What you need to do */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">What you need to do:</p>
+                <ul className="space-y-1 ml-4">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-foreground leading-normal">Review each suggested answer</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Edit3 className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-foreground leading-normal">Edit where needed so it's precise</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* You're in control */}
+              <div className="bg-muted/30 border border-border rounded-lg p-3">
+                <div className="flex gap-2">
+                  <InfoIcon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-muted-foreground leading-normal">
+                    <strong>You're in control:</strong> You can edit these answers later, and you can change your selected prompts anytime from your dashboard.
+                  </p>
+                </div>
+              </div>
 
               <div className="border border-border rounded-lg overflow-hidden">
                 <button
@@ -72,50 +96,48 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
 
                 {isExpanded && (
                   <div className="p-4 pt-0 space-y-4 border-t border-border">
-                    {/* Detailed Explanation */}
+                    {/* Why this matters */}
                     <div className="space-y-3">
-                      <p className="text-sm text-foreground leading-normal">Please take a moment to:</p>
+                      <h3 className="text-sm font-semibold text-foreground">Why this matters:</h3>
                       <ul className="space-y-2 ml-4">
-                        <li className="flex items-start gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
-                          <span className="text-sm text-foreground leading-normal">Review each answer carefully</span>
+                        <li className="text-sm text-foreground leading-normal">
+                          Your confirmed answers are used to generate up to 15 prompts.
                         </li>
-                        <li className="flex items-start gap-2">
-                          <Edit3 className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
-                          <span className="text-sm text-foreground leading-normal">
-                            Edit anything that's not accurate or complete
-                          </span>
+                        <li className="text-sm text-foreground leading-normal">
+                          We ask these prompts to AI models every day and store the responses.
+                        </li>
+                        <li className="text-sm text-foreground leading-normal">
+                          This powers your reports: how your brand appears, trends over time, and which content influences AI answers.
                         </li>
                       </ul>
                     </div>
 
-                    {/* Why It Matters Section */}
+                    {/* How your answers shape results */}
                     <Card className="bg-muted/50 border-border p-4">
-                      <div className="flex gap-2">
-                        <Zap className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" />
-                        <div className="space-y-2">
-                          <h3 className="text-sm font-semibold text-foreground">Why this matters</h3>
-                          <p className="text-xs text-foreground leading-normal">
-                            Your confirmed answers will be used to generate up to 15 smart prompts, which will be asked to
-                            AI models every day.
-                          </p>
-                          <p className="text-xs text-foreground leading-normal">
-                            These daily responses will become part of your visibility report — showing how your brand
-                            appears across the web, how it compares to competitors, and which content influences AI
-                            results.
-                          </p>
-                        </div>
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-foreground">How your answers shape results (example):</h3>
+                        <ul className="space-y-2 ml-4">
+                          <li className="text-xs text-foreground leading-normal">
+                            If you list Competitors A/B/C, we'll include prompts that compare your brand to those competitors.
+                          </li>
+                          <li className="text-xs text-foreground leading-normal">
+                            Updating your competitors or other answers later will update future prompts and reports.
+                          </li>
+                        </ul>
                       </div>
                     </Card>
 
-                    {/* Control Message */}
+                    {/* What you can change later */}
                     <div className="bg-muted/30 border border-border rounded-lg p-3">
                       <div className="flex gap-2">
                         <InfoIcon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-muted-foreground leading-normal">
-                          You can edit your answers later from your dashboard, and you can change your selected prompts at
-                          any time.
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-foreground">What you can change later:</p>
+                          <ul className="text-xs text-muted-foreground leading-normal ml-2">
+                            <li>Any onboarding answer (industry, features, use cases, competitors, etc.)</li>
+                            <li>Which prompts are selected (up to 15)</li>
+                          </ul>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -133,8 +155,7 @@ export function OnboardingConsent({ onContinue, currentStep, totalSteps, progres
                   className="mt-0.5"
                 />
                 <span className="text-sm text-foreground leading-normal select-none group-hover:text-foreground/80 transition-colors">
-                  I've read and understand how my answers will shape my AI prompts and visibility reports. I know I can
-                  edit them later.
+                  I understand that my confirmations will shape my generated prompts and daily visibility reports, and I can edit them later.
                 </span>
               </label>
             </div>
