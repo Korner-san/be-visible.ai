@@ -125,10 +125,21 @@ export default function OnboardingLoadingScreen() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Processing Your Brand Data</CardTitle>
-        </CardHeader>
+      <div className="w-full max-w-2xl">
+        {/* Header with Back to Sign In link */}
+        <div className="mb-4 flex justify-start">
+          <button 
+            onClick={() => router.push('/auth/signin')}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Back to Sign In
+          </button>
+        </div>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl text-center">Processing Your Brand Data</CardTitle>
+          </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -146,7 +157,8 @@ export default function OnboardingLoadingScreen() {
             </div>
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }

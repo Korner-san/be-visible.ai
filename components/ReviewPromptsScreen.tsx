@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -22,6 +23,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const maxSelections = 15
+  const router = useRouter()
 
   // Load prompts from the server
   useEffect(() => {
@@ -96,12 +98,20 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold text-foreground">Brand Onboarding</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-semibold text-foreground">Brand Onboarding</h1>
+              <button 
+                onClick={() => router.push('/auth/signin')}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ← Back to Sign In
+              </button>
+            </div>
             <span className="text-sm text-muted-foreground">{Math.round(progress)}% Complete</span>
           </div>
 

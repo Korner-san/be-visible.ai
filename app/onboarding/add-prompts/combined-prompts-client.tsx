@@ -289,6 +289,16 @@ export default function CombinedPromptsClient({ brand }: CombinedPromptsClientPr
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header with Back to Sign In link */}
+        <div className="flex justify-start">
+          <button 
+            onClick={() => router.push('/auth/signin')}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Back to Sign In
+          </button>
+        </div>
+        
         {/* Header */}
         <Card>
           <CardHeader className="text-center">

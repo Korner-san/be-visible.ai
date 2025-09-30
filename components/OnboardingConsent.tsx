@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,15 +17,19 @@ interface OnboardingConsentProps {
 export function OnboardingConsent({ onContinue, currentStep, totalSteps, progress }: OnboardingConsentProps) {
   const [isChecked, setIsChecked] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const router = useRouter()
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-3">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-background flex items-center justify-center p-3 overflow-y-auto">
+      <div className="w-full max-w-2xl py-8">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Step {currentStep} of {totalSteps}
-          </div>
+          <button 
+            onClick={() => router.push('/auth/signin')}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Back to Sign In
+          </button>
           <span className="text-sm text-muted-foreground">{Math.round(progress)}% Complete</span>
         </div>
 
