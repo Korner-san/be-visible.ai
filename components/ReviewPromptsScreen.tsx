@@ -22,6 +22,8 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   const [newPrompt, setNewPrompt] = useState("")
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const maxSelections = 15
   const router = useRouter()
 
@@ -79,8 +81,31 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
     setSelectedPrompts(newSelected)
   }
 
-  const handleComplete = () => {
-    onComplete(Array.from(selectedPrompts))
+  const handleComplete = async () => {
+    try {
+      setIsSubmitting(true)
+      
+      // Step 1: Save selected prompts and complete onboarding
+      const response = await fetch('/api/onboarding/save-prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedPrompts: Array.from(selectedPrompts) })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save prompts')
+      }
+      
+      // Step 2: Navigate to dashboard
+      router.push('/reports/overview')
+      
+    } catch (error) {
+      console.error('Error completing onboarding:', error)
+      setError(error instanceof Error ? error.message : 'Failed to complete onboarding. Please try again.')
+      setIsSubmitting(false)
+    }
   }
 
   const isSelected = (prompt: string) => selectedPrompts.has(prompt)
@@ -183,7 +208,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
               {systemPrompts.map((prompt, index) => (
                 <div key={`system-${index}`} className="relative">
                   {index < 15 && (
-                    <div className="absolute -left-4 top-4 w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                    <div className="absolute -left-6 top-4 w-3 h-3 bg-yellow-400 rounded-full animate-pulse shadow-lg"></div>
                   )}
                   <Card
                     className={`p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${
@@ -201,15 +226,33 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
           </div>
         </div>
 
+        {/* Error Display */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
+        )}
+
         {/* Navigation */}
         <div className="flex items-center justify-between">
-          <Button variant="ghost" className="flex items-center gap-2" onClick={onBack}>
+          <Button variant="ghost" className="flex items-center gap-2" onClick={onBack} disabled={isSubmitting}>
             <ChevronLeft className="w-4 h-4" />
             Previous
           </Button>
 
-          <Button className="px-8" disabled={selectedPrompts.size === 0} onClick={handleComplete}>
-            Complete Setup
+          <Button 
+            className="px-8" 
+            disabled={selectedPrompts.size === 0 || isSubmitting} 
+            onClick={handleComplete}
+          >
+            {isSubmitting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Completing Setup...
+              </>
+            ) : (
+              'Complete Setup'
+            )}
           </Button>
         </div>
       </div>

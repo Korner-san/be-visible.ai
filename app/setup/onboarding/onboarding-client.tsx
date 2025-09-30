@@ -569,30 +569,8 @@ export function OnboardingClient({ userState }: OnboardingClientProps) {
     return (
       <ReviewPromptsScreen
         onComplete={async (selectedPrompts) => {
-          try {
-            setIsSubmitting(true)
-            
-            // Save selected prompts and complete onboarding
-            const response = await fetch('/api/onboarding/save-prompts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ selectedPrompts })
-            })
-            
-            const data = await response.json()
-            
-            if (data.success) {
-              // Navigate to loading screen to start report generation
-              router.push('/setup/onboarding/loading-screen')
-            } else {
-              setError(data.error || 'Failed to save prompts')
-              setIsSubmitting(false)
-            }
-          } catch (error) {
-            console.error('Error saving prompts:', error)
-            setError('Failed to save prompts. Please try again.')
-            setIsSubmitting(false)
-          }
+          // The ReviewPromptsScreen now handles everything internally
+          // This callback is no longer needed since the component handles its own navigation
         }}
         onBack={() => setShowReviewPrompts(false)}
         currentStep={questions.length + 1}
