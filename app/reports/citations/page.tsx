@@ -307,7 +307,11 @@ export default function ReportsCitations() {
                         <Info className="h-4 w-4 text-slate-400" />
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Complete list of all domains with citations referencing your brand</p>
+                        <div className="max-w-xs">
+                          <p className="font-medium mb-2">Citations Analysis</p>
+                          <p className="text-sm">This table shows all websites that AI models cite when discussing your brand. Each row represents a domain with statistics about how often it's referenced and whether your brand was mentioned alongside those citations.</p>
+                          <p className="text-xs mt-2 text-slate-400">Data is collected from daily AI responses across all your active prompts.</p>
+                        </div>
                       </TooltipContent>
                     </Tooltip>
                   </CardTitle>
@@ -331,12 +335,84 @@ export default function ReportsCitations() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Domain</TableHead>
-                        <TableHead>#URLs</TableHead>
-                        <TableHead>Brand Mentions</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Last Seen</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            Domain
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>The website domain where your brand was cited or mentioned in AI responses. Click the external link icon to visit the website.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            #URLs
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Total number of individual URLs from this domain that were cited in AI responses about your brand across all prompts.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            Brand Mentions
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Number of AI responses where your brand was explicitly mentioned alongside citations from this domain. Higher numbers indicate stronger brand association.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            Category
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Automatically categorized content type: News (news sites), Business (business media), Technology (tech sites), Development (GitHub, GitLab), Documentation (docs sites), Blog (blog platforms), Community (forums), Education (learning sites), or Commercial (e-commerce).</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            Last Seen
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>The most recent date when citations from this domain appeared in AI responses about your brand. Shows how current the domain's content is in relation to your brand.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1">
+                            Actions
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-3 w-3 text-slate-400" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Quick actions: Visit the website directly or find contact information for outreach opportunities.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
