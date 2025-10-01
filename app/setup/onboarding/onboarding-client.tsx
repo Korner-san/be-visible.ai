@@ -436,6 +436,42 @@ export function OnboardingClient({ userState }: OnboardingClientProps) {
         loadUserBrands(userState.userId).catch(console.error)
       }
       
+      console.log('🤖 [ONBOARDING CLIENT] Generating AI prompts from user answers...')
+      
+      // Generate prompts from user's onboarding answers
+      const generateResponse = await fetch('/api/onboarding/generate-prompts', {
+        method: 'POST'
+      })
+      
+      console.log('📊 [ONBOARDING CLIENT] Generate prompts response status:', generateResponse.status)
+      
+      if (!generateResponse.ok) {
+        const generateData = await generateResponse.json()
+        console.error('❌ [ONBOARDING CLIENT] Generate prompts failed:', generateData)
+        // Continue anyway - we can show fallback prompts
+      } else {
+        const generateData = await generateResponse.json()
+        console.log('✅ [ONBOARDING CLIENT] Generate prompts success:', generateData)
+      }
+      
+      // Optionally improve prompts with AI (continue even if this fails)
+      try {
+        console.log('🔧 [ONBOARDING CLIENT] Improving prompts with AI...')
+        const improveResponse = await fetch('/api/onboarding/improve-prompts', {
+          method: 'POST'
+        })
+        
+        if (improveResponse.ok) {
+          const improveData = await improveResponse.json()
+          console.log('✅ [ONBOARDING CLIENT] Improve prompts success:', improveData)
+        } else {
+          console.warn('⚠️ [ONBOARDING CLIENT] Improve prompts failed, continuing with original prompts')
+        }
+      } catch (improveError) {
+        console.warn('⚠️ [ONBOARDING CLIENT] Improve prompts error:', improveError)
+        // Continue anyway
+      }
+      
       console.log('🎯 [ONBOARDING CLIENT] About to show review prompts screen')
       console.log('🎯 [ONBOARDING CLIENT] Current URL before showing prompts:', window.location.href)
       
