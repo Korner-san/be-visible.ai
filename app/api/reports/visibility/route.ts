@@ -251,39 +251,25 @@ export async function GET(request: NextRequest) {
     }))
     
 
-    // Portrayal types analysis - handle actual data structure
+    // Portrayal types analysis - BRAND ONLY (no competitors)
     const portrayalTypes: Array<{brand: string, type: string, count: number, percentage: number, example?: string}> = []
     
-    // Track portrayal counts for brand and competitors
+    // Track portrayal counts for brand only
     const brandPortrayalCounts: { [key: string]: number } = {}
-    const competitorPortrayalCounts: { [brand: string]: { [type: string]: number } } = {}
     
     let totalBrandPortrayals = 0
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
-        // Count brand portrayal types
+        // Count brand portrayal types only
         if (result.brand_mentioned && result.portrayal_type) {
           brandPortrayalCounts[result.portrayal_type] = (brandPortrayalCounts[result.portrayal_type] || 0) + 1
           totalBrandPortrayals++
         }
-        
-        // Count competitor portrayal types from the actual data structure
-        if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
-          result.competitor_mentions.forEach((comp: any) => {
-            if (comp && comp.name && comp.portrayalType) {
-              if (!competitorPortrayalCounts[comp.name]) {
-                competitorPortrayalCounts[comp.name] = {}
-              }
-              competitorPortrayalCounts[comp.name][comp.portrayalType] = 
-                (competitorPortrayalCounts[comp.name][comp.portrayalType] || 0) + 1
-            }
-          })
-        }
       })
     })
     
-    // Add brand portrayal types
+    // Add brand portrayal types only
     Object.entries(brandPortrayalCounts).forEach(([type, count]) => {
       portrayalTypes.push({
         brand: brand.name,
@@ -294,20 +280,8 @@ export async function GET(request: NextRequest) {
       })
     })
     
-    // Add competitor portrayal types
-    Object.entries(competitorPortrayalCounts).forEach(([compName, types]) => {
-      const totalCompetitorPortrayals = Object.values(types).reduce((sum, count) => sum + count, 0)
-      
-      Object.entries(types).forEach(([type, count]) => {
-        portrayalTypes.push({
-          brand: compName,
-          type,
-          count,
-          percentage: totalCompetitorPortrayals > 0 ? Math.round((count / totalCompetitorPortrayals) * 100) : 0,
-          example: `"${compName} is mentioned as ${type.replace('_', ' ')}..."`
-        })
-      })
-    })
+    // Sort by count descending for better display
+    portrayalTypes.sort((a, b) => b.count - a.count)
 
 
     const responseData = {

@@ -163,44 +163,37 @@ export default function ReportsVisibility() {
     return dots
   })
 
-  // Data for portrayal type table - use real data when available
+  // Data for portrayal type table - BRAND ONLY (no competitors)
   const portrayalData = reportData?.portrayalTypes ? 
     reportData.portrayalTypes : 
     (isDemoMode ? [
       {
         brand: activeBrand?.name || 'Your Brand',
-        type: 'recommendation',
+        type: 'feature_focus',
         count: 28,
         percentage: 35,
-        example: '"I recommend Your Brand for its comprehensive solutions..."'
-      },
-      {
-        brand: activeBrand?.name || 'Your Brand',
-        type: 'listing',
-        count: 32,
-        percentage: 40,
-        example: '"Options include Your Brand, which provides..."'
+        example: '"Your Brand offers comprehensive solutions for..."'
       },
       {
         brand: activeBrand?.name || 'Your Brand',
         type: 'description',
-        count: 20,
-        percentage: 25,
-        example: '"Your Brand is a platform that offers..."'
+        count: 25,
+        percentage: 31,
+        example: '"Your Brand is a platform that provides..."'
       },
       {
-        brand: 'Microsoft',
+        brand: activeBrand?.name || 'Your Brand',
+        type: 'listing',
+        count: 18,
+        percentage: 22,
+        example: '"Options include Your Brand, which specializes in..."'
+      },
+      {
+        brand: activeBrand?.name || 'Your Brand',
         type: 'recommendation',
-        count: 45,
-        percentage: 60,
-        example: '"I recommend Microsoft for enterprise solutions..."'
-      },
-      {
-        brand: 'Microsoft',
-        type: 'comparison',
-        count: 30,
-        percentage: 40,
-        example: '"Microsoft vs other providers offers..."'
+        count: 9,
+        percentage: 12,
+        example: '"I recommend Your Brand for its advanced features..."'
       }
     ] : [])
 
@@ -606,25 +599,24 @@ export default function ReportsVisibility() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              Portrayal Type (How your brand is positioned in AI responses)
+              Brand Portrayal Analysis (How your brand is positioned in AI responses)
               <Tooltip>
                 <TooltipTrigger>
                   <Info className="h-4 w-4 text-slate-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>This table shows in what way your brand was mentioned across AI responses: whether as a suggested option, a recommended choice, or just described.</p>
+                  <p>This table shows how your brand was mentioned across AI responses: whether as a recommended choice, feature-focused description, listing option, or other portrayal types.</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
             <p className="text-xs text-slate-500 mt-2">
-              This table shows in what way your brand was mentioned across AI responses: whether as a suggested option, a recommended choice, or just described.
+              Analysis of how your brand appears in AI responses - showing the different ways it's positioned and described.
             </p>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Brand</TableHead>
                   <TableHead>Portrayal Type</TableHead>
                   <TableHead>Count</TableHead>
                   <TableHead>Percentage</TableHead>
@@ -634,9 +626,8 @@ export default function ReportsVisibility() {
               <TableBody>
                 {portrayalData.map((row, index) => (
                   <TableRow key={index}>
-                    <TableCell className="font-medium">{row.brand}</TableCell>
                     <TableCell>
-                      <span className="capitalize">{row.type?.replace('_', ' ') || 'N/A'}</span>
+                      <span className="capitalize font-medium">{row.type?.replace('_', ' ') || 'N/A'}</span>
                     </TableCell>
                     <TableCell>{row.count || 0}</TableCell>
                     <TableCell>{row.percentage || 0}%</TableCell>
