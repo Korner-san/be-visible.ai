@@ -118,7 +118,7 @@ export default function ReportsContent() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="font-semibold text-slate-900 text-base">Content Type</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-lg">Content Type</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-base">Status</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-base">Count</TableHead>
                   </TableRow>
@@ -173,9 +173,8 @@ export default function ReportsContent() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="font-semibold text-slate-900 text-base">Content Type</TableHead>
+                    <TableHead className="font-bold text-slate-900 text-lg">Content Type</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-base">Priority</TableHead>
-                    <TableHead className="font-semibold text-slate-900 text-base">AI Impact</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -197,16 +196,6 @@ export default function ReportsContent() {
                           'secondary'
                         }>
                           {item.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          item.aiImpact === 'Very High' ? 'destructive' :
-                          item.aiImpact === 'High' ? 'default' :
-                          item.aiImpact === 'Medium' ? 'secondary' :
-                          'outline'
-                        }>
-                          {item.aiImpact}
                         </Badge>
                       </TableCell>
                     </TableRow>
