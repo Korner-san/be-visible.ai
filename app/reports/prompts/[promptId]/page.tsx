@@ -6,8 +6,12 @@ import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import PromptDetailClient from './prompt-detail-client'
 
-export default async function PromptDetail({ params }: { params: Promise<{ promptId: string }> }) {
+export default async function PromptDetail({ params, searchParams }: { 
+  params: Promise<{ promptId: string }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const { promptId } = await params
+  const { from, to } = await searchParams
   
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -56,7 +60,8 @@ export default async function PromptDetail({ params }: { params: Promise<{ promp
   let totalRuns = 0
   
   if (prompt) {
-    const { data: results } = await supabase
+    // Build query with date filters
+    let query = supabase
       .from('prompt_results')
       .select(`
         id,
@@ -77,7 +82,16 @@ export default async function PromptDetail({ params }: { params: Promise<{ promp
       .eq('brand_prompt_id', promptId)
       .eq('daily_reports.status', 'completed')
       .order('created_at', { ascending: false })
-      .limit(10)
+
+    // Apply date filters if provided
+    if (from && typeof from === 'string') {
+      query = query.gte('daily_reports.report_date', from)
+    }
+    if (to && typeof to === 'string') {
+      query = query.lte('daily_reports.report_date', to)
+    }
+
+    const { data: results } = await query.limit(10)
     
     promptResults = results || []
     totalRuns = promptResults.length

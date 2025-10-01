@@ -6,13 +6,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { PieChart, Pie, Cell, ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LineChart, Line, Area, AreaChart } from "recharts"
-import { Info, Sparkles, Play, Loader2 } from "lucide-react"
+import { Info, Play, Loader2 } from "lucide-react"
 import { useBrandsStore } from "@/store/brands"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
+import { useDateFilter } from "@/contexts/DateFilterContext"
 
 export default function ReportsVisibility() {
   const { brands, activeBrandId } = useBrandsStore()
+  const { getDateRangeParams } = useDateFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   const { toast } = useToast()
@@ -23,7 +25,6 @@ export default function ReportsVisibility() {
   
   // Check if user is test user (for manual trigger button)
   const [isTestUser, setIsTestUser] = useState(false)
-  const [isRunningClassification, setIsRunningClassification] = useState(false)
   
   useEffect(() => {
     const loadData = async () => {
@@ -37,7 +38,8 @@ export default function ReportsVisibility() {
         
         // Load visibility data if not demo mode
         if (!isDemoMode && activeBrandId) {
-          const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
+          const dateParams = getDateRangeParams()
+          const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}${dateParams}`)
           const visibilityData = await visibilityResponse.json()
           
           if (visibilityData.success) {
@@ -52,7 +54,7 @@ export default function ReportsVisibility() {
     }
     
     loadData()
-  }, [activeBrandId, isDemoMode])
+  }, [activeBrandId, isDemoMode, getDateRangeParams])
   
   // Manual report generation
   const generateManualReport = async () => {
@@ -109,59 +111,6 @@ export default function ReportsVisibility() {
     }
   }
 
-  // Manual portrayal classification
-  const runPortrayalClassification = async () => {
-    if (!activeBrandId || isDemoMode) return
-    
-    setIsRunningClassification(true)
-    
-    try {
-      toast({
-        title: "🤖 Running LLM Classification",
-        description: "Classifying brand portrayals using GPT-mini...",
-        duration: 5000,
-      })
-      
-      const response = await fetch('/api/reports/run-classification', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          brandId: activeBrandId
-        })
-      })
-      
-      const result = await response.json()
-      
-      if (result.success) {
-        toast({
-          title: "✅ Classification Complete",
-          description: `Processed ${result.data.processed} mentions, skipped ${result.data.skipped} cached`,
-          duration: 8000,
-        })
-        
-        // Reload visibility data to show updated portrayals
-        const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
-        const visibilityData = await visibilityResponse.json()
-        
-        if (visibilityData.success) {
-          setReportData(visibilityData.data)
-        }
-      } else {
-        throw new Error(result.error)
-      }
-    } catch (error) {
-      console.error('Error running classification:', error)
-      toast({
-        title: "❌ Classification Failed",
-        description: error instanceof Error ? error.message : "Failed to run classification",
-        duration: 8000,
-      })
-    } finally {
-      setIsRunningClassification(false)
-    }
-  }
   
   // Use real data when available, fallback to mock data for demo
   const sentimentData = reportData?.sentiment || [
@@ -266,44 +215,23 @@ export default function ReportsVisibility() {
 
           {/* Manual Report Generation Button (Test User Only) */}
           {isTestUser && !isDemoMode && (
-            <div className="flex gap-2">
-              <Button 
-                onClick={generateManualReport}
-                disabled={isGeneratingReport}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {isGeneratingReport ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Generate Report
-                  </>
-                )}
-              </Button>
-              
-              <Button 
-                onClick={runPortrayalClassification}
-                disabled={isRunningClassification}
-                variant="outline"
-                className="border-purple-300 text-purple-700 hover:bg-purple-50"
-              >
-                {isRunningClassification ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Classifying...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Classify Portrayals
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button 
+              onClick={generateManualReport}
+              disabled={isGeneratingReport}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isGeneratingReport ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 mr-2" />
+                  Generate Report
+                </>
+              )}
+            </Button>
           )}
           
           {/* Fallback button for testing (visible when in demo mode) */}

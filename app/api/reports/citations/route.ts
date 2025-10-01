@@ -5,6 +5,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const brandId = searchParams.get('brandId')
+    const fromDate = searchParams.get('from')
+    const toDate = searchParams.get('to')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
     const offset = (page - 1) * limit
@@ -42,8 +44,8 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // Get all prompt results with citations for this brand
-    const { data: promptResults, error: resultsError } = await supabase
+    // Build query with date filters
+    let query = supabase
       .from('prompt_results')
       .select(`
         id,
@@ -62,6 +64,16 @@ export async function GET(request: NextRequest) {
       .eq('brand_prompts.brand_id', brandId)
       .eq('daily_reports.status', 'completed')
       .order('created_at', { ascending: false })
+
+    // Apply date filters if provided
+    if (fromDate) {
+      query = query.gte('daily_reports.report_date', fromDate)
+    }
+    if (toDate) {
+      query = query.lte('daily_reports.report_date', toDate)
+    }
+
+    const { data: promptResults, error: resultsError } = await query
 
     if (resultsError) {
       console.error('Error fetching prompt results:', resultsError)

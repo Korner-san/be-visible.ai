@@ -9,9 +9,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Info, Download, Mail, FileText, ExternalLink, Sparkles, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { useBrandsStore } from "@/store/brands"
+import { useDateFilter } from "@/contexts/DateFilterContext"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
+  const { getDateRangeParams } = useDateFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   
@@ -36,7 +38,8 @@ export default function ReportsCitations() {
         setIsLoading(true)
         setError(null)
         
-        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}`)
+        const dateParams = getDateRangeParams()
+        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}${dateParams}`)
         const data = await response.json()
         
         if (data.success) {
@@ -57,7 +60,7 @@ export default function ReportsCitations() {
     }
     
     loadInitialData()
-  }, [activeBrandId, isDemoMode])
+  }, [activeBrandId, isDemoMode, getDateRangeParams])
   
   // Load table data only when page changes
   useEffect(() => {
@@ -70,7 +73,8 @@ export default function ReportsCitations() {
         setIsTableLoading(true)
         setError(null)
         
-        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
+        const dateParams = getDateRangeParams()
+        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}${dateParams}`)
         const data = await response.json()
         
         if (data.success) {

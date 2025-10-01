@@ -15,37 +15,14 @@ interface PromptDetailClientProps {
 }
 
 export default function PromptDetailClient({ prompt, initialResults, initialCitations }: PromptDetailClientProps) {
-  const [dateRange, setDateRange] = useState({ 
-    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days ago
-    end: new Date().toISOString().split('T')[0] // today
-  })
   const [currentPage, setCurrentPage] = useState(1)
-  const [filteredResults, setFilteredResults] = useState(initialResults)
-  const [filteredCitations, setFilteredCitations] = useState(initialCitations)
   const [loading, setLoading] = useState(false)
   
   const CITATIONS_PER_PAGE = 15
 
-  // Filter data based on date range
-  useEffect(() => {
-    const filtered = initialResults.filter(result => {
-      const resultDate = result.daily_reports.report_date
-      return resultDate >= dateRange.start && resultDate <= dateRange.end
-    })
-    
-    setFilteredResults(filtered)
-    
-    // Flatten citations from filtered results
-    const citations = filtered.flatMap(result => 
-      (result.citations || []).map((citation: any) => ({
-        ...citation,
-        result_date: result.daily_reports.report_date
-      }))
-    )
-    
-    setFilteredCitations(citations)
-    setCurrentPage(1) // Reset to first page when date changes
-  }, [dateRange, initialResults])
+  // Use all results (global date filter is handled by the parent)
+  const filteredResults = initialResults
+  const filteredCitations = initialCitations
 
   const totalMentions = filteredResults.filter(r => r.brand_mentioned).length
   const totalRuns = filteredResults.length
@@ -104,37 +81,6 @@ export default function PromptDetailClient({ prompt, initialResults, initialCita
         </nav>
       </div>
 
-      {/* Date Range Filter */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Date Range Filter</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium">From:</label>
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                className="border border-gray-300 rounded px-3 py-1 text-sm"
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium">To:</label>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="border border-gray-300 rounded px-3 py-1 text-sm"
-              />
-            </div>
-            <div className="text-sm text-gray-600">
-              {totalRuns} runs, {totalMentions} mentions
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="max-w-7xl mx-auto">
         {/* Prompt Header */}

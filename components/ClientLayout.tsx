@@ -4,9 +4,10 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { BrandSelector } from '@/components/inputs/BrandSelector'
-import { TimeRangePicker } from '@/components/inputs/TimeRangePicker'
 import { NavLink } from '@/components/NavigationHighlight'
 import { useAuth } from '@/contexts/AuthContext'
+import { useDateFilter } from '@/contexts/DateFilterContext'
+import GlobalDateFilter from '@/components/GlobalDateFilter'
 import { Button } from '@/components/ui/button'
 import OnboardingLoader from '@/components/OnboardingLoader'
 import { 
@@ -26,6 +27,7 @@ import {
 
 export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const { user, signOut } = useAuth()
+  const { dateRange, setDateRange } = useDateFilter()
   const pathname = usePathname()
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [transitionMessage, setTransitionMessage] = useState('')
@@ -279,7 +281,10 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
               </NavLink>
             </nav>
             <div className="py-4">
-              <TimeRangePicker />
+              <GlobalDateFilter 
+                onDateRangeChange={setDateRange}
+                defaultRange={dateRange}
+              />
             </div>
           </div>
         </div>
