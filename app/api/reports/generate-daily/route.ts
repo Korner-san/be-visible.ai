@@ -93,85 +93,20 @@ const analyzeBrandMention = (text: string, brandName: string, competitors: strin
     }
     
     if (mentions.length > 0) {
-      // Analyze portrayal type for competitor
-      const compContext = text.slice(Math.max(0, mentions[0] - 200), mentions[0] + competitor.length + 200).toLowerCase()
-      
-      let compPortrayalType = 'neutral'
-      if (compContext.includes('recommend') || compContext.includes('suggest')) {
-        compPortrayalType = 'recommendation'
-      } else if (compContext.includes('vs') || compContext.includes('compared to')) {
-        compPortrayalType = 'comparison'
-      } else if (compContext.includes('feature') || compContext.includes('offers')) {
-        compPortrayalType = 'feature_focus'
-      } else if (compContext.includes('option') || compContext.includes('choice')) {
-        compPortrayalType = 'listing'
-      } else if (compContext.includes('is a') || compContext.includes('company')) {
-        compPortrayalType = 'description'
-      }
-      
       competitorMentions.push({
         name: competitor,
         count: mentions.length,
-        portrayalType: compPortrayalType
+        portrayalType: 'neutral' // Simplified - no keyword-based competitor portrayal analysis
       })
     }
   })
-  
-  // Determine portrayal type - enhanced analysis
-  let portrayalType = 'neutral'
-  if (mentioned) {
-    const brandContext = text.slice(Math.max(0, firstMentionIndex - 200), firstMentionIndex + brandName.length + 200).toLowerCase()
-    
-    // Direct recommendation patterns
-    if (brandContext.includes('recommend') || brandContext.includes('suggest') || 
-        brandContext.includes('i suggest') || brandContext.includes('i recommend') ||
-        brandContext.includes('would recommend') || brandContext.includes('should consider')) {
-      portrayalType = 'recommendation'
-    }
-    // Comparison patterns  
-    else if (brandContext.includes('vs') || brandContext.includes('compared to') || 
-             brandContext.includes('versus') || brandContext.includes('alternative to') ||
-             brandContext.includes('instead of') || brandContext.includes('better than')) {
-      portrayalType = 'comparison'
-    }
-    // Feature/capability focus
-    else if (brandContext.includes('feature') || brandContext.includes('capability') ||
-             brandContext.includes('offers') || brandContext.includes('provides') ||
-             brandContext.includes('specializes') || brandContext.includes('known for')) {
-      portrayalType = 'feature_focus'
-    }
-    // Problem/solution context
-    else if (brandContext.includes('problem') || brandContext.includes('solution') ||
-             brandContext.includes('helps with') || brandContext.includes('addresses') ||
-             brandContext.includes('solves') || brandContext.includes('fixes')) {
-      portrayalType = 'problem_solution'
-    }
-    // Listing/option context
-    else if (brandContext.includes('option') || brandContext.includes('choice') ||
-             brandContext.includes('include') || brandContext.includes('such as') ||
-             brandContext.includes('example') || brandContext.includes('among')) {
-      portrayalType = 'listing'
-    }
-    // Description/explanation
-    else if (brandContext.includes('is a') || brandContext.includes('is an') ||
-             brandContext.includes('company') || brandContext.includes('platform') ||
-             brandContext.includes('service') || brandContext.includes('tool')) {
-      portrayalType = 'description'
-    }
-    // Case study/example
-    else if (brandContext.includes('case study') || brandContext.includes('example') ||
-             brandContext.includes('for instance') || brandContext.includes('uses') ||
-             brandContext.includes('implemented') || brandContext.includes('success')) {
-      portrayalType = 'case_study'
-    }
-  }
   
   return {
     mentioned,
     mentionCount: brandMentions.length,
     position: firstMentionIndex,
     sentiment: mentioned ? analyzeSentiment(text, brandName) : 0,
-    portrayalType,
+    portrayalType: null, // No longer doing keyword-based portrayal classification
     competitorMentions
   }
 }
@@ -363,7 +298,7 @@ export async function POST(request: NextRequest) {
         const perplexityResponse = await callPerplexityAPI(promptText)
         const responseContent = perplexityResponse.choices[0]?.message?.content || ''
         
-        // Analyze brand mentions
+        // Analyze brand mentions (basic analysis only - no portrayal classification)
         const analysis = analyzeBrandMention(responseContent, brand.name, competitors)
         
         if (analysis.mentioned) {
@@ -381,7 +316,7 @@ export async function POST(request: NextRequest) {
           sentimentScores.neutral++
         }
 
-        // Save prompt result
+        // Save prompt result (without portrayal classification - will be done by LLM)
         const { data: promptResult, error: promptResultError } = await supabase
           .from('prompt_results')
           .insert({
@@ -395,8 +330,8 @@ export async function POST(request: NextRequest) {
             competitor_mentions: analysis.competitorMentions,
             citations: perplexityResponse.search_results || [],
             sentiment_score: analysis.sentiment,
-            portrayal_type: analysis.portrayalType,
-            classifier_stage: 'keyword', // Mark as keyword-based classification
+            portrayal_type: null, // Will be set by LLM classification
+            classifier_stage: null, // Will be set by LLM classification
             classifier_version: null,
             snippet_hash: null,
             portrayal_confidence: null

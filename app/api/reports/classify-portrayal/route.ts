@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
       `)
       .eq('brand_prompts.brand_id', brandId)
       .eq('brand_mentioned', true)
-      .or('classifier_stage.is.null,classifier_stage.eq.keyword')
+      .neq('classifier_stage', 'llm')
 
     // If dailyReportId is provided, only process results from that specific report
     if (dailyReportId) {

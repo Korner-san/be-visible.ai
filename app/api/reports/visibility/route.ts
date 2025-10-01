@@ -318,22 +318,14 @@ export async function GET(request: NextRequest) {
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
-        // Count brand portrayal types only
-        if (result.brand_mentioned && result.portrayal_type) {
-          // Always count portrayals, but prioritize LLM classifications
+        // Count ONLY LLM classified brand portrayal types
+        if (result.brand_mentioned && result.portrayal_type && result.classifier_stage === 'llm') {
           const portrayalType = result.portrayal_type
           brandPortrayalCounts[portrayalType] = (brandPortrayalCounts[portrayalType] || 0) + 1
           totalBrandPortrayals++
           
-          // Store example snippet for this portrayal type (prefer LLM classified)
-          if (result.classifier_stage === 'llm' && result.perplexity_response && !portrayalExamples[portrayalType]) {
-            // Extract a clean example snippet
-            const snippet = extractExampleSnippet(result.perplexity_response, brand.name)
-            if (snippet) {
-              portrayalExamples[portrayalType] = snippet
-            }
-          } else if (!portrayalExamples[portrayalType] && result.perplexity_response) {
-            // Fallback to any response if no LLM example yet
+          // Store example snippet for this portrayal type (LLM classified only)
+          if (result.perplexity_response && !portrayalExamples[portrayalType]) {
             const snippet = extractExampleSnippet(result.perplexity_response, brand.name)
             if (snippet) {
               portrayalExamples[portrayalType] = snippet
