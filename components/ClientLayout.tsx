@@ -100,6 +100,12 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     return <>{children}</>
   }
 
+  // If user is authenticated but we're on the home page, show loading to prevent dashboard flash
+  // This ensures auto-signed-in users go through the same loading flow as manual sign-ins
+  if (pathname === '/') {
+    return <OnboardingLoader message="Loading your account..." />
+  }
+
   const handleSignOut = async () => {
     try {
       await signOut()
