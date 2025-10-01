@@ -12,6 +12,46 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 
+// Helper function to format portrayal types and get descriptions
+const getPortrayalTypeInfo = (type: string) => {
+  const typeMap: Record<string, { label: string; description: string }> = {
+    'RECOMMENDATION': { 
+      label: 'Recommendation', 
+      description: 'Steers the reader to choose/use the brand.' 
+    },
+    'COMPARISON': { 
+      label: 'Comparison', 
+      description: 'Contrasts the brand with alternatives.' 
+    },
+    'PROBLEM_SOLVER': { 
+      label: 'Problem Solver', 
+      description: 'Frames the brand as solving a specific pain/problem.' 
+    },
+    'FEATURE_BENEFIT': { 
+      label: 'Feature Benefit', 
+      description: 'Highlights capabilities/benefits/differentiators.' 
+    },
+    'NEUTRAL_DESCRIPTION': { 
+      label: 'Neutral Description', 
+      description: 'Simple definition/intro.' 
+    },
+    'AUTHORITY_REFERENCE': { 
+      label: 'Authority Reference', 
+      description: 'Cites brand as example/reference/benchmark/best practice.' 
+    },
+    'USE_CASE': { 
+      label: 'Use Case', 
+      description: 'Scenario where the brand fits/is typically used.' 
+    },
+    'OTHER': { 
+      label: 'Other', 
+      description: 'None fit confidently.' 
+    }
+  }
+  
+  return typeMap[type] || { label: type, description: 'Unknown portrayal type.' }
+}
+
 export default function ReportsVisibility() {
   const { brands, activeBrandId } = useBrandsStore()
   const { getDateRangeParams } = useDateFilter()
@@ -628,18 +668,28 @@ export default function ReportsVisibility() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {portrayalData.map((row, index) => (
-                  <TableRow key={index}>
-                    <TableCell>
-                      <span className="capitalize font-medium">{row.type?.replace('_', ' ') || 'N/A'}</span>
-                    </TableCell>
-                    <TableCell>{row.count || 0}</TableCell>
-                    <TableCell>{row.percentage || 0}%</TableCell>
-                    <TableCell className="text-xs text-slate-600 italic max-w-xs">
-                      {row.example || 'No example available'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {portrayalData.map((row, index) => {
+                  const typeInfo = getPortrayalTypeInfo(row.type || '')
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <span className="font-medium cursor-help">{typeInfo.label}</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{typeInfo.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>{row.count || 0}</TableCell>
+                      <TableCell>{row.percentage || 0}%</TableCell>
+                      <TableCell className="text-xs text-slate-600 italic max-w-xs">
+                        {row.example || 'No example available'}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </CardContent>
