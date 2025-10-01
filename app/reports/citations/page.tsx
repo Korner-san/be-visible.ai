@@ -420,10 +420,7 @@ export default function ReportsCitations() {
                         displayData.domains.map((domain: any, index: number) => (
                           <TableRow key={`${domain.domain}-${index}`}>
                             <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
-                                <ExternalLink className="h-4 w-4 text-slate-400" />
-                                {domain.domain}
-                              </div>
+                              {domain.domain}
                             </TableCell>
                             <TableCell>{domain.urls}</TableCell>
                             <TableCell>

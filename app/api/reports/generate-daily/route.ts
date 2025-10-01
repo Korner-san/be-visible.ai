@@ -395,7 +395,11 @@ export async function POST(request: NextRequest) {
             competitor_mentions: analysis.competitorMentions,
             citations: perplexityResponse.search_results || [],
             sentiment_score: analysis.sentiment,
-            portrayal_type: analysis.portrayalType
+            portrayal_type: analysis.portrayalType,
+            classifier_stage: 'keyword', // Mark as keyword-based classification
+            classifier_version: null,
+            snippet_hash: null,
+            portrayal_confidence: null
           })
           .select()
           .single()
@@ -494,6 +498,36 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🎉 [DAILY REPORT] Completed! Total mentions: ${totalMentions}, Average position: ${averagePosition}`)
+
+    // Run LLM portrayal classification on the newly generated results
+    console.log('🤖 [DAILY REPORT] Starting LLM portrayal classification...')
+    try {
+      const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-portrayal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brandId: brandId,
+          fromCron: fromCron,
+          dailyReportId: dailyReport.id
+        })
+      })
+
+      if (classificationResponse.ok) {
+        const classificationData = await classificationResponse.json()
+        console.log('✅ [DAILY REPORT] LLM classification completed:', {
+          processed: classificationData.processed,
+          skipped: classificationData.skipped,
+          errors: classificationData.errors?.length || 0
+        })
+      } else {
+        console.warn('⚠️ [DAILY REPORT] LLM classification failed, but report generation succeeded')
+      }
+    } catch (classificationError) {
+      console.warn('⚠️ [DAILY REPORT] LLM classification error (non-blocking):', classificationError)
+      // Don't fail the entire report generation if classification fails
+    }
 
     return NextResponse.json({
       success: true,

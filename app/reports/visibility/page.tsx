@@ -23,6 +23,7 @@ export default function ReportsVisibility() {
   
   // Check if user is test user (for manual trigger button)
   const [isTestUser, setIsTestUser] = useState(false)
+  const [isRunningClassification, setIsRunningClassification] = useState(false)
   
   useEffect(() => {
     const loadData = async () => {
@@ -105,6 +106,60 @@ export default function ReportsVisibility() {
       })
     } finally {
       setIsGeneratingReport(false)
+    }
+  }
+
+  // Manual portrayal classification
+  const runPortrayalClassification = async () => {
+    if (!activeBrandId || isDemoMode) return
+    
+    setIsRunningClassification(true)
+    
+    try {
+      toast({
+        title: "🤖 Running LLM Classification",
+        description: "Classifying brand portrayals using GPT-mini...",
+        duration: 5000,
+      })
+      
+      const response = await fetch('/api/reports/run-classification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brandId: activeBrandId
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        toast({
+          title: "✅ Classification Complete",
+          description: `Processed ${result.data.processed} mentions, skipped ${result.data.skipped} cached`,
+          duration: 8000,
+        })
+        
+        // Reload visibility data to show updated portrayals
+        const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
+        const visibilityData = await visibilityResponse.json()
+        
+        if (visibilityData.success) {
+          setReportData(visibilityData.data)
+        }
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error) {
+      console.error('Error running classification:', error)
+      toast({
+        title: "❌ Classification Failed",
+        description: error instanceof Error ? error.message : "Failed to run classification",
+        duration: 8000,
+      })
+    } finally {
+      setIsRunningClassification(false)
     }
   }
   
@@ -211,23 +266,44 @@ export default function ReportsVisibility() {
 
           {/* Manual Report Generation Button (Test User Only) */}
           {isTestUser && !isDemoMode && (
-            <Button 
-              onClick={generateManualReport}
-              disabled={isGeneratingReport}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isGeneratingReport ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Generate Report
-                </>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                onClick={generateManualReport}
+                disabled={isGeneratingReport}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isGeneratingReport ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Generate Report
+                  </>
+                )}
+              </Button>
+              
+              <Button 
+                onClick={runPortrayalClassification}
+                disabled={isRunningClassification}
+                variant="outline"
+                className="border-purple-300 text-purple-700 hover:bg-purple-50"
+              >
+                {isRunningClassification ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Classifying...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Classify Portrayals
+                  </>
+                )}
+              </Button>
+            </div>
           )}
           
           {/* Fallback button for testing (visible when in demo mode) */}

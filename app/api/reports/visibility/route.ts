@@ -1,6 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// Helper function to extract clean example snippets
+function extractExampleSnippet(text: string, brandName: string, maxLength: number = 200): string {
+  const lowerText = text.toLowerCase()
+  const lowerBrand = brandName.toLowerCase()
+  
+  // Find brand mentions
+  const mentions = []
+  let index = lowerText.indexOf(lowerBrand)
+  while (index !== -1) {
+    mentions.push(index)
+    index = lowerText.indexOf(lowerBrand, index + 1)
+  }
+  
+  if (mentions.length === 0) return text.slice(0, maxLength)
+  
+  // Use the first mention as reference point
+  const mentionIndex = mentions[0]
+  
+  // Extract context around the mention (smaller window for examples)
+  const start = Math.max(0, mentionIndex - 100)
+  const end = Math.min(text.length, start + maxLength)
+  
+  let snippet = text.slice(start, end).trim()
+  
+  // Clean up the snippet
+  snippet = snippet.replace(/\s+/g, ' ') // Normalize whitespace
+  snippet = snippet.replace(/^\W+/, '') // Remove leading punctuation
+  snippet = snippet.replace(/\W+$/, '') // Remove trailing punctuation
+  
+  // Add quotes if not present
+  if (!snippet.startsWith('"') && !snippet.startsWith('"')) {
+    snippet = `"${snippet}`
+  }
+  if (!snippet.endsWith('"') && !snippet.endsWith('"')) {
+    snippet = `${snippet}"`
+  }
+  
+  return snippet
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -59,6 +99,10 @@ export async function GET(request: NextRequest) {
           competitor_mentions,
           sentiment_score,
           portrayal_type,
+          portrayal_confidence,
+          classifier_stage,
+          classifier_version,
+          snippet_hash,
           perplexity_response
         )
       `)
@@ -251,20 +295,33 @@ export async function GET(request: NextRequest) {
     }))
     
 
-    // Portrayal types analysis - BRAND ONLY (no competitors)
+    // Portrayal types analysis - BRAND ONLY (using LLM classification)
     const portrayalTypes: Array<{brand: string, type: string, count: number, percentage: number, example?: string}> = []
     
-    // Track portrayal counts for brand only
+    // Track portrayal counts for brand only (prioritize LLM classification over keyword-based)
     const brandPortrayalCounts: { [key: string]: number } = {}
+    const portrayalExamples: { [key: string]: string } = {}
     
     let totalBrandPortrayals = 0
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
-        // Count brand portrayal types only
+        // Count brand portrayal types only (prefer LLM classification)
         if (result.brand_mentioned && result.portrayal_type) {
-          brandPortrayalCounts[result.portrayal_type] = (brandPortrayalCounts[result.portrayal_type] || 0) + 1
-          totalBrandPortrayals++
+          // Only count if it's LLM classified or if no LLM classification exists yet
+          if (result.classifier_stage === 'llm' || !result.classifier_stage || result.classifier_stage === 'keyword') {
+            brandPortrayalCounts[result.portrayal_type] = (brandPortrayalCounts[result.portrayal_type] || 0) + 1
+            totalBrandPortrayals++
+            
+            // Store example snippet for this portrayal type (prefer LLM classified)
+            if (result.classifier_stage === 'llm' && result.perplexity_response && !portrayalExamples[result.portrayal_type]) {
+              // Extract a clean example snippet
+              const snippet = extractExampleSnippet(result.perplexity_response, brand.name)
+              if (snippet) {
+                portrayalExamples[result.portrayal_type] = snippet
+              }
+            }
+          }
         }
       })
     })
@@ -276,7 +333,7 @@ export async function GET(request: NextRequest) {
         type,
         count,
         percentage: totalBrandPortrayals > 0 ? Math.round((count / totalBrandPortrayals) * 100) : 0,
-        example: `"${brand.name} is mentioned as ${type.replace('_', ' ')}..."`
+        example: portrayalExamples[type] || `"${brand.name} is mentioned as ${type.replace('_', ' ')}..."`
       })
     })
     
