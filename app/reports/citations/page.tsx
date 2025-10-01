@@ -16,15 +16,17 @@ export default function ReportsCitations() {
   const isDemoMode = activeBrand?.isDemo || false
   
   const [citationsData, setCitationsData] = useState<any>(null)
+  const [summaryData, setSummaryData] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
+  const [isTableLoading, setIsTableLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const ITEMS_PER_PAGE = 10
+  const ITEMS_PER_PAGE = 8 // Changed to 8 as requested
   
-  // Load citations data
+  // Load initial data (summary + first page)
   useEffect(() => {
-    const loadCitations = async () => {
+    const loadInitialData = async () => {
       if (!activeBrandId || isDemoMode) {
         setIsLoading(false)
         return
@@ -34,11 +36,15 @@ export default function ReportsCitations() {
         setIsLoading(true)
         setError(null)
         
-        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
+        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}`)
         const data = await response.json()
         
         if (data.success) {
           setCitationsData(data.data)
+          setSummaryData({
+            summary: data.data.summary,
+            pagination: data.data.pagination
+          })
         } else {
           setError(data.error || 'Failed to load citations')
         }
@@ -50,7 +56,41 @@ export default function ReportsCitations() {
       }
     }
     
-    loadCitations()
+    loadInitialData()
+  }, [activeBrandId, isDemoMode])
+  
+  // Load table data only when page changes
+  useEffect(() => {
+    const loadTableData = async () => {
+      if (!activeBrandId || isDemoMode || currentPage === 1) {
+        return // Skip if it's the first page (already loaded)
+      }
+      
+      try {
+        setIsTableLoading(true)
+        setError(null)
+        
+        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`)
+        const data = await response.json()
+        
+        if (data.success) {
+          setCitationsData(prevData => ({
+            ...prevData,
+            domains: data.data.domains,
+            pagination: data.data.pagination
+          }))
+        } else {
+          setError(data.error || 'Failed to load citations')
+        }
+      } catch (err) {
+        console.error('Error loading citations:', err)
+        setError('Failed to load citations data')
+      } finally {
+        setIsTableLoading(false)
+      }
+    }
+    
+    loadTableData()
   }, [activeBrandId, isDemoMode, currentPage])
   
   // Mock data for demo mode
@@ -76,6 +116,41 @@ export default function ReportsCitations() {
         brandMentions: 15,
         category: 'Technology',
         lastSeen: '2025-09-23'
+      },
+      {
+        domain: 'wired.com',
+        urls: 34,
+        brandMentions: 9,
+        category: 'Technology',
+        lastSeen: '2025-09-22'
+      },
+      {
+        domain: 'fastcompany.com',
+        urls: 28,
+        brandMentions: 7,
+        category: 'Business',
+        lastSeen: '2025-09-21'
+      },
+      {
+        domain: 'theverge.com',
+        urls: 41,
+        brandMentions: 11,
+        category: 'Technology',
+        lastSeen: '2025-09-20'
+      },
+      {
+        domain: 'bloomberg.com',
+        urls: 19,
+        brandMentions: 5,
+        category: 'Business',
+        lastSeen: '2025-09-19'
+      },
+      {
+        domain: 'arstechnica.com',
+        urls: 52,
+        brandMentions: 13,
+        category: 'Technology',
+        lastSeen: '2025-09-18'
       }
     ],
     summary: {
@@ -90,8 +165,10 @@ export default function ReportsCitations() {
     },
     pagination: {
       currentPage: 1,
-      totalDomainPages: 5,
-      totalDomains: 45
+      totalDomainPages: 6,
+      totalDomains: 45,
+      hasNextPage: true,
+      hasPrevPage: false
     }
   }
   
@@ -166,8 +243,8 @@ export default function ReportsCitations() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {displayData.summary?.categoryCounts ? 
-                        Object.entries(displayData.summary.categoryCounts).map(([category, count]) => (
+                      {(summaryData?.summary?.categoryCounts || displayData.summary?.categoryCounts) ? 
+                        Object.entries((summaryData?.summary?.categoryCounts || displayData.summary.categoryCounts)).map(([category, count]) => (
                           <TableRow key={category}>
                             <TableCell>{category}</TableCell>
                             <TableCell>{count}</TableCell>
@@ -195,15 +272,15 @@ export default function ReportsCitations() {
                     <div className="text-sm text-slate-600">
                       <div className="flex justify-between">
                         <span>Total Citations:</span>
-                        <span className="font-medium">{displayData.summary?.totalCitations || 0}</span>
+                        <span className="font-medium">{(summaryData?.summary?.totalCitations || displayData.summary?.totalCitations) || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Total Domains:</span>
-                        <span className="font-medium">{displayData.summary?.totalDomains || 0}</span>
+                        <span className="font-medium">{(summaryData?.summary?.totalDomains || displayData.summary?.totalDomains) || 0}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Brand Mentions:</span>
-                        <span className="font-medium">{displayData.summary?.brandMentionCitations || 0}</span>
+                        <span className="font-medium">{(summaryData?.summary?.brandMentionCitations || displayData.summary?.brandMentionCitations) || 0}</span>
                       </div>
                     </div>
                     <Button variant="outline" className="w-full" disabled={isDemoMode}>
@@ -222,6 +299,9 @@ export default function ReportsCitations() {
                 <div>
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     Citations – Full Table
+                    {isTableLoading && (
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                    )}
                     <Tooltip>
                       <TooltipTrigger>
                         <Info className="h-4 w-4 text-slate-400" />
@@ -239,93 +319,103 @@ export default function ReportsCitations() {
                 </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Domain</TableHead>
-                      <TableHead>#URLs</TableHead>
-                      <TableHead>Brand Mentions</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Last Seen</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayData.domains && displayData.domains.length > 0 ? (
-                      displayData.domains.map((domain: any, index: number) => (
-                        <TableRow key={`${domain.domain}-${index}`}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <ExternalLink className="h-4 w-4 text-slate-400" />
-                              {domain.domain}
-                            </div>
-                          </TableCell>
-                          <TableCell>{domain.urls}</TableCell>
-                          <TableCell>
-                            <Badge variant={domain.brandMentions > 0 ? "default" : "secondary"}>
-                              {domain.brandMentions}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`${
-                              domain.category === 'News' ? 'border-blue-200 text-blue-800' :
-                              domain.category === 'Business' ? 'border-green-200 text-green-800' :
-                              domain.category === 'Technology' ? 'border-purple-200 text-purple-800' :
-                              domain.category === 'Development' ? 'border-orange-200 text-orange-800' :
-                              domain.category === 'Documentation' ? 'border-indigo-200 text-indigo-800' :
-                              'border-gray-200 text-gray-800'
-                            }`}>
-                              {domain.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-slate-500">
-                            {new Date(domain.lastSeen).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm"
-                                    className="h-8 px-2"
-                                    onClick={() => window.open(`https://${domain.domain}`, '_blank')}
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Visit website</p>
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm"
-                                    className="h-8 px-2"
-                                    onClick={() => window.open(`https://${domain.domain}/contact`, '_blank')}
-                                  >
-                                    <Mail className="h-3 w-3" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Find contact information</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
+                <div className="relative">
+                  {isTableLoading && (
+                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center">
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span className="text-sm">Loading citations...</span>
+                      </div>
+                    </div>
+                  )}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Domain</TableHead>
+                        <TableHead>#URLs</TableHead>
+                        <TableHead>Brand Mentions</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Last Seen</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {displayData.domains && displayData.domains.length > 0 ? (
+                        displayData.domains.map((domain: any, index: number) => (
+                          <TableRow key={`${domain.domain}-${index}`}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <ExternalLink className="h-4 w-4 text-slate-400" />
+                                {domain.domain}
+                              </div>
+                            </TableCell>
+                            <TableCell>{domain.urls}</TableCell>
+                            <TableCell>
+                              <Badge variant={domain.brandMentions > 0 ? "default" : "secondary"}>
+                                {domain.brandMentions}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`${
+                                domain.category === 'News' ? 'border-blue-200 text-blue-800' :
+                                domain.category === 'Business' ? 'border-green-200 text-green-800' :
+                                domain.category === 'Technology' ? 'border-purple-200 text-purple-800' :
+                                domain.category === 'Development' ? 'border-orange-200 text-orange-800' :
+                                domain.category === 'Documentation' ? 'border-indigo-200 text-indigo-800' :
+                                'border-gray-200 text-gray-800'
+                              }`}>
+                                {domain.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-500">
+                              {new Date(domain.lastSeen).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => window.open(`https://${domain.domain}`, '_blank')}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Visit website</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => window.open(`https://${domain.domain}/contact`, '_blank')}
+                                    >
+                                      <Mail className="h-3 w-3" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Find contact information</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-slate-500">
+                            {isDemoMode ? "Switch to your brand to see real citations" : "No citations found"}
                           </TableCell>
                         </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-slate-500">
-                          {isDemoMode ? "Switch to your brand to see real citations" : "No citations found"}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 {/* Pagination */}
                 {displayData.pagination && displayData.pagination.totalDomainPages > 1 && (
@@ -338,7 +428,7 @@ export default function ReportsCitations() {
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                        disabled={!displayData.pagination.hasPrevPage || isLoading}
+                        disabled={!displayData.pagination.hasPrevPage || isTableLoading}
                       >
                         <ChevronLeft className="h-4 w-4 mr-1" />
                         Previous
@@ -347,7 +437,7 @@ export default function ReportsCitations() {
                         variant="outline"
                         size="sm"
                         onClick={() => setCurrentPage(prev => prev + 1)}
-                        disabled={!displayData.pagination.hasNextPage || isLoading}
+                        disabled={!displayData.pagination.hasNextPage || isTableLoading}
                       >
                         Next
                         <ChevronRight className="h-4 w-4 ml-1" />
