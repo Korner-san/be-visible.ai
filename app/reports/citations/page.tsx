@@ -343,7 +343,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>The website domain where your brand was cited or mentioned in AI responses. Click the external link icon to visit the website.</p>
+                                <p>Domains cited in answers to your prompts.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
@@ -356,7 +356,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Total number of individual URLs from this domain that were cited in AI responses about your brand across all prompts.</p>
+                                <p>Count of unique pages from this domain cited across all responses.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
@@ -369,7 +369,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Number of AI responses where your brand was explicitly mentioned alongside citations from this domain. Higher numbers indicate stronger brand association.</p>
+                                <p>Number of times your brand was mentioned in responses that cited this domain.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
@@ -382,7 +382,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Automatically categorized content type: News (news sites), Business (business media), Technology (tech sites), Development (GitHub, GitLab), Documentation (docs sites), Blog (blog platforms), Community (forums), Education (learning sites), or Commercial (e-commerce).</p>
+                                <p>Auto-detected content type of this website.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
@@ -395,7 +395,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>The most recent date when citations from this domain appeared in AI responses about your brand. Shows how current the domain's content is in relation to your brand.</p>
+                                <p>Most recent date this domain was cited.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
@@ -408,7 +408,7 @@ export default function ReportsCitations() {
                                 <Info className="h-3 w-3 text-slate-400" />
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Quick actions: Visit the website directly or find contact information for outreach opportunities.</p>
+                                <p>Open the website or find contact information.</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
