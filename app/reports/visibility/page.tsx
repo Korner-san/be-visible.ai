@@ -17,35 +17,35 @@ const getPortrayalTypeInfo = (type: string) => {
   const typeMap: Record<string, { label: string; description: string }> = {
     'RECOMMENDATION': { 
       label: 'Recommendation', 
-      description: 'Steers the reader to choose/use the brand.' 
+      description: 'steers the reader to choose/use the brand.' 
     },
     'COMPARISON': { 
       label: 'Comparison', 
-      description: 'Contrasts the brand with alternatives.' 
+      description: 'contrasts the brand with alternatives.' 
     },
     'PROBLEM_SOLVER': { 
       label: 'Problem Solver', 
-      description: 'Frames the brand as solving a specific pain/problem.' 
+      description: 'frames the brand as solving a specific pain/problem.' 
     },
     'FEATURE_BENEFIT': { 
       label: 'Feature Benefit', 
-      description: 'Highlights capabilities/benefits/differentiators.' 
+      description: 'highlights capabilities/benefits/differentiators.' 
     },
     'NEUTRAL_DESCRIPTION': { 
       label: 'Neutral Description', 
-      description: 'Simple definition/intro.' 
+      description: 'simple definition/intro.' 
     },
     'AUTHORITY_REFERENCE': { 
       label: 'Authority Reference', 
-      description: 'Cites brand as example/reference/benchmark/best practice.' 
+      description: 'cites brand as example/reference/benchmark/best practice.' 
     },
     'USE_CASE': { 
       label: 'Use Case', 
-      description: 'Scenario where the brand fits/is typically used.' 
+      description: 'scenario where the brand fits/is typically used.' 
     },
     'OTHER': { 
       label: 'Other', 
-      description: 'None fit confidently.' 
+      description: 'none fit confidently.' 
     }
   }
   
