@@ -98,8 +98,8 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
         throw new Error(data.error || 'Failed to save prompts')
       }
       
-      // Step 2: Navigate to dashboard
-      router.push('/reports/overview')
+      // Step 2: Navigate to loading page which will determine the final destination
+      router.push('/loading')
       
     } catch (error) {
       console.error('Error completing onboarding:', error)

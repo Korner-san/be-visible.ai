@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
       // Check if this is an email confirmation
       if (type === 'signup' || type === 'email_change') {
         // This is an email confirmation for a new signup
-        // Let NavigationHandler determine where to go (onboarding vs dashboard)
-        return NextResponse.redirect(`${origin}/`)
+        // Redirect to loading page to determine next steps
+        return NextResponse.redirect(`${origin}/loading`)
       }
       
       // Handle other auth callbacks (like password reset)
@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}${next}`)
       }
       
-      // Default: let NavigationHandler determine where to go
-      return NextResponse.redirect(`${origin}/`)
+      // Default: redirect to loading page to determine user flow
+      return NextResponse.redirect(`${origin}/loading`)
     } catch (err) {
       console.error('Auth callback exception:', err)
       return NextResponse.redirect(`${origin}/auth/signin?error=auth_callback_error`)

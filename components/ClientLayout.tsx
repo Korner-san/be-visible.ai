@@ -35,6 +35,7 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const isOnboardingPage = pathname?.startsWith('/setup/onboarding') || 
                           pathname?.startsWith('/onboarding') ||
                           pathname === '/finishing'
+  const isLoadingPage = pathname === '/loading'
 
   // Handle route transitions for onboarding
   useEffect(() => {
@@ -89,8 +90,8 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     return <OnboardingLoader message={transitionMessage} />
   }
 
-  // If on auth pages or onboarding, just render children without sidebar/topbar
-  if (isAuthPage || isOnboardingPage) {
+  // If on auth pages, onboarding, or loading page, just render children without sidebar/topbar
+  if (isAuthPage || isOnboardingPage || isLoadingPage) {
     return <>{children}</>
   }
 
