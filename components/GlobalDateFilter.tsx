@@ -124,66 +124,70 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-4" align="start" side="bottom" sideOffset={8}>
-          <Calendar
-            mode="range"
-            defaultMonth={dateRange.from}
-            selected={isSelectingRange ? tempRange : dateRange}
-            onSelect={handleDateSelect}
-            numberOfMonths={2}
-            disabled={(date) => date > new Date() || date < new Date('2020-01-01')}
-            className="min-w-[720px]"
-            classNames={{
-              months: "flex gap-12",
-              month: "w-[340px]",
-              nav: "hidden", // Completely hide global nav
-              button_previous: "hidden", // Hide default previous button
-              button_next: "hidden", // Hide default next button
-              month_caption: "flex items-center justify-between h-8 text-base font-semibold relative",
-              weekdays: "flex mb-2",
-              weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
-              week: "flex w-full mb-1",
-              day: "h-10 w-10 text-center text-sm hover:bg-accent rounded-md"
-            }}
-            components={{
-              Caption: ({ children, ...props }) => {
-                const monthIndex = (props as any).displayIndex || 0
-                const currentMonth = (props as any).displayMonth
-                
-                return (
-                  <div className="flex items-center justify-between h-8 text-base font-semibold relative w-full">
-                    {/* Left arrow for first month only */}
-                    {monthIndex === 0 && (
-                      <button
-                        onClick={() => {
-                          const prevMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)
-                          // Trigger month change through calendar props
-                        }}
-                        className="h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium"
-                      >
-                        ←
-                      </button>
-                    )}
-                    
-                    {/* Month title */}
-                    <span className="flex-1 text-center">{children}</span>
-                    
-                    {/* Right arrow for second month only */}
-                    {monthIndex === 1 && (
-                      <button
-                        onClick={() => {
-                          const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)
-                          // Trigger month change through calendar props
-                        }}
-                        className="h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium"
-                      >
-                        →
-                      </button>
-                    )}
-                  </div>
-                )
-              }
-            }}
-          />
+          <div className="min-w-[720px]">
+            <Calendar
+              mode="range"
+              defaultMonth={dateRange.from}
+              selected={isSelectingRange ? tempRange : dateRange}
+              onSelect={handleDateSelect}
+              numberOfMonths={2}
+              disabled={(date) => date > new Date() || date < new Date('2020-01-01')}
+              className="w-full"
+              classNames={{
+                months: "flex gap-12",
+                month: "w-[340px]",
+                nav: "hidden", // Hide default nav
+                button_previous: "hidden", // Hide default buttons
+                button_next: "hidden",
+                month_caption: "flex items-center justify-center h-8 text-base font-semibold relative",
+                weekdays: "flex mb-2",
+                weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
+                week: "flex w-full mb-1",
+                day: "h-10 w-10 text-center text-sm hover:bg-accent rounded-md"
+              }}
+              components={{
+                Caption: ({ children, ...props }) => {
+                  const monthIndex = (props as any).displayIndex || 0
+                  const currentMonth = (props as any).displayMonth
+                  
+                  return (
+                    <div className="flex items-center justify-center h-8 text-base font-semibold relative w-full">
+                      {/* Left arrow for first month only */}
+                      {monthIndex === 0 && (
+                        <button
+                          onClick={() => {
+                            const prevMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)
+                            // Use the calendar's internal navigation
+                            ;(props as any).goToMonth?.(prevMonth)
+                          }}
+                          className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute left-0 top-0 flex items-center justify-center text-sm font-medium"
+                        >
+                          ←
+                        </button>
+                      )}
+                      
+                      {/* Month title */}
+                      <span className="text-center px-8">{children}</span>
+                      
+                      {/* Right arrow for second month only */}
+                      {monthIndex === 1 && (
+                        <button
+                          onClick={() => {
+                            const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)
+                            // Use the calendar's internal navigation
+                            ;(props as any).goToMonth?.(nextMonth)
+                          }}
+                          className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute right-0 top-0 flex items-center justify-center text-sm font-medium"
+                        >
+                          →
+                        </button>
+                      )}
+                    </div>
+                  )
+                }
+              }}
+            />
+          </div>
         </PopoverContent>
       </Popover>
     </div>
