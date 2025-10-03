@@ -123,23 +123,26 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
             <ChevronDown className="ml-2 h-3 w-3" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 ml-[-200px]" align="start" side="bottom" sideOffset={8}>
+        <PopoverContent className="w-auto p-4" align="start" side="bottom" sideOffset={8}>
           <Calendar
             mode="range"
             defaultMonth={dateRange.from}
-            selected={dateRange}
-            onSelect={handleDateSelect}
             selected={isSelectingRange ? tempRange : dateRange}
+            onSelect={handleDateSelect}
             numberOfMonths={2}
             disabled={(date) => date > new Date() || date < new Date('2020-01-01')}
-            className="min-w-[700px]"
+            className="min-w-[720px]"
             classNames={{
-              months: "flex gap-8",
-              month: "w-[320px]",
-              nav: "relative flex items-center gap-1 w-full justify-between",
-              button_previous: "absolute left-0 top-0 h-8 w-8 p-0",
-              button_next: "absolute right-0 top-0 h-8 w-8 p-0",
-              month_caption: "flex items-center justify-center h-8 w-full px-8 text-sm font-medium"
+              months: "flex gap-12",
+              month: "w-[340px]",
+              nav: "flex items-center justify-between mb-2",
+              button_previous: "h-8 w-8 p-0 hover:bg-accent rounded-md",
+              button_next: "h-8 w-8 p-0 hover:bg-accent rounded-md",
+              month_caption: "flex items-center justify-center h-8 text-base font-semibold",
+              weekdays: "flex mb-2",
+              weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
+              week: "flex w-full mb-1",
+              day: "h-10 w-10 text-center text-sm hover:bg-accent rounded-md"
             }}
           />
         </PopoverContent>
