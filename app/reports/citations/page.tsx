@@ -13,7 +13,7 @@ import { useDateFilter } from "@/contexts/DateFilterContext"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
-  const { getDateRangeParams } = useDateFilter()
+  const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   
@@ -38,8 +38,12 @@ export default function ReportsCitations() {
         setIsLoading(true)
         setError(null)
         
-        const dateParams = getDateRangeParams()
-        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}${dateParams}`)
+        const { from, to } = getDateRangeForAPI()
+        let url = `/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}`
+        if (from && to) {
+          url += `&from=${from}&to=${to}`
+        }
+        const response = await fetch(url)
         const data = await response.json()
         
         if (data.success) {
@@ -60,7 +64,7 @@ export default function ReportsCitations() {
     }
     
     loadInitialData()
-  }, [activeBrandId, isDemoMode, getDateRangeParams])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI])
   
   // Load table data only when page changes
   useEffect(() => {
@@ -73,8 +77,12 @@ export default function ReportsCitations() {
         setIsTableLoading(true)
         setError(null)
         
-        const dateParams = getDateRangeParams()
-        const response = await fetch(`/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}${dateParams}`)
+        const { from, to } = getDateRangeForAPI()
+        let url = `/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`
+        if (from && to) {
+          url += `&from=${from}&to=${to}`
+        }
+        const response = await fetch(url)
         const data = await response.json()
         
         if (data.success) {
@@ -95,7 +103,7 @@ export default function ReportsCitations() {
     }
     
     loadTableData()
-  }, [activeBrandId, isDemoMode, currentPage])
+  }, [activeBrandId, isDemoMode, currentPage, getDateRangeForAPI])
   
   // Mock data for demo mode
   const demoData = {

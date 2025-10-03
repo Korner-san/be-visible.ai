@@ -54,7 +54,7 @@ const getPortrayalTypeInfo = (type: string) => {
 
 export default function ReportsVisibility() {
   const { brands, activeBrandId } = useBrandsStore()
-  const { getDateRangeParams } = useDateFilter()
+  const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   const { toast } = useToast()
@@ -78,8 +78,12 @@ export default function ReportsVisibility() {
         
         // Load visibility data if not demo mode
         if (!isDemoMode && activeBrandId) {
-          const dateParams = getDateRangeParams()
-          const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}${dateParams}`)
+          const { from, to } = getDateRangeForAPI()
+          let url = `/api/reports/visibility?brandId=${activeBrandId}`
+          if (from && to) {
+            url += `&from=${from}&to=${to}`
+          }
+          const visibilityResponse = await fetch(url)
           const visibilityData = await visibilityResponse.json()
           
           if (visibilityData.success) {
@@ -94,7 +98,7 @@ export default function ReportsVisibility() {
     }
     
     loadData()
-  }, [activeBrandId, isDemoMode, getDateRangeParams])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI])
   
   // Manual report generation
   const generateManualReport = async () => {

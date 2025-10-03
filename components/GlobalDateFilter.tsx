@@ -24,6 +24,8 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
     to: new Date()
   })
   const [selectedPreset, setSelectedPreset] = useState<string>('30d')
+  const [isSelectingRange, setIsSelectingRange] = useState(false)
+  const [tempRange, setTempRange] = useState<DateRange>({ from: undefined, to: undefined })
 
   // Preset date ranges
   const presets = [
@@ -50,6 +52,26 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
     setDateRange(range)
     setSelectedPreset('custom')
     onDateRangeChange(range)
+  }
+
+  // Handle calendar date selection
+  const handleDateSelect = (range: DateRange | undefined) => {
+    if (!range) {
+      setTempRange({ from: undefined, to: undefined })
+      setIsSelectingRange(false)
+      return
+    }
+
+    if (range.from && !range.to) {
+      // First click - set start date
+      setTempRange({ from: range.from, to: undefined })
+      setIsSelectingRange(true)
+    } else if (range.from && range.to) {
+      // Second click - complete the range
+      setTempRange(range)
+      setIsSelectingRange(false)
+      applyCustomRange(range)
+    }
   }
 
   // Initialize with default range
@@ -101,18 +123,24 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
             <ChevronDown className="ml-2 h-3 w-3" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent className="w-auto p-0 ml-[-200px]" align="start" side="bottom" sideOffset={8}>
           <Calendar
             mode="range"
             defaultMonth={dateRange.from}
             selected={dateRange}
-            onSelect={(range) => {
-              if (range?.from && range?.to) {
-                applyCustomRange(range)
-              }
-            }}
+            onSelect={handleDateSelect}
+            selected={isSelectingRange ? tempRange : dateRange}
             numberOfMonths={2}
             disabled={(date) => date > new Date() || date < new Date('2020-01-01')}
+            className="min-w-[700px]"
+            classNames={{
+              months: "flex gap-8",
+              month: "w-[320px]",
+              nav: "relative flex items-center gap-1 w-full justify-between",
+              button_previous: "absolute left-0 top-0 h-8 w-8 p-0",
+              button_next: "absolute right-0 top-0 h-8 w-8 p-0",
+              month_caption: "flex items-center justify-center h-8 w-full px-8 text-sm font-medium"
+            }}
           />
         </PopoverContent>
       </Popover>

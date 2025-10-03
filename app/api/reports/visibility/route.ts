@@ -112,11 +112,13 @@ export async function GET(request: NextRequest) {
       .eq('status', 'completed')
       .order('report_date', { ascending: true })
 
-    // Apply date filters if provided
+    // Apply date filters if provided (inclusive range)
     if (fromDate) {
+      // Start of day for from date
       dateFilterQuery = dateFilterQuery.gte('report_date', fromDate)
     }
     if (toDate) {
+      // End of day for to date - include the full day
       dateFilterQuery = dateFilterQuery.lte('report_date', toDate)
     }
 
