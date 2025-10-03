@@ -136,11 +136,11 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
               classNames={{
                 months: "flex gap-12",
                 month: "w-[340px]",
-                nav: "flex items-center justify-between mb-2 w-full",
+                nav: "flex items-center justify-between mb-2 w-full absolute top-0 left-0 right-0",
                 button_previous: "h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium",
                 button_next: "h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium",
                 month_caption: "flex items-center justify-center h-8 text-base font-semibold",
-                weekdays: "flex mb-2",
+                weekdays: "flex mb-2 mt-10",
                 weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
                 week: "flex w-full mb-1",
                 day: "h-10 w-10 text-center text-sm hover:bg-accent rounded-md"
