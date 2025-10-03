@@ -136,55 +136,14 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
               classNames={{
                 months: "flex gap-12",
                 month: "w-[340px]",
-                nav: "hidden", // Hide default nav
-                button_previous: "hidden", // Hide default buttons
-                button_next: "hidden",
-                month_caption: "flex items-center justify-center h-8 text-base font-semibold relative",
+                nav: "flex items-center justify-between mb-2 w-full",
+                button_previous: "h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium",
+                button_next: "h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium",
+                month_caption: "flex items-center justify-center h-8 text-base font-semibold",
                 weekdays: "flex mb-2",
                 weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
                 week: "flex w-full mb-1",
                 day: "h-10 w-10 text-center text-sm hover:bg-accent rounded-md"
-              }}
-              components={{
-                Caption: ({ children, ...props }) => {
-                  const monthIndex = (props as any).displayIndex || 0
-                  const currentMonth = (props as any).displayMonth
-                  
-                  return (
-                    <div className="flex items-center justify-center h-8 text-base font-semibold relative w-full">
-                      {/* Left arrow for first month only */}
-                      {monthIndex === 0 && (
-                        <button
-                          onClick={() => {
-                            const prevMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)
-                            // Use the calendar's internal navigation
-                            ;(props as any).goToMonth?.(prevMonth)
-                          }}
-                          className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute left-0 top-0 flex items-center justify-center text-sm font-medium"
-                        >
-                          ←
-                        </button>
-                      )}
-                      
-                      {/* Month title */}
-                      <span className="text-center px-8">{children}</span>
-                      
-                      {/* Right arrow for second month only */}
-                      {monthIndex === 1 && (
-                        <button
-                          onClick={() => {
-                            const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)
-                            // Use the calendar's internal navigation
-                            ;(props as any).goToMonth?.(nextMonth)
-                          }}
-                          className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute right-0 top-0 flex items-center justify-center text-sm font-medium"
-                        >
-                          →
-                        </button>
-                      )}
-                    </div>
-                  )
-                }
               }}
             />
           </div>
