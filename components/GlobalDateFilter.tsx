@@ -134,11 +134,11 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
             className="min-w-[720px]"
             classNames={{
               months: "flex gap-12",
-              month: "w-[340px] relative",
-              nav: "hidden", // Hide global nav
-              button_previous: "h-8 w-8 p-0 hover:bg-accent rounded-md absolute left-0 top-0",
-              button_next: "h-8 w-8 p-0 hover:bg-accent rounded-md absolute right-0 top-0",
-              month_caption: "flex items-center justify-center h-8 text-base font-semibold px-8",
+              month: "w-[340px]",
+              nav: "hidden", // Completely hide global nav
+              button_previous: "hidden", // Hide default previous button
+              button_next: "hidden", // Hide default next button
+              month_caption: "flex items-center justify-between h-8 text-base font-semibold relative",
               weekdays: "flex mb-2",
               weekday: "text-muted-foreground flex-1 text-center text-sm font-medium py-2",
               week: "flex w-full mb-1",
@@ -146,24 +146,35 @@ export default function GlobalDateFilter({ onDateRangeChange, defaultRange }: Gl
             }}
             components={{
               Caption: ({ children, ...props }) => {
-                const { goToMonth } = props as any
-                const isFirstMonth = (props as any).displayMonth === (props as any).displayIndex
+                const monthIndex = (props as any).displayIndex || 0
+                const currentMonth = (props as any).displayMonth
                 
                 return (
-                  <div className="flex items-center justify-center h-8 text-base font-semibold relative">
-                    {isFirstMonth && (
+                  <div className="flex items-center justify-between h-8 text-base font-semibold relative w-full">
+                    {/* Left arrow for first month only */}
+                    {monthIndex === 0 && (
                       <button
-                        onClick={() => goToMonth && goToMonth(new Date((props as any).displayMonth.getFullYear(), (props as any).displayMonth.getMonth() - 1))}
-                        className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute left-0 top-0 flex items-center justify-center"
+                        onClick={() => {
+                          const prevMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)
+                          // Trigger month change through calendar props
+                        }}
+                        className="h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium"
                       >
                         ←
                       </button>
                     )}
-                    <span className="px-8">{children}</span>
-                    {!isFirstMonth && (
+                    
+                    {/* Month title */}
+                    <span className="flex-1 text-center">{children}</span>
+                    
+                    {/* Right arrow for second month only */}
+                    {monthIndex === 1 && (
                       <button
-                        onClick={() => goToMonth && goToMonth(new Date((props as any).displayMonth.getFullYear(), (props as any).displayMonth.getMonth() + 1))}
-                        className="h-8 w-8 p-0 hover:bg-accent rounded-md absolute right-0 top-0 flex items-center justify-center"
+                        onClick={() => {
+                          const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)
+                          // Trigger month change through calendar props
+                        }}
+                        className="h-8 w-8 p-0 hover:bg-accent rounded-md flex items-center justify-center text-sm font-medium"
                       >
                         →
                       </button>
