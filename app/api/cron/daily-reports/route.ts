@@ -82,24 +82,29 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`🔄 [CRON] Processing brand: ${brand.name} (${brand.id})`)
 
-        // Check if report already exists for today
+        // Check if report already exists for today and is complete
         const today = new Date().toISOString().split('T')[0]
         const { data: existingReport } = await supabase
           .from('daily_reports')
-          .select('id')
+          .select('id, generated, perplexity_status, google_ai_overview_status')
           .eq('brand_id', brand.id)
           .eq('report_date', today)
           .single()
 
         if (existingReport) {
-          console.log(`ℹ️ [CRON] Report already exists for ${brand.name} today`)
-          results.push({
-            brandId: brand.id,
-            brandName: brand.name,
-            status: 'skipped',
-            message: 'Report already exists for today'
-          })
-          continue
+          if (existingReport.generated) {
+            console.log(`ℹ️ [CRON] Report already complete for ${brand.name} today`)
+            results.push({
+              brandId: brand.id,
+              brandName: brand.name,
+              status: 'skipped',
+              message: 'Report already complete for today'
+            })
+            continue
+          } else {
+            console.log(`🔄 [CRON] Found incomplete report for ${brand.name}, resuming...`)
+            console.log(`📊 [CRON] Current status - Perplexity: ${existingReport.perplexity_status}, Google AI Overview: ${existingReport.google_ai_overview_status}`)
+          }
         }
 
         // Get active prompts count for logging
@@ -113,7 +118,8 @@ export async function GET(request: NextRequest) {
         console.log(`📋 [CRON] Brand ${brand.name} has ${promptCount} active prompts`)
 
         // Call the daily report generation API
-        const reportResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/reports/generate-daily`, {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const reportResponse = await fetch(`${baseUrl}/api/reports/generate-daily`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

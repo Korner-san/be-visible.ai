@@ -28,12 +28,26 @@ interface PerplexityResponse {
   search_results?: Array<{url: string, title?: string, snippet?: string}>
 }
 
+// Types for Google AI Overview API
+interface GoogleAIOverviewResponse {
+  items?: Array<{
+    title: string
+    link: string
+    snippet: string
+    displayLink: string
+  }>
+  searchInformation?: {
+    searchTime: number
+    totalResults: string
+  }
+  response_time_ms?: number
+}
+
 interface BrandMentionAnalysis {
   mentioned: boolean
-  mentionCount: number // NEW: actual count of mentions
+  mentionCount: number
   position: number
-  sentiment: number // -1 to 1
-  portrayalType: string
+  sentiment: number
   competitorMentions: Array<{name: string, count: number, portrayalType: string}>
 }
 
@@ -49,64 +63,58 @@ const analyzeSentiment = (text: string, brandName: string): number => {
   
   // Get context around brand mention (100 chars before/after)
   const contextStart = Math.max(0, brandIndex - 100)
-  const contextEnd = Math.min(text.length, brandIndex + brandName.length + 100)
-  const context = brandContext.slice(contextStart, contextEnd)
+  const contextEnd = Math.min(brandContext.length, brandIndex + brandName.length + 100)
+  const context = brandContext.substring(contextStart, contextEnd)
   
   let score = 0
   positiveWords.forEach(word => {
-    if (context.includes(word)) score += 0.2
+    if (context.includes(word)) score += 0.1
   })
   negativeWords.forEach(word => {
-    if (context.includes(word)) score -= 0.2
+    if (context.includes(word)) score -= 0.1
   })
   
   return Math.max(-1, Math.min(1, score))
 }
 
-// Analyze brand mentions in text
+// Analyze brand mentions in response
 const analyzeBrandMention = (text: string, brandName: string, competitors: string[]): BrandMentionAnalysis => {
   const lowerText = text.toLowerCase()
   const lowerBrand = brandName.toLowerCase()
   
-  // Count ALL occurrences of brand name
-  const brandMentions = []
-  let brandIndex = lowerText.indexOf(lowerBrand)
-  while (brandIndex !== -1) {
-    brandMentions.push(brandIndex)
-    brandIndex = lowerText.indexOf(lowerBrand, brandIndex + 1)
+  // Find all brand mentions
+  const brandMentions: number[] = []
+  let index = lowerText.indexOf(lowerBrand)
+  while (index !== -1) {
+    brandMentions.push(index)
+    index = lowerText.indexOf(lowerBrand, index + 1)
   }
   
   const mentioned = brandMentions.length > 0
-  const firstMentionIndex = brandMentions.length > 0 ? brandMentions[0] : -1
+  const firstMentionIndex = mentioned ? brandMentions[0] : -1
   
-  // Find competitor mentions with their analysis
-  const competitorMentions: Array<{name: string, count: number, portrayalType: string}> = []
-  
-  competitors.forEach(competitor => {
+  // Find competitor mentions
+  const competitorMentions = competitors.map(competitor => {
+    const competitorMentions: number[] = []
     const lowerCompetitor = competitor.toLowerCase()
-    const mentions = []
     let compIndex = lowerText.indexOf(lowerCompetitor)
-    
     while (compIndex !== -1) {
-      mentions.push(compIndex)
+      competitorMentions.push(compIndex)
       compIndex = lowerText.indexOf(lowerCompetitor, compIndex + 1)
     }
     
-    if (mentions.length > 0) {
-      competitorMentions.push({
+    return {
         name: competitor,
-        count: mentions.length,
-        portrayalType: 'neutral' // Simplified - no keyword-based competitor portrayal analysis
-      })
+      count: competitorMentions.length,
+      portrayalType: 'neutral' // Will be classified by LLM later
     }
-  })
+  }).filter(comp => comp.count > 0)
   
   return {
     mentioned,
     mentionCount: brandMentions.length,
     position: firstMentionIndex,
     sentiment: mentioned ? analyzeSentiment(text, brandName) : 0,
-    portrayalType: null, // No longer doing keyword-based portrayal classification
     competitorMentions
   }
 }
@@ -155,95 +163,11 @@ const callPerplexityAPI = async (prompt: string): Promise<PerplexityResponse> =>
 
   const data = await response.json()
   
-  // Log success details
   const hasSearchResults = data.search_results && Array.isArray(data.search_results)
   const citationCount = hasSearchResults ? data.search_results.length : 0
   console.log('✅ [PERPLEXITY] Success - Search results exists:', hasSearchResults, 'Citations count:', citationCount)
   
   return { ...data, response_time_ms: responseTime }
-}
-
-// Types for Claude API
-interface ClaudeResponse {
-  id: string
-  type: string
-  role: string
-  model: string
-  content: Array<{
-    type: string
-    text: string
-  }>
-  stop_reason: string
-  usage: {
-    input_tokens: number
-    output_tokens: number
-    service_tier: string
-  }
-  response_time_ms?: number
-}
-
-// Call Claude API
-const callClaudeAPI = async (prompt: string): Promise<ClaudeResponse> => {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY not configured')
-  }
-
-  const model = 'claude-sonnet-4-20250514'
-  console.log('🤖 [CLAUDE] Calling API with model:', model, 'prompt:', prompt.substring(0, 100) + '...')
-  
-  const startTime = Date.now()
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: model,
-      max_tokens: 1000,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ]
-    })
-  })
-
-  const responseTime = Date.now() - startTime
-  console.log('🤖 [CLAUDE] HTTP Status:', response.status, 'Response time:', responseTime, 'ms')
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('❌ [CLAUDE] API Error - Status:', response.status, 'Payload:', errorText)
-    throw new Error(`Claude API error: ${response.status} ${errorText}`)
-  }
-
-  const data = await response.json()
-  
-  // Log success details
-  const hasContent = data.content && Array.isArray(data.content) && data.content.length > 0
-  const contentLength = hasContent ? data.content[0]?.text?.length || 0 : 0
-  console.log('✅ [CLAUDE] Success - Content exists:', hasContent, 'Content length:', contentLength)
-  
-  return { ...data, response_time_ms: responseTime }
-}
-
-// Google AI Overview API Response interface
-interface GoogleAIOverviewResponse {
-  items?: Array<{
-    title: string
-    link: string
-    snippet: string
-    displayLink: string
-  }>
-  searchInformation?: {
-    searchTime: number
-    totalResults: string
-  }
-  response_time_ms?: number
 }
 
 // Call Google AI Overview API
@@ -281,7 +205,6 @@ const callGoogleAIOverviewAPI = async (prompt: string): Promise<GoogleAIOverview
 
   const data = await response.json()
   
-  // Log success details
   const hasItems = data.items && Array.isArray(data.items) && data.items.length > 0
   const itemCount = hasItems ? data.items.length : 0
   console.log('✅ [GOOGLE AI OVERVIEW] Success - Items found:', itemCount)
@@ -289,11 +212,288 @@ const callGoogleAIOverviewAPI = async (prompt: string): Promise<GoogleAIOverview
   return { ...data, response_time_ms: responseTime }
 }
 
+// Process prompts for a specific provider
+const processProviderPrompts = async (
+  supabase: any,
+  dailyReportId: string,
+  activePrompts: any[],
+  brandName: string,
+  competitors: string[],
+  provider: 'perplexity' | 'google_ai_overview'
+): Promise<{
+  attempted: number
+  ok: number
+  noResult: number
+  errors: number
+}> => {
+  let attempted = 0
+  let ok = 0
+  let noResult = 0
+  let errors = 0
+
+  console.log(`🚀 [${provider.toUpperCase()}] Starting ${provider} pass with ${activePrompts.length} prompts`)
+
+  for (let i = 0; i < activePrompts.length; i++) {
+    const prompt = activePrompts[i]
+    const promptText = prompt.improved_prompt || prompt.raw_prompt
+    
+    console.log(`🤖 [${provider.toUpperCase()}] Processing prompt ${i + 1}/${activePrompts.length}: ${prompt.source_template_code}`)
+
+    attempted++
+    
+    try {
+      let responseContent = ''
+      let responseTimeMs = 0
+      let citations: any[] = []
+      let providerError = null
+
+      if (provider === 'perplexity') {
+        const perplexityResponse = await callPerplexityAPI(promptText)
+        responseContent = perplexityResponse.choices[0]?.message?.content || ''
+        responseTimeMs = perplexityResponse.response_time_ms || 0
+        citations = perplexityResponse.search_results || []
+      } else if (provider === 'google_ai_overview') {
+        const googleResponse = await callGoogleAIOverviewAPI(promptText)
+        if (googleResponse.items && googleResponse.items.length > 0) {
+          responseContent = googleResponse.items.map(item => item.snippet).join('\n\n')
+          responseTimeMs = googleResponse.response_time_ms || 0
+          citations = googleResponse.items.map(item => ({
+            title: item.title,
+            link: item.link,
+            snippet: item.snippet,
+            domain: item.displayLink
+          }))
+        } else {
+          // No results from Google AI Overview
+          noResult++
+          providerError = 'No search results found'
+        }
+      }
+
+      if (responseContent) {
+        // Analyze brand mentions (basic analysis only - no portrayal classification)
+        const analysis = analyzeBrandMention(responseContent, brandName, competitors)
+
+        // Save prompt result with provider-specific data
+        const resultData: any = {
+          daily_report_id: dailyReportId,
+          brand_prompt_id: prompt.id,
+          prompt_text: promptText,
+          provider: provider,
+          provider_status: 'ok',
+          brand_mentioned: analysis.mentioned,
+          brand_position: analysis.mentioned ? analysis.position : null,
+          competitor_mentions: analysis.competitorMentions,
+          sentiment_score: analysis.sentiment,
+          portrayal_type: null, // Will be set by LLM classification
+          classifier_stage: null, // Will be set by LLM classification
+          classifier_version: null,
+          snippet_hash: null,
+          portrayal_confidence: null,
+          created_at: new Date().toISOString()
+        }
+
+        // Add provider-specific fields
+        if (provider === 'perplexity') {
+          resultData.perplexity_response = responseContent
+          resultData.response_time_ms = responseTimeMs
+          resultData.citations = citations
+        } else if (provider === 'google_ai_overview') {
+          resultData.google_ai_overview_response = responseContent
+          resultData.google_ai_overview_response_time_ms = responseTimeMs
+          resultData.google_ai_overview_citations = citations
+        }
+
+        // Upsert the result (idempotent)
+        const { error: upsertError } = await supabase
+          .from('prompt_results')
+          .upsert(resultData, {
+            onConflict: 'daily_report_id,brand_prompt_id,provider'
+          })
+
+        if (upsertError) {
+          console.error(`❌ [${provider.toUpperCase()}] Error upserting result for prompt ${i + 1}:`, upsertError)
+          errors++
+        } else {
+          ok++
+          console.log(`✅ [${provider.toUpperCase()}] Success for prompt ${i + 1}, response length: ${responseContent.length}`)
+        }
+      } else if (providerError) {
+        // Save no-result record
+        const { error: upsertError } = await supabase
+          .from('prompt_results')
+          .upsert({
+            daily_report_id: dailyReportId,
+            brand_prompt_id: prompt.id,
+            prompt_text: promptText,
+            provider: provider,
+            provider_status: 'no_result',
+            provider_error_message: providerError,
+            brand_mentioned: false,
+            competitor_mentions: [],
+            sentiment_score: 0,
+            portrayal_type: null,
+            classifier_stage: null,
+            created_at: new Date().toISOString()
+          }, {
+            onConflict: 'daily_report_id,brand_prompt_id,provider'
+          })
+
+        if (upsertError) {
+          console.error(`❌ [${provider.toUpperCase()}] Error saving no-result for prompt ${i + 1}:`, upsertError)
+          errors++
+        }
+      }
+
+    } catch (error) {
+      console.error(`❌ [${provider.toUpperCase()}] Error for prompt ${i + 1}:`, error)
+      
+      // Save error record
+      const { error: upsertError } = await supabase
+        .from('prompt_results')
+        .upsert({
+          daily_report_id: dailyReportId,
+          brand_prompt_id: prompt.id,
+          prompt_text: promptText,
+          provider: provider,
+          provider_status: 'error',
+          provider_error_message: (error as Error).message,
+          brand_mentioned: false,
+          competitor_mentions: [],
+          sentiment_score: 0,
+          portrayal_type: null,
+          classifier_stage: null,
+          created_at: new Date().toISOString()
+        }, {
+          onConflict: 'daily_report_id,brand_prompt_id,provider'
+        })
+
+      if (upsertError) {
+        console.error(`❌ [${provider.toUpperCase()}] Error saving error record for prompt ${i + 1}:`, upsertError)
+      }
+      
+      errors++
+    }
+  }
+
+  console.log(`📊 [${provider.toUpperCase()}] Pass completed - Attempted: ${attempted}, OK: ${ok}, No Result: ${noResult}, Errors: ${errors}`)
+  
+  return { attempted, ok, noResult, errors }
+}
+
+// Update daily report provider status
+const updateProviderStatus = async (
+  supabase: any,
+  dailyReportId: string,
+  provider: 'perplexity' | 'google_ai_overview',
+  status: 'not_started' | 'running' | 'complete' | 'failed',
+  counts?: { attempted: number; ok: number; noResult: number; errors: number }
+) => {
+  const updateData: any = {}
+  
+  if (provider === 'perplexity') {
+    updateData.perplexity_status = status
+    if (counts) {
+      updateData.perplexity_attempted = counts.attempted
+      updateData.perplexity_ok = counts.ok
+      updateData.perplexity_no_result = counts.noResult
+    }
+  } else if (provider === 'google_ai_overview') {
+    updateData.google_ai_overview_status = status
+    if (counts) {
+      updateData.google_ai_overview_attempted = counts.attempted
+      updateData.google_ai_overview_ok = counts.ok
+      updateData.google_ai_overview_no_result = counts.noResult
+    }
+  }
+
+  const { error } = await supabase
+    .from('daily_reports')
+    .update(updateData)
+    .eq('id', dailyReportId)
+
+  if (error) {
+    console.error(`❌ [${provider.toUpperCase()}] Error updating status:`, error)
+  } else {
+    console.log(`✅ [${provider.toUpperCase()}] Status updated to: ${status}`)
+  }
+}
+
+// Check if daily report is complete (Perplexity-only rule)
+const isDailyReportComplete = async (supabase: any, dailyReportId: string): Promise<boolean> => {
+  const { data: report, error } = await supabase
+    .from('daily_reports')
+    .select('perplexity_status')
+    .eq('id', dailyReportId)
+    .single()
+
+  if (error || !report) {
+    console.error('❌ [COMPLETION CHECK] Error fetching report status:', error)
+    return false
+  }
+
+  // New rule: Report is complete when Perplexity is complete (Google AI Overview is secondary)
+  return report.perplexity_status === 'complete'
+}
+
+// Check if both phases have been attempted (for determining when to mark as complete)
+const haveBothPhasesBeenAttempted = async (supabase: any, dailyReportId: string): Promise<boolean> => {
+  const { data: report, error } = await supabase
+    .from('daily_reports')
+    .select('perplexity_status, google_ai_overview_status, report_date')
+    .eq('id', dailyReportId)
+    .single()
+
+  if (error || !report) {
+    console.error('❌ [PHASE CHECK] Error fetching report status:', error)
+    return false
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+  const reportDate = report.report_date
+  
+  // If it's a past date, Google AI Overview should be expired/skipped, so consider it "attempted"
+  if (reportDate < today) {
+    return report.perplexity_status === 'complete' && 
+           ['expired', 'skipped', 'complete', 'failed'].includes(report.google_ai_overview_status)
+  }
+  
+  // For today's date, both phases must be attempted
+  return report.perplexity_status === 'complete' && 
+         ['complete', 'failed', 'running'].includes(report.google_ai_overview_status)
+}
+
+// Update daily report completion status
+const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
+  const isPerplexityComplete = await isDailyReportComplete(supabase, dailyReportId)
+  const bothPhasesAttempted = await haveBothPhasesBeenAttempted(supabase, dailyReportId)
+  
+  // Only mark as complete if Perplexity is complete AND both phases have been attempted
+  const shouldMarkComplete = isPerplexityComplete && bothPhasesAttempted
+  
+  const { error } = await supabase
+    .from('daily_reports')
+    .update({
+      generated: shouldMarkComplete,
+      status: shouldMarkComplete ? 'completed' : 'incomplete',
+      completed_at: shouldMarkComplete ? new Date().toISOString() : null
+    })
+    .eq('id', dailyReportId)
+
+  if (error) {
+    console.error('❌ [COMPLETION] Error updating completion status:', error)
+  } else {
+    console.log(`✅ [COMPLETION] Report marked as ${shouldMarkComplete ? 'complete' : 'incomplete'} (Perplexity: ${isPerplexityComplete ? 'complete' : 'incomplete'}, Both phases attempted: ${bothPhasesAttempted})`)
+  }
+
+  return shouldMarkComplete
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { brandId, manual = false, fromCron = false } = await request.json()
     
-    console.log('🔄 [DAILY REPORT] Starting daily report generation for brand:', brandId, fromCron ? '(from cron)' : '(manual)')
+    console.log('🚀 [DAILY REPORT] Starting generation for brand:', brandId, 'Manual:', manual, 'From Cron:', fromCron)
     
     if (!brandId) {
       return NextResponse.json({
@@ -374,9 +574,47 @@ export async function POST(request: NextRequest) {
 
     console.log(`📊 [DAILY REPORT] Found ${activePrompts.length} active prompts for brand: ${brand.name}`)
 
-    // Create daily report record
+    // Check if report already exists for today
     const today = new Date().toISOString().split('T')[0]
-    const { data: dailyReport, error: reportError } = await supabase
+    let { data: existingReport, error: existingReportError } = await supabase
+      .from('daily_reports')
+      .select('*')
+      .eq('brand_id', brandId)
+      .eq('report_date', today)
+      .single()
+
+    let dailyReport: any
+
+    if (existingReportError && existingReportError.code !== 'PGRST116') {
+      // Error other than "not found"
+      console.error('❌ [DAILY REPORT] Error checking existing report:', existingReportError)
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to check existing reports'
+      }, { status: 500 })
+    }
+
+    if (existingReport) {
+      console.log(`ℹ️ [DAILY REPORT] Found existing report for today: ${existingReport.id}`)
+      
+      // Check completion status
+      if (existingReport.generated) {
+        console.log(`ℹ️ [DAILY REPORT] Report already complete for ${brand.name} today`)
+        return NextResponse.json({
+          success: true,
+          message: 'Report already complete for today',
+          reportId: existingReport.id,
+          generated: true
+        })
+      }
+
+      // Resume incomplete report
+      dailyReport = existingReport
+      console.log(`🔄 [DAILY REPORT] Resuming incomplete report: ${dailyReport.id}`)
+      console.log(`📊 [DAILY REPORT] Current status - Perplexity: ${dailyReport.perplexity_status}, Google AI Overview: ${dailyReport.google_ai_overview_status}`)
+    } else {
+      // Create new daily report record
+      const { data: newReport, error: reportError } = await supabase
       .from('daily_reports')
       .insert({
         brand_id: brandId,
@@ -384,7 +622,16 @@ export async function POST(request: NextRequest) {
         status: 'running',
         total_prompts: activePrompts.length,
         completed_prompts: 0,
-        total_mentions: 0
+          total_mentions: 0,
+          generated: false,
+          perplexity_status: 'not_started',
+          google_ai_overview_status: 'not_started',
+          perplexity_attempted: 0,
+          perplexity_ok: 0,
+          perplexity_no_result: 0,
+          google_ai_overview_attempted: 0,
+          google_ai_overview_ok: 0,
+          google_ai_overview_no_result: 0
       })
       .select()
       .single()
@@ -397,306 +644,150 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    console.log('✅ [DAILY REPORT] Created daily report:', dailyReport.id)
+      dailyReport = newReport
+      console.log('✅ [DAILY REPORT] Created new daily report:', dailyReport.id)
+    }
 
     // Get competitors from onboarding answers
     const competitors = (brand.onboarding_answers as any)?.competitors || []
     console.log('🏢 [DAILY REPORT] Competitors:', competitors)
 
-    // Process each prompt
-    let totalMentions = 0
-    let totalPosition = 0
-    let mentionCount = 0
-    const sentimentScores: { [key: string]: number } = {
-      positive: 0,
-      neutral: 0,
-      negative: 0
+    let perplexityCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
+    let googleCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
+
+    // PHASE 1: Process Perplexity prompts (if not already complete)
+    if (dailyReport.perplexity_status !== 'complete') {
+      console.log('🚀 [PERPLEXITY] Starting Perplexity pass')
+      
+      // Update status to running
+      await updateProviderStatus(supabase, dailyReport.id, 'perplexity', 'running')
+      
+      // Process all Perplexity prompts
+      perplexityCounts = await processProviderPrompts(
+        supabase,
+        dailyReport.id,
+        activePrompts,
+        brand.name,
+        competitors,
+        'perplexity'
+      )
+      
+      // Update Perplexity status
+      const perplexityStatus = perplexityCounts.errors > 0 ? 'failed' : 'complete'
+      await updateProviderStatus(supabase, dailyReport.id, 'perplexity', perplexityStatus, perplexityCounts)
+      
+      console.log(`✅ [PERPLEXITY] Pass completed - Status: ${perplexityStatus}`)
+    } else {
+      console.log('⏭️ [PERPLEXITY] Pass already complete, skipping')
     }
 
-    for (let i = 0; i < activePrompts.length; i++) {
-      const prompt = activePrompts[i]
-      const promptText = prompt.improved_prompt || prompt.raw_prompt
+    // PHASE 2: Process Google AI Overview prompts (today's date only)
+    const reportDate = dailyReport.report_date
+    
+    if (dailyReport.google_ai_overview_status !== 'complete' && 
+        dailyReport.google_ai_overview_status !== 'expired' && 
+        dailyReport.google_ai_overview_status !== 'skipped' &&
+        reportDate === today) {
+      console.log('🚀 [GOOGLE AI OVERVIEW] Starting Google AI Overview pass for today only')
       
-      console.log(`🤖 [DAILY REPORT] Processing prompt ${i + 1}/${activePrompts.length}: ${prompt.source_template_code}`)
+      // Update status to running
+      await updateProviderStatus(supabase, dailyReport.id, 'google_ai_overview', 'running')
+      
+      // Process all Google AI Overview prompts
+      googleCounts = await processProviderPrompts(
+        supabase,
+        dailyReport.id,
+        activePrompts,
+        brand.name,
+        competitors,
+        'google_ai_overview'
+      )
+      
+      // Update Google AI Overview status
+      const googleStatus = googleCounts.errors > 0 ? 'failed' : 'complete'
+      await updateProviderStatus(supabase, dailyReport.id, 'google_ai_overview', googleStatus, googleCounts)
+      
+      console.log(`✅ [GOOGLE AI OVERVIEW] Pass completed - Status: ${googleStatus}`)
+    } else if (reportDate < today) {
+      console.log(`⏭️ [GOOGLE AI OVERVIEW] Skipping past date (${reportDate}) - Google AI Overview status: ${dailyReport.google_ai_overview_status}`)
+      googleCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
+    } else {
+      console.log('⏭️ [GOOGLE AI OVERVIEW] Pass already complete or expired, skipping')
+      googleCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
+    }
 
+    // PHASE 3: Check completion and update final status (only after both phases attempted)
+    const isComplete = await updateCompletionStatus(supabase, dailyReport.id)
+
+    // PHASE 4: Run LLM classification for completed providers
+    if (isComplete) {
+      console.log('🤖 [CLASSIFICATION] Starting LLM classification for completed providers')
+      
       try {
-        // Call Perplexity API
-        const perplexityResponse = await callPerplexityAPI(promptText)
-        const responseContent = perplexityResponse.choices[0]?.message?.content || ''
-        
-        // Call Claude API (sequential after Perplexity)
-        let claudeResponse = null
-        let claudeResponseContent = ''
-        try {
-          console.log(`🤖 [CLAUDE] Processing same prompt ${i + 1}/${activePrompts.length} for Claude`)
-          claudeResponse = await callClaudeAPI(promptText)
-          claudeResponseContent = claudeResponse.content?.[0]?.text || ''
-          console.log(`✅ [CLAUDE] Success for prompt ${i + 1}, response length: ${claudeResponseContent.length}`)
-        } catch (claudeError) {
-          console.error(`❌ [CLAUDE] Error for prompt ${i + 1}:`, claudeError)
-          // Continue with Perplexity data even if Claude fails
-        }
-
-        // Call Google AI Overview API (sequential after Claude)
-        let googleAIOverviewResponse = null
-        let googleAIOverviewResponseContent = ''
-        let googleAIOverviewCitations: any[] = []
-        try {
-          console.log(`🤖 [GOOGLE AI OVERVIEW] Processing same prompt ${i + 1}/${activePrompts.length} for Google AI Overview`)
-          googleAIOverviewResponse = await callGoogleAIOverviewAPI(promptText)
-          // Combine snippets from search results as the response content
-          googleAIOverviewResponseContent = googleAIOverviewResponse.items?.map(item => item.snippet).join('\n\n') || ''
-          // Extract citations from search results
-          googleAIOverviewCitations = googleAIOverviewResponse.items?.map(item => ({
-            title: item.title,
-            link: item.link,
-            snippet: item.snippet,
-            domain: item.displayLink
-          })) || []
-          console.log(`✅ [GOOGLE AI OVERVIEW] Success for prompt ${i + 1}, items found: ${googleAIOverviewResponse.items?.length || 0}`)
-        } catch (googleAIOverviewError) {
-          console.error(`❌ [GOOGLE AI OVERVIEW] Error for prompt ${i + 1}:`, googleAIOverviewError)
-          // Continue with other data even if Google AI Overview fails
-        }
-        
-        // Analyze brand mentions (basic analysis only - no portrayal classification)
-        const analysis = analyzeBrandMention(responseContent, brand.name, competitors)
-        
-        if (analysis.mentioned) {
-          totalMentions += analysis.mentionCount // Use actual mention count!
-          totalPosition += analysis.position
-          mentionCount++
-        }
-
-        // Update sentiment scores
-        if (analysis.sentiment > 0.3) {
-          sentimentScores.positive++
-        } else if (analysis.sentiment < -0.3) {
-          sentimentScores.negative++
-        } else {
-          sentimentScores.neutral++
-        }
-
-        // Save prompt result (without portrayal classification - will be done by LLM)
-        const { data: promptResult, error: promptResultError } = await supabase
-          .from('prompt_results')
-          .insert({
-            daily_report_id: dailyReport.id,
-            brand_prompt_id: prompt.id,
-            prompt_text: promptText,
-            perplexity_response: responseContent,
-            response_time_ms: perplexityResponse.response_time_ms || 0,
-            claude_response: claudeResponseContent,
-            claude_response_time_ms: claudeResponse?.response_time_ms || null,
-            claude_citations: [], // Claude doesn't provide structured citations
-            brand_mentioned: analysis.mentioned,
-            brand_position: analysis.mentioned ? analysis.position : null,
-            competitor_mentions: analysis.competitorMentions,
-            citations: perplexityResponse.search_results || [],
-            sentiment_score: analysis.sentiment,
-            portrayal_type: null, // Will be set by LLM classification
-            classifier_stage: null, // Will be set by LLM classification
-            classifier_version: null,
-            snippet_hash: null,
-            portrayal_confidence: null,
-            claude_portrayal_type: null, // Will be set by LLM classification
-            claude_classifier_stage: null, // Will be set by LLM classification
-            claude_classifier_version: null,
-            claude_snippet_hash: null,
-            claude_portrayal_confidence: null,
-            google_ai_overview_response: googleAIOverviewResponseContent,
-            google_ai_overview_response_time_ms: googleAIOverviewResponse?.response_time_ms || null,
-            google_ai_overview_citations: googleAIOverviewCitations,
-            google_ai_overview_portrayal_type: null, // Will be set by LLM classification
-            google_ai_overview_classifier_stage: null, // Will be set by LLM classification
-            google_ai_overview_classifier_version: null,
-            google_ai_overview_snippet_hash: null,
-            google_ai_overview_portrayal_confidence: null
+        // Always run Perplexity classification if Perplexity is complete
+        if (perplexityCounts.attempted > 0) {
+          const perplexityClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-portrayal`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              brandId: brandId,
+              fromCron: fromCron,
+              dailyReportId: dailyReport.id
+            })
           })
-          .select()
-          .single()
 
-        if (promptResultError) {
-          console.error('❌ [DAILY REPORT] Error saving prompt result:', promptResultError)
-        }
-
-        // Save individual citations from search_results
-        if (promptResult && perplexityResponse.search_results && perplexityResponse.search_results.length > 0) {
-          const citationInserts = perplexityResponse.search_results.map((result: any) => {
-            const url = result.url || result.link || ''
-            const title = result.title || ''
-            const domain = url ? new URL(url).hostname : ''
-            
-            // Determine content type based on domain
-            let contentType = 'other'
-            if (domain.includes('blog') || domain.includes('medium') || domain.includes('substack')) {
-              contentType = 'blog'
-            } else if (domain.includes('github') || domain.includes('docs')) {
-              contentType = 'documentation'  
-            } else if (domain.includes('news') || domain.includes('reuters') || domain.includes('cnn')) {
-              contentType = 'news'
-            } else if (url.includes('product') || url.includes('pricing')) {
-              contentType = 'product_page'
-            }
-            
-            return {
-              prompt_result_id: promptResult.id,
-              url,
-              title,
-              domain,
-              content_type: contentType,
-              relevance_score: 0.8 // Higher default score
-            }
-          })
-          
-          const { error: citationsError } = await supabase
-            .from('citation_details')
-            .insert(citationInserts)
-            
-          if (citationsError) {
-            console.error('❌ [DAILY REPORT] Error saving citations:', citationsError)
+          if (perplexityClassificationResponse.ok) {
+            const perplexityClassificationResult = await perplexityClassificationResponse.json()
+            console.log('✅ [PERPLEXITY CLASSIFICATION] Completed:', perplexityClassificationResult)
           } else {
-            console.log(`✅ [DAILY REPORT] Saved ${citationInserts.length} citations for prompt ${prompt.source_template_code}`)
+            console.error('❌ [PERPLEXITY CLASSIFICATION] Failed:', await perplexityClassificationResponse.text())
           }
         }
 
-        console.log(`✅ [DAILY REPORT] Processed prompt ${prompt.source_template_code}: mentioned=${analysis.mentioned}, sentiment=${analysis.sentiment.toFixed(2)}`)
+        // Only run Google AI Overview classification if Google AI Overview is complete
+        if (googleCounts.attempted > 0 && googleCounts.errors === 0) {
+          const googleClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-google-ai-overview-portrayal`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              brandId: brandId,
+              fromCron: fromCron,
+              dailyReportId: dailyReport.id
+            })
+          })
 
-        // Add delay to avoid rate limiting
-        if (i < activePrompts.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000))
+          if (googleClassificationResponse.ok) {
+            const googleClassificationResult = await googleClassificationResponse.json()
+            console.log('✅ [GOOGLE AI OVERVIEW CLASSIFICATION] Completed:', googleClassificationResult)
+          } else {
+            console.error('❌ [GOOGLE AI OVERVIEW CLASSIFICATION] Failed:', await googleClassificationResponse.text())
+          }
         }
 
-      } catch (error) {
-        console.error(`❌ [DAILY REPORT] Error processing prompt ${prompt.source_template_code}:`, error)
-        
-        // Save error result
-        await supabase
-          .from('prompt_results')
-          .insert({
-            daily_report_id: dailyReport.id,
-            brand_prompt_id: prompt.id,
-            prompt_text: promptText,
-            error_message: error instanceof Error ? error.message : 'Unknown error'
-          })
+      } catch (classificationError) {
+        console.error('❌ [CLASSIFICATION] Error during LLM classification:', classificationError)
+        // Don't fail the entire report for classification errors
       }
-
-      // Update progress
-      await supabase
-        .from('daily_reports')
-        .update({
-          completed_prompts: i + 1
-        })
-        .eq('id', dailyReport.id)
     }
 
-    // Calculate final metrics
-    const averagePosition = mentionCount > 0 ? totalPosition / mentionCount : null
-
-    // Complete the report
-    const { error: updateError } = await supabase
-      .from('daily_reports')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        total_mentions: totalMentions,
-        average_position: averagePosition,
-        sentiment_scores: sentimentScores
-      })
-      .eq('id', dailyReport.id)
-
-    if (updateError) {
-      console.error('❌ [DAILY REPORT] Error updating final report:', updateError)
-    }
-
-    console.log(`🎉 [DAILY REPORT] Completed! Total mentions: ${totalMentions}, Average position: ${averagePosition}`)
-
-    // Run LLM portrayal classification on the newly generated results
-    console.log('🤖 [DAILY REPORT] Starting LLM portrayal classification...')
-    try {
-      // Run Perplexity classification
-      const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-portrayal`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          brandId: brandId,
-          fromCron: fromCron,
-          dailyReportId: dailyReport.id
-        })
-      })
-
-      if (classificationResponse.ok) {
-        const classificationData = await classificationResponse.json()
-        console.log('✅ [DAILY REPORT] Perplexity LLM classification completed:', {
-          processed: classificationData.processed,
-          skipped: classificationData.skipped,
-          errors: classificationData.errors?.length || 0
-        })
-      } else {
-        console.warn('⚠️ [DAILY REPORT] Perplexity LLM classification failed, but report generation succeeded')
-      }
-
-      // Run Claude classification
-      const claudeClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-claude-portrayal`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          brandId: brandId,
-          fromCron: fromCron,
-          dailyReportId: dailyReport.id
-        })
-      })
-
-      if (claudeClassificationResponse.ok) {
-        const claudeClassificationData = await claudeClassificationResponse.json()
-        console.log('✅ [DAILY REPORT] Claude LLM classification completed:', {
-          processed: claudeClassificationData.processed,
-          skipped: claudeClassificationData.skipped,
-          errors: claudeClassificationData.errors?.length || 0
-        })
-      } else {
-        console.warn('⚠️ [DAILY REPORT] Claude LLM classification failed, but report generation succeeded')
-      }
-
-      // Run Google AI Overview classification
-      const googleAIOverviewClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-google-ai-overview-portrayal`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          brandId: brandId,
-          fromCron: fromCron,
-          dailyReportId: dailyReport.id
-        })
-      })
-
-      if (googleAIOverviewClassificationResponse.ok) {
-        const googleAIOverviewClassificationData = await googleAIOverviewClassificationResponse.json()
-        console.log('✅ [DAILY REPORT] Google AI Overview LLM classification completed:', {
-          processed: googleAIOverviewClassificationData.processed,
-          skipped: googleAIOverviewClassificationData.skipped,
-          errors: googleAIOverviewClassificationData.errors?.length || 0
-        })
-      } else {
-        console.warn('⚠️ [DAILY REPORT] Google AI Overview LLM classification failed, but report generation succeeded')
-      }
-    } catch (classificationError) {
-      console.warn('⚠️ [DAILY REPORT] LLM classification error (non-blocking):', classificationError)
-      // Don't fail the entire report generation if classification fails
-    }
+    // Final summary
+    console.log(`📊 [DAILY REPORT] Final Summary for ${brand.name}:`)
+    console.log(`  Perplexity: ${perplexityCounts.attempted} attempted, ${perplexityCounts.ok} ok, ${perplexityCounts.noResult} no result, ${perplexityCounts.errors} errors`)
+    console.log(`  Google AI Overview: ${googleCounts.attempted} attempted, ${googleCounts.ok} ok, ${googleCounts.noResult} no result, ${googleCounts.errors} errors`)
+    console.log(`  Report Status: ${isComplete ? 'COMPLETE' : 'INCOMPLETE'}`)
 
     return NextResponse.json({
       success: true,
+      message: 'Daily report generation completed',
       reportId: dailyReport.id,
-      totalPrompts: activePrompts.length,
-      totalMentions,
-      averagePosition,
-      sentimentScores
+      generated: isComplete,
+      perplexity: perplexityCounts,
+      googleAIOverview: googleCounts,
+      isComplete
     })
 
   } catch (error) {
