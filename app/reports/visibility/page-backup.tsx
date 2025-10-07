@@ -1,0 +1,746 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Button } from "@/components/ui/button"
+import { PieChart, Pie, Cell, ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LineChart, Line, Area, AreaChart } from "recharts"
+import { Info, Play, Loader2, Sparkles } from "lucide-react"
+import { useBrandsStore } from "@/store/brands"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/hooks/use-toast"
+import { useDateFilter } from "@/contexts/DateFilterContext"
+import { useModelFilter } from "@/contexts/ModelFilterContext"
+
+// Helper function to format portrayal types and get descriptions
+const getPortrayalTypeInfo = (type: string) => {
+  const typeMap: Record<string, { label: string; description: string }> = {
+    'RECOMMENDATION': { 
+      label: 'Recommendation', 
+      description: 'steers the reader to choose/use the brand.' 
+    },
+    'COMPARISON': { 
+      label: 'Comparison', 
+      description: 'contrasts the brand with alternatives.' 
+    },
+    'PROBLEM_SOLVER': { 
+      label: 'Problem Solver', 
+      description: 'frames the brand as solving a specific pain/problem.' 
+    },
+    'FEATURE_BENEFIT': { 
+      label: 'Feature Benefit', 
+      description: 'highlights capabilities/benefits/differentiators.' 
+    },
+    'NEUTRAL_DESCRIPTION': { 
+      label: 'Neutral Description', 
+      description: 'simple definition/intro.' 
+    },
+    'AUTHORITY_REFERENCE': { 
+      label: 'Authority Reference', 
+      description: 'cites brand as example/reference/benchmark/best practice.' 
+    },
+    'USE_CASE': { 
+      label: 'Use Case', 
+      description: 'scenario where the brand fits/is typically used.' 
+    },
+    'OTHER': { 
+      label: 'Other', 
+      description: 'none fit confidently.' 
+    }
+  }
+  
+  return typeMap[type] || { label: type, description: 'Unknown portrayal type.' }
+}
+
+export default function ReportsVisibility() {
+  const { brands, activeBrandId } = useBrandsStore()
+  const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
+  const { getModelFilterForAPI } = useModelFilter()
+  const activeBrand = brands.find(brand => brand.id === activeBrandId)
+  const isDemoMode = activeBrand?.isDemo || false
+  const { toast } = useToast()
+  
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+  const [reportData, setReportData] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  
+  // Check if user is test user (for manual trigger button)
+  const [isTestUser, setIsTestUser] = useState(false)
+  
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true)
+      
+      try {
+        // Check if current user is test user
+        const profileResponse = await fetch('/api/user/profile')
+        const profileData = await profileResponse.json()
+        setIsTestUser(profileData.email === 'kk1995current@gmail.com')
+        
+        // Load visibility data if not demo mode
+        if (!isDemoMode && activeBrandId) {
+          const { from, to } = getDateRangeForAPI()
+          const selectedModels = getModelFilterForAPI()
+          let url = `/api/reports/visibility?brandId=${activeBrandId}`
+          if (from && to) {
+            url += `&from=${from}&to=${to}`
+          }
+          if (selectedModels.length < 3) { // Only add models param if not all models are selected
+            url += `&models=${selectedModels.join(',')}`
+          }
+          const visibilityResponse = await fetch(url)
+          const visibilityData = await visibilityResponse.json()
+          
+          if (visibilityData.success) {
+            setReportData(visibilityData.data)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    loadData()
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, getModelFilterForAPI])
+  
+  // Manual report generation
+  const generateManualReport = async () => {
+    if (!activeBrandId || isDemoMode) return
+    
+    setIsGeneratingReport(true)
+    
+    try {
+      toast({
+        title: "🤖 Generating Report",
+        description: "Running Perplexity analysis on all active prompts...",
+        duration: 5000,
+      })
+      
+      const response = await fetch('/api/reports/generate-daily', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brandId: activeBrandId,
+          manual: true
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        toast({
+          title: "✅ Report Generated",
+          description: `Processed ${result.totalPrompts} prompts, found ${result.totalMentions} brand mentions`,
+          duration: 8000,
+        })
+        
+        // Reload data instead of full page refresh
+        const selectedModels = getModelFilterForAPI()
+        let reloadUrl = `/api/reports/visibility?brandId=${activeBrandId}`
+        if (selectedModels.length < 3) { // Only add models param if not all models are selected
+          reloadUrl += `&models=${selectedModels.join(',')}`
+        }
+        const visibilityResponse = await fetch(reloadUrl)
+        const visibilityData = await visibilityResponse.json()
+        
+        if (visibilityData.success) {
+          setReportData(visibilityData.data)
+        }
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error) {
+      console.error('Error generating report:', error)
+      toast({
+        title: "❌ Report Failed",
+        description: error instanceof Error ? error.message : "Failed to generate report",
+        duration: 8000,
+      })
+    } finally {
+      setIsGeneratingReport(false)
+    }
+  }
+
+  // Get model filter state
+  const selectedModels = getModelFilterForAPI()
+  const isFilteringModels = selectedModels.length < 3
+  
+  // For filtered models, only show real data or empty states
+  const sentimentData = isDemoMode && !isFilteringModels ? [
+    { name: 'Positive', value: 67, color: '#10b981' },
+    { name: 'Neutral', value: 28, color: '#6b7280' },
+    { name: 'Negative', value: 5, color: '#ef4444' }
+  ] : (reportData?.sentiment || [])
+  
+  // Check if we have real sentiment data
+  const hasRealSentimentData = reportData?.sentiment && reportData.sentiment.some((s: any) => s.value > 0)
+
+  const mentionsData = isDemoMode && !isFilteringModels ? [
+    { brand: activeBrand?.name || 'Your Brand', mentions: 2847, x: 1, color: '#3b82f6' },
+    { brand: 'Microsoft', mentions: 2156, x: 2, color: '#ef4444' },
+    { brand: 'Competitor B', mentions: 1923, x: 3, color: '#10b981' },
+    { brand: 'Competitor C', mentions: 1687, x: 4, color: '#f59e0b' },
+    { brand: 'Competitor D', mentions: 1456, x: 5, color: '#8b5cf6' }
+  ] : (reportData?.mentionsVsCompetitors || [])
+  
+  // KPI values - only show real data or demo data when not filtering
+  const totalMentions = isDemoMode && !isFilteringModels ? 2847 : (reportData?.totalMentions || 0)
+  const averagePosition = isDemoMode && !isFilteringModels ? 156 : (reportData?.averagePosition || 0)
+  
+  // Mentions over time data - only show real data or demo data when not filtering
+  const mentionsOverTimeData = isDemoMode && !isFilteringModels ? [
+    { date: '2024-12-15', mentions: 45, averagePosition: 120 },
+    { date: '2024-12-16', mentions: 52, averagePosition: 98 },
+    { date: '2024-12-17', mentions: 38, averagePosition: 156 },
+    { date: '2024-12-18', mentions: 67, averagePosition: 89 },
+    { date: '2024-12-19', mentions: 43, averagePosition: 134 },
+    { date: '2024-12-20', mentions: 58, averagePosition: 112 }
+  ] : (reportData?.mentionsOverTime || [])
+
+  // Dynamic dot scaling to keep stacks in 4-12 range
+  const maxMentions = mentionsData.length > 0 ? Math.max(...mentionsData.map(item => item.mentions)) : 0
+  const targetMaxDots = 10 // Sweet spot for visibility
+  const dotUnit = maxMentions > targetMaxDots ? Math.ceil(maxMentions / targetMaxDots) : 1
+  
+  // Create dots for each brand with dynamic scaling
+  const dotData = mentionsData.flatMap(item => {
+    const dots = []
+    const visibleDots = Math.max(1, Math.floor(item.mentions / dotUnit)) // Ensure at least 1 dot
+    
+    for (let i = 0; i < visibleDots; i++) {
+      dots.push({
+        brand: item.brand,
+        x: item.x,
+        y: i + 1,
+        color: item.color,
+        mentions: item.mentions, // Keep original count for tooltip
+        dotUnit: dotUnit // Include dot unit for tooltip
+      })
+    }
+    return dots
+  })
+
+  // Data for portrayal type table - BRAND ONLY (no competitors)
+  const portrayalData = isDemoMode && !isFilteringModels ? [
+    {
+      brand: activeBrand?.name || 'Your Brand',
+      type: 'FEATURE_BENEFIT',
+      count: 28,
+      percentage: 35,
+      example: '"Your Brand offers comprehensive solutions for..."'
+    },
+    {
+      brand: activeBrand?.name || 'Your Brand',
+      type: 'NEUTRAL_DESCRIPTION',
+      count: 25,
+      percentage: 31,
+      example: '"Your Brand is a platform that provides..."'
+    },
+    {
+      brand: activeBrand?.name || 'Your Brand',
+      type: 'COMPARISON',
+      count: 18,
+      percentage: 22,
+      example: '"Options include Your Brand, which specializes in..."'
+    },
+    {
+      brand: activeBrand?.name || 'Your Brand',
+      type: 'RECOMMENDATION',
+      count: 9,
+      percentage: 12,
+      example: '"I recommend Your Brand for its advanced features..."'
+    }
+  ] : (reportData?.portrayalTypes || [])
+
+  return (
+    <TooltipProvider>
+      <div className="p-8">
+        {/* Breadcrumbs & Actions */}
+        <div className="flex items-center justify-between mb-6">
+          <nav className="text-sm text-slate-500">
+            <span>Reports</span>
+            <span className="mx-2">/</span>
+            <span className="text-slate-900 font-medium">Visibility</span>
+          </nav>
+          
+
+          {/* Manual Report Generation Button (Test User Only) */}
+          {isTestUser && !isDemoMode && (
+            <Button 
+              onClick={generateManualReport}
+              disabled={isGeneratingReport}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isGeneratingReport ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 mr-2" />
+                  Generate Report
+                </>
+              )}
+            </Button>
+          )}
+          
+          {/* Fallback button for testing (visible when in demo mode) */}
+          {isTestUser && isDemoMode && (
+            <Button 
+              variant="outline"
+              onClick={() => alert('Please select a real brand (not demo) to generate reports')}
+              className="text-orange-600 border-orange-300"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Generate Report (Demo Mode)
+            </Button>
+          )}
+        </div>
+
+        {/* Demo Brand Alert */}
+        {isDemoMode && (
+          <Alert className="mb-6 border-amber-200 bg-amber-50">
+            <Sparkles className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              <strong>Demo Report:</strong> Viewing visibility data for {activeBrand?.name}. 
+              Switch to your brand to see real visibility metrics.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+            <span className="ml-2 text-slate-600">Loading visibility...</span>
+          </div>
+        )}
+
+        {/* Content */}
+        {!isLoading && (
+        <>
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 gap-6 mb-8">
+          {/* Brand Mentions */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Brand Mentions</CardTitle>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-4 w-4 text-slate-400" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Total number of times your brand was mentioned by AI models</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalMentions.toLocaleString()}</div>
+              <p className="text-xs text-slate-500">total mentions</p>
+            </CardContent>
+          </Card>
+
+          {/* Average Position */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Average Position vs Competitors</CardTitle>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-4 w-4 text-slate-400" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Average rank position when your brand appears with competitors (1=first, 2=second, etc.)</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {averagePosition ? averagePosition.toFixed(1) : 'N/A'}
+              </div>
+              <p className="text-xs text-slate-500">
+                {averagePosition ? 'average rank position' : 'insufficient multi-entity data'}
+              </p>
+              
+              {/* Debug Block for Position Validation */}
+              {reportData && (
+                <details className="mt-4 text-xs">
+                  <summary className="cursor-pointer text-slate-600 hover:text-slate-800">Debug: Position Analysis</summary>
+                  <div className="mt-2 p-2 bg-slate-50 rounded text-slate-700">
+                    <div>Responses analyzed: {reportData.debugInfo?.totalResponsesAnalyzed || 0}</div>
+                    <div>Brand ranked 1st: {reportData.debugInfo?.brandRankCounts?.[1] || 0} times</div>
+                    <div>Brand ranked 2nd: {reportData.debugInfo?.brandRankCounts?.[2] || 0} times</div>
+                    <div>Brand ranked 3rd+: {reportData.debugInfo?.brandRankCounts?.[3] || 0} times</div>
+                    <div className="mt-2 border-t pt-2">
+                      <div className="font-semibold">Competitors ranked 1st:</div>
+                      {reportData.debugInfo?.competitorFirstCounts ? 
+                        Object.entries(reportData.debugInfo.competitorFirstCounts).map(([comp, count]) => (
+                          <div key={comp}>{comp}: {count} times</div>
+                        )) : 
+                        <div>None</div>
+                      }
+                    </div>
+                    <div className="mt-2 border-t pt-2">
+                      Computed average: {averagePosition?.toFixed(3) || 'N/A'}
+                    </div>
+                  </div>
+                </details>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Time Series Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Chart 1: Brand Mentions Over Time */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg font-medium">Brand Mentions Over Time</CardTitle>
+              <p className="text-xs text-slate-500">Daily brand mentions across all active prompts</p>
+            </CardHeader>
+            <CardContent>
+              {mentionsOverTimeData.length > 0 ? (
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={mentionsOverTimeData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="#64748b"
+                        fontSize={12}
+                        tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis 
+                        stroke="#3b82f6" 
+                        fontSize={12} 
+                        label={{ value: 'Mentions', angle: -90, position: 'insideLeft' }}
+                      />
+                      <RechartsTooltip 
+                        labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                        formatter={(value: any) => [`${value} mentions`, 'Brand Mentions']}
+                        contentStyle={{
+                          backgroundColor: 'white',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      />
+                      <Line 
+                        type="linear" 
+                        dataKey="mentions" 
+                        stroke="#3b82f6" 
+                        strokeWidth={2}
+                        dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-80 flex items-center justify-center">
+                  <div className="text-center text-slate-500">
+                    <p className="text-sm">No mentions data available</p>
+                    <p className="text-xs mt-1">for selected models in the selected date range</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Chart 2: Brand vs Competitor Positioning Over Time */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg font-medium">Brand vs Competitor Positioning</CardTitle>
+              <p className="text-xs text-slate-500">Average rank position when appearing with competitors</p>
+            </CardHeader>
+            <CardContent>
+              {mentionsOverTimeData.length > 0 ? (
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={mentionsOverTimeData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="#64748b"
+                        fontSize={12}
+                        tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis 
+                        stroke="#ef4444" 
+                        fontSize={12}
+                        label={{ value: 'Avg Position', angle: -90, position: 'insideLeft' }}
+                      />
+                      <RechartsTooltip 
+                        labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                        formatter={(value: any) => {
+                          if (value === null || value === undefined) {
+                            return ['N/A', 'Average Rank']
+                          }
+                          return [`${value.toFixed(1)}`, 'Average Rank']
+                        }}
+                        contentStyle={{
+                          backgroundColor: 'white',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      />
+                      <Line 
+                        type="linear" 
+                        dataKey="averagePosition" 
+                        stroke="#ef4444" 
+                        strokeWidth={2}
+                        dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-80 flex items-center justify-center">
+                  <div className="text-center text-slate-500">
+                    <p className="text-sm">No positioning data available</p>
+                    <p className="text-xs mt-1">for selected models in the selected date range</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-2 gap-6 mb-8">
+          {/* Mentions vs Competitors Dot Plot */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Brand vs Competitors: Response Counts</CardTitle>
+              <p className="text-xs text-slate-500">Number of responses where each entity was mentioned</p>
+            </CardHeader>
+            <CardContent>
+              {dotData.length > 0 ? (
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart data={dotData} margin={{ top: 20, right: 20, bottom: 60, left: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis 
+                      type="number" 
+                      dataKey="x" 
+                      domain={[0.5, 5.5]}
+                      tick={false}
+                      axisLine={true}
+                      axisLineColor="#e2e8f0"
+                    />
+                    <YAxis 
+                      type="number" 
+                      dataKey="y"
+                      tick={true}
+                      axisLine={true}
+                      axisLineColor="#e2e8f0"
+                      tickLine={true}
+                      tickLineColor="#e2e8f0"
+                      domain={[0, Math.ceil((Math.max(...dotData.map(d => d.y)) + 2) * 1.1)]}
+                      tickFormatter={(value) => (value * dotUnit).toLocaleString()}
+                      label={{ 
+                        value: 'Mentions', 
+                        angle: -90, 
+                        position: 'insideLeft', 
+                        style: { textAnchor: 'middle', fill: '#64748b', marginLeft: '10px' } 
+                      }}
+                    />
+                    <RechartsTooltip 
+                      content={({ active, payload, coordinate }) => {
+                        if (!active || !payload || payload.length === 0) return null
+                        
+                        // Find the specific dot being hovered by checking coordinates
+                        // Only show data for the exact dot, not all dots at the same level
+                        const hoveredData = payload.find(p => p.payload) || payload[0]
+                        const data = hoveredData.payload
+                        
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-sm">
+                            <div className="font-medium text-slate-900">
+                              {data.brand}
+                            </div>
+                            <div className="text-slate-600">
+                              {data.mentions.toLocaleString()} mentions
+                            </div>
+                          </div>
+                        )
+                      }}
+                      cursor={false} // Prevent cross-brand highlighting
+                      shared={false} // Disable shared tooltip mode
+                      allowEscapeViewBox={{ x: false, y: false }}
+                    />
+                    {mentionsData.map((brand, index) => (
+                      <Scatter
+                        key={`scatter-${brand.brand}`}
+                        name={brand.brand} // Unique name per brand
+                        data={dotData.filter(dot => dot.brand === brand.brand)}
+                        dataKey="y"
+                        fill="white"
+                        stroke={brand.color}
+                        strokeWidth={2}
+                        r={6}
+                        isAnimationActive={false} // Disable animation to prevent tooltip conflicts
+                      />
+                    ))}
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Legend for dot scaling */}
+              <div className="mt-2 text-center">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-50 rounded text-xs text-slate-600">
+                  <div className="w-2 h-2 rounded-full bg-white border border-slate-400"></div>
+                  <span>Each dot = {dotUnit.toLocaleString()} mentions</span>
+                  </div>
+              </div>
+              
+              {/* X-axis labels with color swatches - single row */}
+              <div className="mt-4 flex justify-between px-4">
+                {mentionsData.map((item, index) => (
+                  <div key={index} className="text-xs text-slate-600 text-center flex flex-col items-center" style={{ width: `${100/mentionsData.length}%` }}>
+                    <div className="flex items-center gap-1 mb-1">
+                    <div 
+                        className="w-2 h-2 rounded-full border" 
+                        style={{ backgroundColor: 'white', borderColor: item.color }}
+                    />
+                      <div className="font-medium">{item.brand}</div>
+                    </div>
+                    <div className="text-slate-500">{item.mentions.toLocaleString()} mentions</div>
+                  </div>
+                ))}
+              </div>
+                </div>
+              ) : (
+                <div className="h-80 flex items-center justify-center">
+                  <div className="text-center text-slate-500">
+                    <p className="text-sm">No mentions data available</p>
+                    <p className="text-xs mt-1">for selected models in the selected date range</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Sentiment Pie Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Sentiment Analysis</CardTitle>
+              <p className="text-xs text-slate-500">Sentiment breakdown of brand mentions</p>
+            </CardHeader>
+            <CardContent>
+              {(hasRealSentimentData || (isDemoMode && !isFilteringModels)) && sentimentData.some((s: any) => s.value > 0) ? (
+                <>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                          data={sentimentData.filter((s: any) => s.value > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                          {sentimentData.filter((s: any) => s.value > 0).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip 
+                      formatter={(value) => [`${value}%`, 'Percentage']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 space-y-2">
+                    {sentimentData.filter((s: any) => s.value > 0).map((item, index) => (
+                  <div key={index} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span>{item.name}</span>
+                    </div>
+                    <span className="font-medium">{item.value}%</span>
+                  </div>
+                ))}
+              </div>
+                </>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-slate-500">
+                  <div className="text-center">
+                    <div className="text-sm mb-2">No sentiment data available</div>
+                    <div className="text-xs">Generate reports to see sentiment analysis</div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Portrayal Type */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              Brand Portrayal Analysis (How your brand is positioned in AI responses)
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-4 w-4 text-slate-400" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>This table shows how your brand was mentioned across AI responses: whether as a recommended choice, feature-focused description, listing option, or other portrayal types.</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <p className="text-xs text-slate-500 mt-2">
+              Analysis of how your brand appears in AI responses - showing the different ways it's positioned and described.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Portrayal Type</TableHead>
+                  <TableHead>Count</TableHead>
+                  <TableHead>Percentage</TableHead>
+                  <TableHead>Example Snippet</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {portrayalData.map((row, index) => {
+                  const typeInfo = getPortrayalTypeInfo(row.type || '')
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <span className="font-medium cursor-help">{typeInfo.label}</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{typeInfo.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>{row.count || 0}</TableCell>
+                      <TableCell>{row.percentage || 0}%</TableCell>
+                      <TableCell className="text-xs text-slate-600 italic max-w-xs">
+                        {row.example || 'No example available'}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        </>
+        )}
+      </div>
+    </TooltipProvider>
+  )
+}
