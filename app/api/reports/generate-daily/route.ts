@@ -163,6 +163,74 @@ const callPerplexityAPI = async (prompt: string): Promise<PerplexityResponse> =>
   return { ...data, response_time_ms: responseTime }
 }
 
+// Types for Claude API
+interface ClaudeResponse {
+  id: string
+  type: string
+  role: string
+  model: string
+  content: Array<{
+    type: string
+    text: string
+  }>
+  stop_reason: string
+  usage: {
+    input_tokens: number
+    output_tokens: number
+    service_tier: string
+  }
+  response_time_ms?: number
+}
+
+// Call Claude API
+const callClaudeAPI = async (prompt: string): Promise<ClaudeResponse> => {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY not configured')
+  }
+
+  const model = 'claude-sonnet-4-20250514'
+  console.log('🤖 [CLAUDE] Calling API with model:', model, 'prompt:', prompt.substring(0, 100) + '...')
+  
+  const startTime = Date.now()
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 1000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    })
+  })
+
+  const responseTime = Date.now() - startTime
+  console.log('🤖 [CLAUDE] HTTP Status:', response.status, 'Response time:', responseTime, 'ms')
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('❌ [CLAUDE] API Error - Status:', response.status, 'Payload:', errorText)
+    throw new Error(`Claude API error: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  
+  // Log success details
+  const hasContent = data.content && Array.isArray(data.content) && data.content.length > 0
+  const contentLength = hasContent ? data.content[0]?.text?.length || 0 : 0
+  console.log('✅ [CLAUDE] Success - Content exists:', hasContent, 'Content length:', contentLength)
+  
+  return { ...data, response_time_ms: responseTime }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { brandId, manual = false, fromCron = false } = await request.json()
@@ -298,6 +366,19 @@ export async function POST(request: NextRequest) {
         const perplexityResponse = await callPerplexityAPI(promptText)
         const responseContent = perplexityResponse.choices[0]?.message?.content || ''
         
+        // Call Claude API (sequential after Perplexity)
+        let claudeResponse = null
+        let claudeResponseContent = ''
+        try {
+          console.log(`🤖 [CLAUDE] Processing same prompt ${i + 1}/${activePrompts.length} for Claude`)
+          claudeResponse = await callClaudeAPI(promptText)
+          claudeResponseContent = claudeResponse.content?.[0]?.text || ''
+          console.log(`✅ [CLAUDE] Success for prompt ${i + 1}, response length: ${claudeResponseContent.length}`)
+        } catch (claudeError) {
+          console.error(`❌ [CLAUDE] Error for prompt ${i + 1}:`, claudeError)
+          // Continue with Perplexity data even if Claude fails
+        }
+        
         // Analyze brand mentions (basic analysis only - no portrayal classification)
         const analysis = analyzeBrandMention(responseContent, brand.name, competitors)
         
@@ -325,6 +406,9 @@ export async function POST(request: NextRequest) {
             prompt_text: promptText,
             perplexity_response: responseContent,
             response_time_ms: perplexityResponse.response_time_ms || 0,
+            claude_response: claudeResponseContent,
+            claude_response_time_ms: claudeResponse?.response_time_ms || null,
+            claude_citations: [], // Claude doesn't provide structured citations
             brand_mentioned: analysis.mentioned,
             brand_position: analysis.mentioned ? analysis.position : null,
             competitor_mentions: analysis.competitorMentions,
@@ -334,7 +418,12 @@ export async function POST(request: NextRequest) {
             classifier_stage: null, // Will be set by LLM classification
             classifier_version: null,
             snippet_hash: null,
-            portrayal_confidence: null
+            portrayal_confidence: null,
+            claude_portrayal_type: null, // Will be set by LLM classification
+            claude_classifier_stage: null, // Will be set by LLM classification
+            claude_classifier_version: null,
+            claude_snippet_hash: null,
+            claude_portrayal_confidence: null
           })
           .select()
           .single()
@@ -437,6 +526,7 @@ export async function POST(request: NextRequest) {
     // Run LLM portrayal classification on the newly generated results
     console.log('🤖 [DAILY REPORT] Starting LLM portrayal classification...')
     try {
+      // Run Perplexity classification
       const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-portrayal`, {
         method: 'POST',
         headers: {
@@ -451,13 +541,37 @@ export async function POST(request: NextRequest) {
 
       if (classificationResponse.ok) {
         const classificationData = await classificationResponse.json()
-        console.log('✅ [DAILY REPORT] LLM classification completed:', {
+        console.log('✅ [DAILY REPORT] Perplexity LLM classification completed:', {
           processed: classificationData.processed,
           skipped: classificationData.skipped,
           errors: classificationData.errors?.length || 0
         })
       } else {
-        console.warn('⚠️ [DAILY REPORT] LLM classification failed, but report generation succeeded')
+        console.warn('⚠️ [DAILY REPORT] Perplexity LLM classification failed, but report generation succeeded')
+      }
+
+      // Run Claude classification
+      const claudeClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-claude-portrayal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brandId: brandId,
+          fromCron: fromCron,
+          dailyReportId: dailyReport.id
+        })
+      })
+
+      if (claudeClassificationResponse.ok) {
+        const claudeClassificationData = await claudeClassificationResponse.json()
+        console.log('✅ [DAILY REPORT] Claude LLM classification completed:', {
+          processed: claudeClassificationData.processed,
+          skipped: claudeClassificationData.skipped,
+          errors: claudeClassificationData.errors?.length || 0
+        })
+      } else {
+        console.warn('⚠️ [DAILY REPORT] Claude LLM classification failed, but report generation succeeded')
       }
     } catch (classificationError) {
       console.warn('⚠️ [DAILY REPORT] LLM classification error (non-blocking):', classificationError)
