@@ -231,6 +231,64 @@ const callClaudeAPI = async (prompt: string): Promise<ClaudeResponse> => {
   return { ...data, response_time_ms: responseTime }
 }
 
+// Google AI Overview API Response interface
+interface GoogleAIOverviewResponse {
+  items?: Array<{
+    title: string
+    link: string
+    snippet: string
+    displayLink: string
+  }>
+  searchInformation?: {
+    searchTime: number
+    totalResults: string
+  }
+  response_time_ms?: number
+}
+
+// Call Google AI Overview API
+const callGoogleAIOverviewAPI = async (prompt: string): Promise<GoogleAIOverviewResponse> => {
+  const apiKey = process.env.GOOGLE_API_KEY
+  const cseId = process.env.GOOGLE_CSE_ID
+  
+  if (!apiKey) {
+    throw new Error('GOOGLE_API_KEY not configured')
+  }
+  if (!cseId) {
+    throw new Error('GOOGLE_CSE_ID not configured')
+  }
+
+  console.log('🤖 [GOOGLE AI OVERVIEW] Calling API with prompt:', prompt.substring(0, 100) + '...')
+  
+  const startTime = Date.now()
+  const apiUrl = 'https://www.googleapis.com/customsearch/v1'
+  
+  const response = await fetch(`${apiUrl}?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(prompt)}&num=10`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+    }
+  })
+
+  const responseTime = Date.now() - startTime
+  console.log('🤖 [GOOGLE AI OVERVIEW] HTTP Status:', response.status, 'Response time:', responseTime, 'ms')
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('❌ [GOOGLE AI OVERVIEW] API Error - Status:', response.status, 'Payload:', errorText)
+    throw new Error(`Google AI Overview API error: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  
+  // Log success details
+  const hasItems = data.items && Array.isArray(data.items) && data.items.length > 0
+  const itemCount = hasItems ? data.items.length : 0
+  console.log('✅ [GOOGLE AI OVERVIEW] Success - Items found:', itemCount)
+  
+  return { ...data, response_time_ms: responseTime }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { brandId, manual = false, fromCron = false } = await request.json()
@@ -378,6 +436,28 @@ export async function POST(request: NextRequest) {
           console.error(`❌ [CLAUDE] Error for prompt ${i + 1}:`, claudeError)
           // Continue with Perplexity data even if Claude fails
         }
+
+        // Call Google AI Overview API (sequential after Claude)
+        let googleAIOverviewResponse = null
+        let googleAIOverviewResponseContent = ''
+        let googleAIOverviewCitations: any[] = []
+        try {
+          console.log(`🤖 [GOOGLE AI OVERVIEW] Processing same prompt ${i + 1}/${activePrompts.length} for Google AI Overview`)
+          googleAIOverviewResponse = await callGoogleAIOverviewAPI(promptText)
+          // Combine snippets from search results as the response content
+          googleAIOverviewResponseContent = googleAIOverviewResponse.items?.map(item => item.snippet).join('\n\n') || ''
+          // Extract citations from search results
+          googleAIOverviewCitations = googleAIOverviewResponse.items?.map(item => ({
+            title: item.title,
+            link: item.link,
+            snippet: item.snippet,
+            domain: item.displayLink
+          })) || []
+          console.log(`✅ [GOOGLE AI OVERVIEW] Success for prompt ${i + 1}, items found: ${googleAIOverviewResponse.items?.length || 0}`)
+        } catch (googleAIOverviewError) {
+          console.error(`❌ [GOOGLE AI OVERVIEW] Error for prompt ${i + 1}:`, googleAIOverviewError)
+          // Continue with other data even if Google AI Overview fails
+        }
         
         // Analyze brand mentions (basic analysis only - no portrayal classification)
         const analysis = analyzeBrandMention(responseContent, brand.name, competitors)
@@ -423,7 +503,15 @@ export async function POST(request: NextRequest) {
             claude_classifier_stage: null, // Will be set by LLM classification
             claude_classifier_version: null,
             claude_snippet_hash: null,
-            claude_portrayal_confidence: null
+            claude_portrayal_confidence: null,
+            google_ai_overview_response: googleAIOverviewResponseContent,
+            google_ai_overview_response_time_ms: googleAIOverviewResponse?.response_time_ms || null,
+            google_ai_overview_citations: googleAIOverviewCitations,
+            google_ai_overview_portrayal_type: null, // Will be set by LLM classification
+            google_ai_overview_classifier_stage: null, // Will be set by LLM classification
+            google_ai_overview_classifier_version: null,
+            google_ai_overview_snippet_hash: null,
+            google_ai_overview_portrayal_confidence: null
           })
           .select()
           .single()
@@ -572,6 +660,30 @@ export async function POST(request: NextRequest) {
         })
       } else {
         console.warn('⚠️ [DAILY REPORT] Claude LLM classification failed, but report generation succeeded')
+      }
+
+      // Run Google AI Overview classification
+      const googleAIOverviewClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-google-ai-overview-portrayal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brandId: brandId,
+          fromCron: fromCron,
+          dailyReportId: dailyReport.id
+        })
+      })
+
+      if (googleAIOverviewClassificationResponse.ok) {
+        const googleAIOverviewClassificationData = await googleAIOverviewClassificationResponse.json()
+        console.log('✅ [DAILY REPORT] Google AI Overview LLM classification completed:', {
+          processed: googleAIOverviewClassificationData.processed,
+          skipped: googleAIOverviewClassificationData.skipped,
+          errors: googleAIOverviewClassificationData.errors?.length || 0
+        })
+      } else {
+        console.warn('⚠️ [DAILY REPORT] Google AI Overview LLM classification failed, but report generation succeeded')
       }
     } catch (classificationError) {
       console.warn('⚠️ [DAILY REPORT] LLM classification error (non-blocking):', classificationError)
