@@ -716,7 +716,36 @@ export async function POST(request: NextRequest) {
       googleCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
     }
 
-    // PHASE 3: Check completion and update final status (only after both phases attempted)
+    // PHASE 3: Update aggregated metrics from all providers
+    console.log('📊 [AGGREGATION] Calculating aggregated metrics from all providers')
+    
+    // Count total mentions and calculate average position from ALL providers
+    const { data: allResults, error: allResultsError } = await supabase
+      .from('prompt_results')
+      .select('brand_mentioned, brand_position, sentiment_score')
+      .eq('daily_report_id', dailyReport.id)
+
+    if (!allResultsError && allResults) {
+      const totalMentions = allResults.filter(r => r.brand_mentioned).length
+      const mentionsWithPosition = allResults.filter(r => r.brand_mentioned && r.brand_position !== null)
+      const averagePosition = mentionsWithPosition.length > 0
+        ? mentionsWithPosition.reduce((sum, r) => sum + (r.brand_position || 0), 0) / mentionsWithPosition.length
+        : null
+
+      // Update daily report with aggregated metrics
+      await supabase
+        .from('daily_reports')
+        .update({
+          total_mentions: totalMentions,
+          average_position: averagePosition,
+          completed_prompts: allResults.length
+        })
+        .eq('id', dailyReport.id)
+
+      console.log(`✅ [AGGREGATION] Updated metrics - Total mentions: ${totalMentions}, Avg position: ${averagePosition}`)
+    }
+
+    // Check completion and update final status (only after both phases attempted)
     const isComplete = await updateCompletionStatus(supabase, dailyReport.id)
 
     // PHASE 4: Run LLM classification for completed providers
