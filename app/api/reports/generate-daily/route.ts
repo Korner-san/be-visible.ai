@@ -48,7 +48,7 @@ interface BrandMentionAnalysis {
   mentionCount: number
   position: number
   sentiment: number
-  competitorMentions: Array<{name: string, count: number, portrayalType: string}>
+  competitorMentions: Array<{name: string, count: number, portrayalType: string, position: number}>
 }
 
 // Sentiment analysis using simple keyword matching
@@ -93,19 +93,20 @@ const analyzeBrandMention = (text: string, brandName: string, competitors: strin
   const mentioned = brandMentions.length > 0
   const firstMentionIndex = mentioned ? brandMentions[0] : -1
   
-  // Find competitor mentions
+  // Find competitor mentions with positions
   const competitorMentions = competitors.map(competitor => {
-    const competitorMentions: number[] = []
+    const competitorPositions: number[] = []
     const lowerCompetitor = competitor.toLowerCase()
     let compIndex = lowerText.indexOf(lowerCompetitor)
     while (compIndex !== -1) {
-      competitorMentions.push(compIndex)
+      competitorPositions.push(compIndex)
       compIndex = lowerText.indexOf(lowerCompetitor, compIndex + 1)
     }
     
     return {
         name: competitor,
-      count: competitorMentions.length,
+      count: competitorPositions.length,
+      position: competitorPositions.length > 0 ? competitorPositions[0] : -1, // First mention position
       portrayalType: 'neutral' // Will be classified by LLM later
     }
   }).filter(comp => comp.count > 0)
@@ -719,30 +720,81 @@ export async function POST(request: NextRequest) {
     // PHASE 3: Update aggregated metrics from all providers
     console.log('📊 [AGGREGATION] Calculating aggregated metrics from all providers')
     
-    // Count total mentions and calculate average position from ALL providers
+    // Get ALL results with full data to calculate metrics
     const { data: allResults, error: allResultsError } = await supabase
-      .from('prompt_results')
-      .select('brand_mentioned, brand_position, sentiment_score')
+          .from('prompt_results')
+      .select('brand_mentioned, brand_position, sentiment_score, competitor_mentions')
       .eq('daily_report_id', dailyReport.id)
 
     if (!allResultsError && allResults) {
       const totalMentions = allResults.filter(r => r.brand_mentioned).length
-      const mentionsWithPosition = allResults.filter(r => r.brand_mentioned && r.brand_position !== null)
-      const averagePosition = mentionsWithPosition.length > 0
-        ? mentionsWithPosition.reduce((sum, r) => sum + (r.brand_position || 0), 0) / mentionsWithPosition.length
+      
+      // Calculate rank-based average position (mention order, not character position)
+      const rankPositions: number[] = []
+      allResults.forEach(result => {
+        if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
+          // Calculate rank based on mention order (who was mentioned first, second, etc.)
+          const entities: { name: string, position: number }[] = []
+          
+          // Add brand
+          if (result.brand_position !== null) {
+            entities.push({ name: brand.name, position: result.brand_position })
+          }
+          
+          // Add competitors with their positions
+          result.competitor_mentions.forEach((comp: any) => {
+            if (comp && comp.name) {
+              // Use comp.position if available (new data), otherwise skip (old data without position)
+              if (comp.position !== undefined && comp.position !== null && comp.position !== -1) {
+                entities.push({ name: comp.name, position: comp.position })
+              }
+            }
+          })
+          
+          // Only calculate rank if we have position data for competitors
+          if (entities.length > 1) {
+            // Sort by position to get rank order (earlier mention = lower position = higher rank)
+            entities.sort((a, b) => a.position - b.position)
+            
+            // Find brand's rank (1 = first mentioned, 2 = second, etc.)
+            const brandIndex = entities.findIndex(e => e.name === brand.name)
+            if (brandIndex !== -1) {
+              rankPositions.push(brandIndex + 1) // Rank is 1-based
+            }
+          }
+        }
+      })
+      
+      const averageRankPosition = rankPositions.length > 0
+        ? rankPositions.reduce((sum, rank) => sum + rank, 0) / rankPositions.length
         : null
+
+      // Calculate sentiment scores
+      const sentimentCounts = { positive: 0, neutral: 0, negative: 0 }
+      allResults.forEach(result => {
+        if (result.brand_mentioned && result.sentiment_score !== null) {
+          if (result.sentiment_score > 0.1) {
+            sentimentCounts.positive++
+          } else if (result.sentiment_score < -0.1) {
+            sentimentCounts.negative++
+          } else {
+            sentimentCounts.neutral++
+          }
+        }
+      })
 
       // Update daily report with aggregated metrics
       await supabase
         .from('daily_reports')
         .update({
           total_mentions: totalMentions,
-          average_position: averagePosition,
-          completed_prompts: allResults.length
+          average_position: averageRankPosition, // Now using rank position, not character position
+          completed_prompts: allResults.length,
+          sentiment_scores: sentimentCounts
         })
         .eq('id', dailyReport.id)
 
-      console.log(`✅ [AGGREGATION] Updated metrics - Total mentions: ${totalMentions}, Avg position: ${averagePosition}`)
+      console.log(`✅ [AGGREGATION] Updated metrics - Total mentions: ${totalMentions}, Avg rank: ${averageRankPosition}, Sentiment: ${JSON.stringify(sentimentCounts)}`)
     }
 
     // Check completion and update final status (only after both phases attempted)
