@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // Build date filter query
+    // Build date filter query - include ALL provider fields
     let dateFilterQuery = supabase
       .from('daily_reports')
       .select(`
@@ -96,6 +96,8 @@ export async function GET(request: NextRequest) {
         created_at,
         prompt_results (
           id,
+          provider,
+          provider_status,
           brand_mentioned,
           brand_position,
           competitor_mentions,
@@ -105,7 +107,19 @@ export async function GET(request: NextRequest) {
           classifier_stage,
           classifier_version,
           snippet_hash,
-          perplexity_response
+          perplexity_response,
+          claude_response,
+          claude_portrayal_type,
+          claude_portrayal_confidence,
+          claude_classifier_stage,
+          claude_classifier_version,
+          claude_snippet_hash,
+          google_ai_overview_response,
+          google_ai_overview_portrayal_type,
+          google_ai_overview_portrayal_confidence,
+          google_ai_overview_classifier_stage,
+          google_ai_overview_classifier_version,
+          google_ai_overview_snippet_hash
         )
       `)
       .eq('brand_id', brandId)
@@ -309,7 +323,7 @@ export async function GET(request: NextRequest) {
     }))
     
 
-    // Portrayal types analysis - BRAND ONLY (using LLM classification)
+    // Portrayal types analysis - BRAND ONLY (using LLM classification from ALL providers)
     const portrayalTypes: Array<{brand: string, type: string, count: number, percentage: number, example?: string}> = []
     
     // Track portrayal counts for brand only (prioritize LLM classification over keyword-based)
@@ -320,19 +334,35 @@ export async function GET(request: NextRequest) {
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
-        // Count ONLY LLM classified brand portrayal types
-        if (result.brand_mentioned && result.portrayal_type && result.classifier_stage === 'llm') {
-          const portrayalType = result.portrayal_type
-          brandPortrayalCounts[portrayalType] = (brandPortrayalCounts[portrayalType] || 0) + 1
-          totalBrandPortrayals++
-          
-          // Store example snippet for this portrayal type (LLM classified only)
-          if (result.perplexity_response && !portrayalExamples[portrayalType]) {
-            const snippet = extractExampleSnippet(result.perplexity_response, brand.name)
-            if (snippet) {
-              portrayalExamples[portrayalType] = snippet
+        // Helper function to process portrayal data from any provider
+        const processPortrayalData = (response: string, portrayalType: string, classifierStage: string, modelSource: string) => {
+          if (result.brand_mentioned && portrayalType && classifierStage === 'llm') {
+            brandPortrayalCounts[portrayalType] = (brandPortrayalCounts[portrayalType] || 0) + 1
+            totalBrandPortrayals++
+            
+            // Store example snippet for this portrayal type (LLM classified only)
+            if (response && !portrayalExamples[portrayalType]) {
+              const snippet = extractExampleSnippet(response, brand.name)
+              if (snippet) {
+                portrayalExamples[portrayalType] = snippet
+              }
             }
           }
+        }
+
+        // Process Perplexity data
+        if (result.provider === 'perplexity' || !result.provider) {
+          processPortrayalData(result.perplexity_response, result.portrayal_type, result.classifier_stage, 'perplexity')
+        }
+        
+        // Process Claude data
+        if (result.provider === 'claude') {
+          processPortrayalData(result.claude_response, result.claude_portrayal_type, result.claude_classifier_stage, 'claude')
+        }
+        
+        // Process Google AI Overview data
+        if (result.provider === 'google_ai_overview') {
+          processPortrayalData(result.google_ai_overview_response, result.google_ai_overview_portrayal_type, result.google_ai_overview_classifier_stage, 'google_ai_overview')
         }
       })
     })
