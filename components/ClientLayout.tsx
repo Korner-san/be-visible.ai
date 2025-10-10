@@ -8,6 +8,7 @@ import { NavLink } from '@/components/NavigationHighlight'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDateFilter } from '@/contexts/DateFilterContext'
 import GlobalDateFilter from '@/components/GlobalDateFilter'
+import { GlobalModelFilter } from '@/components/GlobalModelFilter'
 import { Button } from '@/components/ui/button'
 import OnboardingLoader from '@/components/OnboardingLoader'
 import { 
@@ -280,7 +281,8 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
                 Prompts
               </NavLink>
             </nav>
-            <div className="py-4">
+            <div className="py-4 flex items-center gap-3">
+              <GlobalModelFilter />
               <GlobalDateFilter 
                 onDateRangeChange={setDateRange}
                 defaultRange={dateRange}

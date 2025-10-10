@@ -11,6 +11,7 @@ import { useBrandsStore } from "@/store/brands"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFilter } from "@/contexts/DateFilterContext"
+import { useModelFilter } from "@/store/modelFilter"
 
 // Helper function to format portrayal types and get descriptions
 const getPortrayalTypeInfo = (type: string) => {
@@ -55,6 +56,7 @@ const getPortrayalTypeInfo = (type: string) => {
 export default function ReportsVisibility() {
   const { brands, activeBrandId } = useBrandsStore()
   const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
+  const { getModelsForAPI } = useModelFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   const { toast } = useToast()
@@ -79,9 +81,13 @@ export default function ReportsVisibility() {
         // Load visibility data if not demo mode
         if (!isDemoMode && activeBrandId) {
           const { from, to } = getDateRangeForAPI()
+          const models = getModelsForAPI()
           let url = `/api/reports/visibility?brandId=${activeBrandId}`
           if (from && to) {
             url += `&from=${from}&to=${to}`
+          }
+          if (models) {
+            url += `&models=${models}`
           }
           const visibilityResponse = await fetch(url)
           const visibilityData = await visibilityResponse.json()
@@ -98,7 +104,7 @@ export default function ReportsVisibility() {
     }
     
     loadData()
-  }, [activeBrandId, isDemoMode, getDateRangeForAPI])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, getModelsForAPI])
   
   // Manual report generation
   const generateManualReport = async () => {

@@ -47,6 +47,10 @@ export async function GET(request: NextRequest) {
     const brandId = searchParams.get('brandId')
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
+    const modelsParam = searchParams.get('models')
+    
+    // Parse model filter - default to all active providers if not specified
+    const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
     
     if (!brandId) {
       return NextResponse.json({
@@ -157,6 +161,11 @@ export async function GET(request: NextRequest) {
       const dailyRankPositions: number[] = []
       
       report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
           // Calculate rank for this response
           const entities: { name: string, position: number }[] = []
@@ -205,6 +214,11 @@ export async function GET(request: NextRequest) {
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
           totalResponsesAnalyzed++
           
@@ -266,6 +280,11 @@ export async function GET(request: NextRequest) {
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
         if (result.brand_mentioned && result.sentiment_score !== null && result.sentiment_score !== undefined) {
           totalSentimentResponses++
           
@@ -301,6 +320,11 @@ export async function GET(request: NextRequest) {
     // Count mentions from individual responses
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
         if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
           result.competitor_mentions.forEach((comp: any) => {
             // Handle the actual data structure: {name: "Netlify", count: 3, portrayalType: "neutral"}
@@ -334,6 +358,11 @@ export async function GET(request: NextRequest) {
     
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
         // Helper function to process portrayal data from any provider
         const processPortrayalData = (response: string, portrayalType: string, classifierStage: string, modelSource: string) => {
           if (result.brand_mentioned && portrayalType && classifierStage === 'llm') {
