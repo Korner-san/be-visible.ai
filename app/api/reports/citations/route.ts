@@ -7,9 +7,13 @@ export async function GET(request: NextRequest) {
     const brandId = searchParams.get('brandId')
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
+    const modelsParam = searchParams.get('models')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
     const offset = (page - 1) * limit
+    
+    // Parse model filter - default to all active providers if not specified
+    const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
     
     if (!brandId) {
       return NextResponse.json({
@@ -44,13 +48,16 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // Build query with date filters
+    // Build query with date filters and provider filter
     let query = supabase
       .from('prompt_results')
       .select(`
         id,
         prompt_text,
+        provider,
         citations,
+        claude_citations,
+        google_ai_overview_citations,
         brand_mentioned,
         created_at,
         daily_reports!inner(
@@ -63,6 +70,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('brand_prompts.brand_id', brandId)
       .eq('daily_reports.status', 'completed')
+      .in('provider', selectedModels)
       .order('created_at', { ascending: false })
 
     // Apply date filters if provided

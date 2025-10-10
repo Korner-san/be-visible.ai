@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge"
 import { Info, Download, Mail, FileText, ExternalLink, Sparkles, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { useBrandsStore } from "@/store/brands"
 import { useDateFilter } from "@/contexts/DateFilterContext"
+import { useModelFilter } from "@/store/modelFilter"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
   const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
+  const { getModelsForAPI } = useModelFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   
@@ -39,9 +41,13 @@ export default function ReportsCitations() {
         setError(null)
         
         const { from, to } = getDateRangeForAPI()
+        const models = getModelsForAPI()
         let url = `/api/reports/citations?brandId=${activeBrandId}&page=1&limit=${ITEMS_PER_PAGE}`
         if (from && to) {
           url += `&from=${from}&to=${to}`
+        }
+        if (models) {
+          url += `&models=${models}`
         }
         const response = await fetch(url)
         const data = await response.json()
@@ -64,7 +70,7 @@ export default function ReportsCitations() {
     }
     
     loadInitialData()
-  }, [activeBrandId, isDemoMode, getDateRangeForAPI])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, getModelsForAPI])
   
   // Load table data only when page changes
   useEffect(() => {
@@ -78,9 +84,13 @@ export default function ReportsCitations() {
         setError(null)
         
         const { from, to } = getDateRangeForAPI()
+        const models = getModelsForAPI()
         let url = `/api/reports/citations?brandId=${activeBrandId}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`
         if (from && to) {
           url += `&from=${from}&to=${to}`
+        }
+        if (models) {
+          url += `&models=${models}`
         }
         const response = await fetch(url)
         const data = await response.json()
