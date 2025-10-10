@@ -52,6 +52,14 @@ export async function GET(request: NextRequest) {
     // Parse model filter - default to all active providers if not specified
     const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
     
+    console.log('🔍 [Visibility API] Request params:', {
+      brandId,
+      fromDate,
+      toDate,
+      modelsParam,
+      selectedModels
+    })
+    
     if (!brandId) {
       return NextResponse.json({
         success: false,
@@ -159,11 +167,36 @@ export async function GET(request: NextRequest) {
     const mentionsOverTime = dailyReports?.map(report => {
       // Calculate rank-based position for this specific day/report
       const dailyRankPositions: number[] = []
+      let dailyMentions = 0
       
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
+        }
+        
+        // Count mentions from filtered providers only
+        if (result.brand_mentioned) {
+          // Count textual occurrences in the response
+          const responseText = result.provider === 'perplexity' 
+            ? result.perplexity_response 
+            : result.provider === 'google_ai_overview'
+            ? result.google_ai_overview_response
+            : result.provider === 'claude'
+            ? result.claude_response
+            : ''
+          
+          if (responseText) {
+            const lowerText = responseText.toLowerCase()
+            const lowerBrand = brand.name.toLowerCase()
+            let count = 0
+            let index = lowerText.indexOf(lowerBrand)
+            while (index !== -1) {
+              count++
+              index = lowerText.indexOf(lowerBrand, index + 1)
+            }
+            dailyMentions += count
+          }
         }
         
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
@@ -195,7 +228,7 @@ export async function GET(request: NextRequest) {
       
       return {
         date: report.report_date,
-        mentions: report.total_mentions || 0,
+        mentions: dailyMentions,
         averagePosition: dailyAverageRank
       }
     }) || []
@@ -203,8 +236,15 @@ export async function GET(request: NextRequest) {
     // Sort by date
     mentionsOverTime.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     
-    // Calculate total mentions from stored daily reports
+    // Calculate total mentions from filtered data
     const totalMentions = mentionsOverTime.reduce((sum, day) => sum + day.mentions, 0)
+    
+    console.log('📊 [Visibility API] Filtered mentions calculation:', {
+      selectedModels,
+      totalMentions,
+      daysProcessed: mentionsOverTime.length,
+      mentionsByDay: mentionsOverTime.map(d => ({ date: d.date, mentions: d.mentions }))
+    })
     
     // Calculate average rank position by analyzing mention order in each response
     const allRankPositions: number[] = []

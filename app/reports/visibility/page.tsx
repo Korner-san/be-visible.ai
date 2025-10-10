@@ -56,7 +56,7 @@ const getPortrayalTypeInfo = (type: string) => {
 export default function ReportsVisibility() {
   const { brands, activeBrandId } = useBrandsStore()
   const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
-  const { getModelsForAPI } = useModelFilter()
+  const { selectedModels, getModelsForAPI } = useModelFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   const { toast } = useToast()
@@ -89,10 +89,18 @@ export default function ReportsVisibility() {
           if (models) {
             url += `&models=${models}`
           }
+          
+          console.log('🔄 [Visibility] Fetching data with models:', models, 'selectedModels:', selectedModels)
+          
           const visibilityResponse = await fetch(url)
           const visibilityData = await visibilityResponse.json()
           
           if (visibilityData.success) {
+            console.log('✅ [Visibility] Data loaded:', {
+              totalMentions: visibilityData.data.totalMentions,
+              models: models,
+              reportsCount: visibilityData.data.totalReports
+            })
             setReportData(visibilityData.data)
           }
         }
@@ -104,7 +112,7 @@ export default function ReportsVisibility() {
     }
     
     loadData()
-  }, [activeBrandId, isDemoMode, getDateRangeForAPI, getModelsForAPI])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
   // Manual report generation
   const generateManualReport = async () => {

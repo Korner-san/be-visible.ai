@@ -15,7 +15,7 @@ import { useModelFilter } from "@/store/modelFilter"
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
   const { getDateRangeParams, getDateRangeForAPI } = useDateFilter()
-  const { getModelsForAPI } = useModelFilter()
+  const { selectedModels, getModelsForAPI } = useModelFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
   
@@ -70,7 +70,7 @@ export default function ReportsCitations() {
     }
     
     loadInitialData()
-  }, [activeBrandId, isDemoMode, getDateRangeForAPI, getModelsForAPI])
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
   // Load table data only when page changes
   useEffect(() => {
