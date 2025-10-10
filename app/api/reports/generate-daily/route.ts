@@ -1,47 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { callPerplexityAPI, extractPerplexityContent, extractPerplexityCitations } from '@/lib/providers/perplexity'
+import { callGoogleAIOverviewAPI, extractGoogleContent, extractGoogleCitations, hasGoogleResults } from '@/lib/providers/google-ai-overview'
 
-// Types for Perplexity API
-interface PerplexityResponse {
-  id: string
-  object: string
-  created: number
-  model: string
-  choices: {
-    index: number
-    finish_reason: string
-    message: {
-      role: string
-      content: string
-    }
-    delta?: {
-      role?: string
-      content?: string
-    }
-  }[]
-  usage: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
-  search_results?: Array<{url: string, title?: string, snippet?: string}>
-}
-
-// Types for Google AI Overview API
-interface GoogleAIOverviewResponse {
-  items?: Array<{
-    title: string
-    link: string
-    snippet: string
-    displayLink: string
-  }>
-  searchInformation?: {
-    searchTime: number
-    totalResults: string
-  }
-  response_time_ms?: number
-}
+// Types imported from provider clients
 
 interface BrandMentionAnalysis {
   mentioned: boolean
@@ -120,98 +83,7 @@ const analyzeBrandMention = (text: string, brandName: string, competitors: strin
   }
 }
 
-// Call Perplexity API
-const callPerplexityAPI = async (prompt: string): Promise<PerplexityResponse> => {
-  const apiKey = process.env.PERPLEXITY_API_KEY
-  if (!apiKey) {
-    throw new Error('PERPLEXITY_API_KEY not configured')
-  }
-
-  const model = 'sonar'
-  console.log('🤖 [PERPLEXITY] Calling API with model:', model, 'prompt:', prompt.substring(0, 100) + '...')
-  
-  const startTime = Date.now()
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      max_tokens: 1000,
-      temperature: 0.2,
-      top_p: 0.9,
-      return_citations: true,
-      search_recency_filter: 'month'
-    })
-  })
-
-  const responseTime = Date.now() - startTime
-  console.log('🤖 [PERPLEXITY] HTTP Status:', response.status, 'Response time:', responseTime, 'ms')
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('❌ [PERPLEXITY] API Error - Status:', response.status, 'Payload:', errorText)
-    throw new Error(`Perplexity API error: ${response.status} ${errorText}`)
-  }
-
-  const data = await response.json()
-  
-  const hasSearchResults = data.search_results && Array.isArray(data.search_results)
-  const citationCount = hasSearchResults ? data.search_results.length : 0
-  console.log('✅ [PERPLEXITY] Success - Search results exists:', hasSearchResults, 'Citations count:', citationCount)
-  
-  return { ...data, response_time_ms: responseTime }
-}
-
-// Call Google AI Overview API
-const callGoogleAIOverviewAPI = async (prompt: string): Promise<GoogleAIOverviewResponse> => {
-  const apiKey = process.env.GOOGLE_API_KEY
-  const cseId = process.env.GOOGLE_CSE_ID
-  
-  if (!apiKey) {
-    throw new Error('GOOGLE_API_KEY not configured')
-  }
-  if (!cseId) {
-    throw new Error('GOOGLE_CSE_ID not configured')
-  }
-
-  console.log('🤖 [GOOGLE AI OVERVIEW] Calling API with prompt:', prompt.substring(0, 100) + '...')
-  
-  const startTime = Date.now()
-  const apiUrl = 'https://www.googleapis.com/customsearch/v1'
-  
-  const response = await fetch(`${apiUrl}?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(prompt)}&num=10`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    }
-  })
-
-  const responseTime = Date.now() - startTime
-  console.log('🤖 [GOOGLE AI OVERVIEW] HTTP Status:', response.status, 'Response time:', responseTime, 'ms')
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('❌ [GOOGLE AI OVERVIEW] API Error - Status:', response.status, 'Payload:', errorText)
-    throw new Error(`Google AI Overview API error: ${response.status} ${errorText}`)
-  }
-
-  const data = await response.json()
-  
-  const hasItems = data.items && Array.isArray(data.items) && data.items.length > 0
-  const itemCount = hasItems ? data.items.length : 0
-  console.log('✅ [GOOGLE AI OVERVIEW] Success - Items found:', itemCount)
-  
-  return { ...data, response_time_ms: responseTime }
-}
+// Provider API functions now imported from /lib/providers/
 
 // Process prompts for a specific provider
 const processProviderPrompts = async (
@@ -250,20 +122,15 @@ const processProviderPrompts = async (
 
       if (provider === 'perplexity') {
         const perplexityResponse = await callPerplexityAPI(promptText)
-        responseContent = perplexityResponse.choices[0]?.message?.content || ''
+        responseContent = extractPerplexityContent(perplexityResponse)
         responseTimeMs = perplexityResponse.response_time_ms || 0
-        citations = perplexityResponse.search_results || []
+        citations = extractPerplexityCitations(perplexityResponse)
       } else if (provider === 'google_ai_overview') {
         const googleResponse = await callGoogleAIOverviewAPI(promptText)
-        if (googleResponse.items && googleResponse.items.length > 0) {
-          responseContent = googleResponse.items.map(item => item.snippet).join('\n\n')
+        if (hasGoogleResults(googleResponse)) {
+          responseContent = extractGoogleContent(googleResponse)
           responseTimeMs = googleResponse.response_time_ms || 0
-          citations = googleResponse.items.map(item => ({
-            title: item.title,
-            link: item.link,
-            snippet: item.snippet,
-            domain: item.displayLink
-          }))
+          citations = extractGoogleCitations(googleResponse)
         } else {
           // No results from Google AI Overview
           noResult++
@@ -805,47 +672,30 @@ export async function POST(request: NextRequest) {
       console.log('🤖 [CLASSIFICATION] Starting LLM classification for completed providers')
       
       try {
-        // Always run Perplexity classification if Perplexity is complete
-        if (perplexityCounts.attempted > 0) {
-          const perplexityClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-portrayal`, {
+        // Run classification for each provider that was processed
+        const providersToClassify = []
+        if (perplexityCounts.attempted > 0) providersToClassify.push('perplexity')
+        if (googleCounts.attempted > 0 && googleCounts.errors === 0) providersToClassify.push('google_ai_overview')
+
+        for (const provider of providersToClassify) {
+          const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               brandId: brandId,
+              provider: provider,
               fromCron: fromCron,
               dailyReportId: dailyReport.id
             })
           })
 
-          if (perplexityClassificationResponse.ok) {
-            const perplexityClassificationResult = await perplexityClassificationResponse.json()
-            console.log('✅ [PERPLEXITY CLASSIFICATION] Completed:', perplexityClassificationResult)
+          if (classificationResponse.ok) {
+            const classificationResult = await classificationResponse.json()
+            console.log(`✅ [${provider.toUpperCase()} CLASSIFICATION] Completed:`, classificationResult)
           } else {
-            console.error('❌ [PERPLEXITY CLASSIFICATION] Failed:', await perplexityClassificationResponse.text())
-          }
-        }
-
-        // Only run Google AI Overview classification if Google AI Overview is complete
-        if (googleCounts.attempted > 0 && googleCounts.errors === 0) {
-          const googleClassificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify-google-ai-overview-portrayal`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              brandId: brandId,
-              fromCron: fromCron,
-              dailyReportId: dailyReport.id
-            })
-          })
-
-          if (googleClassificationResponse.ok) {
-            const googleClassificationResult = await googleClassificationResponse.json()
-            console.log('✅ [GOOGLE AI OVERVIEW CLASSIFICATION] Completed:', googleClassificationResult)
-          } else {
-            console.error('❌ [GOOGLE AI OVERVIEW CLASSIFICATION] Failed:', await googleClassificationResponse.text())
+            console.error(`❌ [${provider.toUpperCase()} CLASSIFICATION] Failed:`, await classificationResponse.text())
           }
         }
 
