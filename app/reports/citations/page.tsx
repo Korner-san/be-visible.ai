@@ -11,6 +11,7 @@ import { Info, Download, Mail, FileText, ExternalLink, Sparkles, ChevronLeft, Ch
 import { useBrandsStore } from "@/store/brands"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
+import { CitationsDomainsTable } from "@/components/CitationsDomainsTable"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
@@ -21,9 +22,11 @@ export default function ReportsCitations() {
   
   const [citationsData, setCitationsData] = useState<any>(null)
   const [summaryData, setSummaryData] = useState<any>(null)
+  const [domainsData, setDomainsData] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
+  const [isDomainsLoading, setIsDomainsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
   const ITEMS_PER_PAGE = 8 // Changed to 8 as requested
@@ -114,6 +117,43 @@ export default function ReportsCitations() {
     
     loadTableData()
   }, [activeBrandId, isDemoMode, currentPage, getDateRangeForAPI])
+  
+  // Load domains data (separate from citations table)
+  useEffect(() => {
+    const loadDomainsData = async () => {
+      if (!activeBrandId || isDemoMode) {
+        setIsDomainsLoading(false)
+        return
+      }
+      
+      try {
+        setIsDomainsLoading(true)
+        
+        const { from, to } = getDateRangeForAPI()
+        const models = getModelsForAPI()
+        let url = `/api/reports/citations/domains?brandId=${activeBrandId}`
+        if (from && to) {
+          url += `&from=${from}&to=${to}`
+        }
+        if (models) {
+          url += `&models=${models}`
+        }
+        
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        if (data.success) {
+          setDomainsData(data.data)
+        }
+      } catch (err) {
+        console.error('Error loading domains:', err)
+      } finally {
+        setIsDomainsLoading(false)
+      }
+    }
+    
+    loadDomainsData()
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
   // Mock data for demo mode
   const demoData = {
@@ -315,229 +355,52 @@ export default function ReportsCitations() {
               </Card>
             </div>
 
-            {/* Citations Full Table */}
+            {/* NEW: Citations by Domain - Model-Aware with Expandable Rows */}
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    Citations – Full Table
-                    {isTableLoading && (
-                      <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-medium flex items-center gap-2">
+                      Citation Sources by Domain
+                      {isDomainsLoading && (
+                        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="h-4 w-4 text-slate-400" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="max-w-xs">
+                            <p className="font-medium mb-2">Citation Sources</p>
+                            <p className="text-sm">Unique URLs per domain across all AI responses. Click a domain to expand and see individual URLs with citation frequency.</p>
+                            <p className="text-xs mt-2 text-slate-400">URLs are normalized and deduplicated. Respects Model Filter and Date Range.</p>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </CardTitle>
+                    {!isDemoMode && domainsData && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        {domainsData.pagination?.totalItems || 0} domains · {
+                          domainsData.domains?.reduce((sum: number, d: any) => sum + d.urls_count, 0) || 0
+                        } unique URLs
+                      </p>
                     )}
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-slate-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <div className="max-w-xs">
-                          <p className="font-medium mb-2">Citations Analysis</p>
-                          <p className="text-sm">This table shows all websites that AI models cite when discussing your brand. Each row represents a domain with statistics about how often it's referenced and whether your brand was mentioned alongside those citations.</p>
-                          <p className="text-xs mt-2 text-slate-400">Data is collected from daily AI responses across all your active prompts.</p>
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </CardTitle>
-                  {displayData.pagination && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      Showing {displayData.domains?.length || 0} of {displayData.pagination.totalDomains} domains
-                    </p>
-                  )}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="relative">
-                  {isTableLoading && (
-                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center">
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        <span className="text-sm">Loading citations...</span>
-                      </div>
-                    </div>
-                  )}
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            Domain
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Domains cited in answers to your prompts.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            #URLs
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Count of unique pages from this domain cited across all responses.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            Brand Mentions
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Number of times your brand was mentioned in responses that cited this domain.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            Category
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Auto-detected content type of this website.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            Last Seen
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Most recent date this domain was cited.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            Actions
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-3 w-3 text-slate-400" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Open the website or find contact information.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {displayData.domains && displayData.domains.length > 0 ? (
-                        displayData.domains.map((domain: any, index: number) => (
-                          <TableRow key={`${domain.domain}-${index}`}>
-                            <TableCell className="font-medium">
-                              {domain.domain}
-                            </TableCell>
-                            <TableCell>{domain.urls}</TableCell>
-                            <TableCell>
-                              <Badge variant={domain.brandMentions > 0 ? "default" : "secondary"}>
-                                {domain.brandMentions}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={`${
-                                domain.category === 'News' ? 'border-blue-200 text-blue-800' :
-                                domain.category === 'Business' ? 'border-green-200 text-green-800' :
-                                domain.category === 'Technology' ? 'border-purple-200 text-purple-800' :
-                                domain.category === 'Development' ? 'border-orange-200 text-orange-800' :
-                                domain.category === 'Documentation' ? 'border-indigo-200 text-indigo-800' :
-                                'border-gray-200 text-gray-800'
-                              }`}>
-                                {domain.category}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-500">
-                              {new Date(domain.lastSeen).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="outline" 
-                                      size="sm"
-                                      className="h-8 px-2"
-                                      onClick={() => window.open(`https://${domain.domain}`, '_blank')}
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Visit website</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="outline" 
-                                      size="sm"
-                                      className="h-8 px-2"
-                                      onClick={() => window.open(`https://${domain.domain}/contact`, '_blank')}
-                                    >
-                                      <Mail className="h-3 w-3" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Find contact information</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-slate-500">
-                            {isDemoMode ? "Switch to your brand to see real citations" : "No citations found"}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Pagination */}
-                {displayData.pagination && displayData.pagination.totalDomainPages > 1 && (
-                  <div className="flex items-center justify-between mt-6">
-                    <div className="text-sm text-slate-600">
-                      Page {displayData.pagination.currentPage} of {displayData.pagination.totalDomainPages}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                        disabled={!displayData.pagination.hasPrevPage || isTableLoading}
-                      >
-                        <ChevronLeft className="h-4 w-4 mr-1" />
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentPage(prev => prev + 1)}
-                        disabled={!displayData.pagination.hasNextPage || isTableLoading}
-                      >
-                        Next
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
-                    </div>
+                {!isDemoMode ? (
+                  <CitationsDomainsTable
+                    domains={domainsData?.domains || []}
+                    brandId={activeBrandId || ''}
+                    dateRange={getDateRangeForAPI()}
+                    selectedModels={selectedModels}
+                    isLoading={isDomainsLoading}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-slate-500">
+                    <p className="text-sm">Switch to your brand to see real citation sources</p>
+                    <p className="text-xs mt-1">Demo data coming soon</p>
                   </div>
                 )}
               </CardContent>
