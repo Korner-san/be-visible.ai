@@ -246,6 +246,128 @@ export async function GET(request: NextRequest) {
       mentionsByDay: mentionsOverTime.map(d => ({ date: d.date, mentions: d.mentions }))
     })
     
+    // NEW: Calculate Competitive Position Score Over Time (Weighted)
+    const positionScoreOverTime = dailyReports?.map(report => {
+      let totalWeightedScore = 0
+      let totalWeight = 0
+      let responsesCount = 0
+
+      report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) return
+
+        // Only include responses where brand AND at least one competitor appear
+        if (!result.brand_mentioned || !result.competitor_mentions || result.competitor_mentions.length === 0) return
+
+        // Get response text to find actual mentions
+        const responseText = result.provider === 'perplexity' 
+          ? result.perplexity_response 
+          : result.provider === 'google_ai_overview'
+          ? result.google_ai_overview_response
+          : result.provider === 'claude'
+          ? result.claude_response
+          : ''
+
+        if (!responseText) return
+
+        // Find all entities (brand + competitors) with their first occurrence positions
+        const entities: Array<{ name: string, position: number }> = []
+
+        // Brand position
+        if (result.brand_position !== null) {
+          entities.push({ name: brand.name, position: result.brand_position })
+        }
+
+        // Competitor positions (from competitor_mentions)
+        result.competitor_mentions.forEach((comp: any) => {
+          if (comp && comp.name && comp.position !== undefined && comp.position !== -1) {
+            entities.push({ name: comp.name, position: comp.position })
+          }
+        })
+
+        // Need at least brand + 1 competitor
+        if (entities.length < 2) return
+
+        // Sort by position (earliest first)
+        entities.sort((a, b) => a.position - b.position)
+
+        // Find brand's rank (1-based)
+        const brandIndex = entities.findIndex(e => e.name === brand.name)
+        if (brandIndex === -1) return
+
+        const rank = brandIndex + 1 // 1 = first, n = last
+        const n = entities.length // total entities
+
+        // Base score: (n - rank) / (n - 1)
+        // If rank = 1 → score = 1.0 (best)
+        // If rank = n → score = 0.0 (worst)
+        const baseScore = n > 1 ? (n - rank) / (n - 1) : 0
+
+        // Weight: n - 1 (more competitors = higher weight)
+        const weight = n - 1
+
+        totalWeightedScore += baseScore * weight
+        totalWeight += weight
+        responsesCount++
+      })
+
+      return {
+        date: report.report_date,
+        score: totalWeight > 0 ? totalWeightedScore / totalWeight : null,
+        responsesCount,
+        weightedSample: totalWeight
+      }
+    }).filter(day => day.score !== null) || [] // Only include days with data
+
+    // NEW: Calculate Coverage Score Over Time (Brand & Competitors)
+    const coverageOverTime = dailyReports?.map(report => {
+      let brandCovered = 0
+      let totalResponses = 0
+      const competitorCoverage: { [name: string]: number } = {}
+
+      // Initialize competitor counts
+      competitors.forEach((comp: string) => {
+        competitorCoverage[comp] = 0
+      })
+
+      report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) return
+
+        totalResponses++
+
+        // Brand coverage
+        if (result.brand_mentioned) {
+          brandCovered++
+        }
+
+        // Competitor coverage
+        if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
+          result.competitor_mentions.forEach((comp: any) => {
+            if (comp && comp.name && competitorCoverage.hasOwnProperty(comp.name)) {
+              competitorCoverage[comp.name]++
+            }
+          })
+        }
+      })
+
+      const brandCoveragePercent = totalResponses > 0 ? (brandCovered / totalResponses) * 100 : 0
+
+      const competitorsArray = Object.entries(competitorCoverage).map(([name, covered]) => ({
+        name,
+        coverage: totalResponses > 0 ? (covered / totalResponses) * 100 : 0,
+        covered
+      }))
+
+      return {
+        date: report.report_date,
+        brandCoverage: brandCoveragePercent,
+        brandCovered,
+        totalResponses,
+        competitors: competitorsArray
+      }
+    }) || []
+    
     // Calculate average rank position by analyzing mention order in each response
     const allRankPositions: number[] = []
     const brandRankCounts: { [rank: number]: number } = { 1: 0, 2: 0, 3: 0 }
@@ -456,6 +578,8 @@ export async function GET(request: NextRequest) {
       totalMentions,
       averagePosition: averagePosition !== null ? Math.round(averagePosition * 10) / 10 : null, // Round to 1 decimal
       mentionsOverTime,
+      positionScoreOverTime, // NEW: Weighted competitive position scores
+      coverageOverTime, // NEW: Coverage % over time
       sentiment: [
         { name: 'Positive', value: overallSentiment.positive, color: '#10b981' },
         { name: 'Neutral', value: overallSentiment.neutral, color: '#6b7280' },

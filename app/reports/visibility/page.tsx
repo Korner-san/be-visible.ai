@@ -12,6 +12,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
+import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
+import { CoverageScoreOverTime } from "@/components/CoverageScoreOverTime"
 
 // Helper function to format portrayal types and get descriptions
 const getPortrayalTypeInfo = (type: string) => {
@@ -444,21 +446,20 @@ export default function ReportsVisibility() {
             </CardContent>
           </Card>
 
-          {/* Chart 2: Placeholder for future Position Score chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg font-medium">Brand Performance</CardTitle>
-              <p className="text-xs text-slate-500">Coming soon: Position Score and Coverage metrics</p>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 flex items-center justify-center">
-                <div className="text-center text-slate-500">
-                  <p className="text-sm">Position Score chart coming soon</p>
-                  <p className="text-xs mt-1">Will show brand performance when mentioned alongside competitors</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Chart 2: Competitive Position Score (Weighted) */}
+          <PositionScoreOverTime 
+            data={reportData?.positionScoreOverTime || []}
+            isLoading={isLoading}
+          />
+        </div>
+
+        {/* Chart 3: Coverage Score Over Time */}
+        <div className="grid gap-6 mb-8">
+          <CoverageScoreOverTime 
+            data={reportData?.coverageOverTime || []}
+            showCompetitors={true}
+            isLoading={isLoading}
+          />
         </div>
 
         {/* Charts Section */}
