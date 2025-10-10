@@ -430,52 +430,18 @@ export default function ReportsVisibility() {
             </CardContent>
           </Card>
 
-          {/* Chart 2: Brand vs Competitor Positioning Over Time */}
+          {/* Chart 2: Placeholder for future Position Score chart */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg font-medium">Brand vs Competitor Positioning</CardTitle>
-              <p className="text-xs text-slate-500">Average rank position when appearing with competitors</p>
+              <CardTitle className="text-lg font-medium">Brand Performance</CardTitle>
+              <p className="text-xs text-slate-500">Coming soon: Position Score and Coverage metrics</p>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={mentionsOverTimeData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="date" 
-                      stroke="#64748b"
-                      fontSize={12}
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    />
-                    <YAxis 
-                      stroke="#ef4444" 
-                      fontSize={12}
-                      label={{ value: 'Avg Position', angle: -90, position: 'insideLeft' }}
-                    />
-                    <RechartsTooltip 
-                      labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                      formatter={(value: any) => {
-                        if (value === null || value === undefined) {
-                          return ['N/A', 'Average Rank']
-                        }
-                        return [`${value.toFixed(1)}`, 'Average Rank']
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '12px'
-                      }}
-                    />
-                    <Line 
-                      type="linear" 
-                      dataKey="averagePosition" 
-                      stroke="#ef4444" 
-                      strokeWidth={2}
-                      dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="h-80 flex items-center justify-center">
+                <div className="text-center text-slate-500">
+                  <p className="text-sm">Position Score chart coming soon</p>
+                  <p className="text-xs mt-1">Will show brand performance when mentioned alongside competitors</p>
+                </div>
               </div>
             </CardContent>
           </Card>

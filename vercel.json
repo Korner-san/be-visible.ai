@@ -1,9 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/daily-reports",
-      "schedule": "0 13 * * *"
-    }
-  ],
   "buildCommand": "npm run build"
 }
