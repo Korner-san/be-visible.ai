@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 interface DomainData {
@@ -35,9 +35,24 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   selectedModels,
   isLoading 
 }) => {
+  const [currentPage, setCurrentPage] = useState(1)
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set())
   const [domainUrls, setDomainUrls] = useState<Record<string, URLData[]>>({})
   const [loadingDomains, setLoadingDomains] = useState<Set<string>>(new Set())
+  
+  const ITEMS_PER_PAGE = 10
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+    setExpandedDomains(new Set())
+  }, [selectedModels, dateRange])
+  
+  // Calculate pagination
+  const totalPages = Math.ceil(domains.length / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedDomains = domains.slice(startIndex, endIndex)
 
   const toggleDomain = async (domain: string) => {
     const isExpanded = expandedDomains.has(domain)
@@ -106,19 +121,20 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   }
 
   return (
-    <div className="border rounded-lg">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[50px]"></TableHead>
-            <TableHead>Domain</TableHead>
-            <TableHead className="text-right">Unique URLs</TableHead>
-            <TableHead className="text-right">Mentions</TableHead>
-            <TableHead>Last Seen</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {domains.map((domain) => {
+    <div>
+      <div className="border rounded-lg mb-4">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[50px]"></TableHead>
+              <TableHead>Domain</TableHead>
+              <TableHead className="text-right">Unique URLs</TableHead>
+              <TableHead className="text-right">Mentions</TableHead>
+              <TableHead>Last Seen</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedDomains.map((domain) => {
             const isExpanded = expandedDomains.has(domain.domain)
             const isLoadingUrls = loadingDomains.has(domain.domain)
             const urls = domainUrls[domain.domain] || []
@@ -225,6 +241,38 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
         </TableBody>
       </Table>
     </div>
+
+    {/* Pagination Controls */}
+    {totalPages > 1 && (
+      <div className="flex items-center justify-between px-2">
+        <div className="text-sm text-slate-600">
+          Showing {startIndex + 1}-{Math.min(endIndex, domains.length)} of {domains.length} domains (Page {currentPage} of {totalPages})
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+            className="h-8"
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+            className="h-8"
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    )}
+  </div>
   )
 }
 

@@ -12,8 +12,6 @@ export async function GET(request: NextRequest) {
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
     const modelsParam = searchParams.get('models')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
     
     // Parse model filter
     const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
@@ -22,9 +20,7 @@ export async function GET(request: NextRequest) {
       brandId, 
       fromDate, 
       toDate, 
-      selectedModels,
-      page,
-      limit
+      selectedModels
     })
     
     if (!brandId) {
@@ -77,27 +73,17 @@ export async function GET(request: NextRequest) {
     }
 
     const totalDomains = domains?.length || 0
-    const offset = (page - 1) * limit
-    const paginatedDomains = domains?.slice(offset, offset + limit) || []
 
     console.log('✅ [Citations Domains API] Success:', {
       totalDomains,
-      page,
-      returnedDomains: paginatedDomains.length,
       selectedModels
     })
 
     return NextResponse.json({
       success: true,
       data: {
-        domains: paginatedDomains,
-        pagination: {
-          page,
-          limit,
-          totalItems: totalDomains,
-          totalPages: Math.ceil(totalDomains / limit),
-          hasMore: offset + paginatedDomains.length < totalDomains
-        }
+        domains: domains || [],
+        totalDomains
       }
     })
 

@@ -380,7 +380,7 @@ export default function ReportsCitations() {
                     </CardTitle>
                     {!isDemoMode && domainsData && (
                       <p className="text-xs text-slate-500 mt-1">
-                        {domainsData.pagination?.totalItems || 0} domains · {
+                        {domainsData.totalDomains || 0} domains · {
                           domainsData.domains?.reduce((sum: number, d: any) => sum + d.urls_count, 0) || 0
                         } unique URLs
                       </p>
