@@ -16,7 +16,6 @@ interface DomainData {
 interface URLData {
   url: string
   times_cited: number
-  first_seen_at: string
   last_seen_at: string
 }
 
@@ -191,8 +190,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                             <TableHeader>
                               <TableRow>
                                 <TableHead>URL</TableHead>
-                                <TableHead className="text-right">Times Cited</TableHead>
-                                <TableHead>First Seen</TableHead>
+                                <TableHead className="text-right">Mentions</TableHead>
                                 <TableHead>Last Seen</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -214,10 +212,9 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                     </a>
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    {urlData.times_cited}
-                                  </TableCell>
-                                  <TableCell className="text-sm text-slate-500">
-                                    {new Date(urlData.first_seen_at).toLocaleDateString()}
+                                    <Badge variant="secondary">
+                                      {urlData.times_cited}
+                                    </Badge>
                                   </TableCell>
                                   <TableCell className="text-sm text-slate-500">
                                     {new Date(urlData.last_seen_at).toLocaleDateString()}

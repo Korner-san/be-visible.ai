@@ -14,6 +14,7 @@ import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
 import { CoverageScoreOverTime } from "@/components/CoverageScoreOverTime"
+import { BrandDomainCitationsTable } from "@/components/BrandDomainCitationsTable"
 
 // Helper function to format portrayal types and get descriptions
 const getPortrayalTypeInfo = (type: string) => {
@@ -65,7 +66,9 @@ export default function ReportsVisibility() {
   
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [reportData, setReportData] = useState<any>(null)
+  const [brandCitationsData, setBrandCitationsData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isBrandCitationsLoading, setIsBrandCitationsLoading] = useState(true)
   
   // Check if user is test user (for manual trigger button)
   const [isTestUser, setIsTestUser] = useState(false)
@@ -114,6 +117,43 @@ export default function ReportsVisibility() {
     }
     
     loadData()
+  }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
+  
+  // Load brand domain citations separately
+  useEffect(() => {
+    const loadBrandCitations = async () => {
+      if (!activeBrandId || isDemoMode) {
+        setIsBrandCitationsLoading(false)
+        return
+      }
+      
+      try {
+        setIsBrandCitationsLoading(true)
+        
+        const { from, to } = getDateRangeForAPI()
+        const models = getModelsForAPI()
+        let url = `/api/reports/visibility/brand-citations?brandId=${activeBrandId}`
+        if (from && to) {
+          url += `&from=${from}&to=${to}`
+        }
+        if (models) {
+          url += `&models=${models}`
+        }
+        
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        if (data.success) {
+          setBrandCitationsData(data.data)
+        }
+      } catch (error) {
+        console.error('Error loading brand citations:', error)
+      } finally {
+        setIsBrandCitationsLoading(false)
+      }
+    }
+    
+    loadBrandCitations()
   }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
   // Manual report generation
@@ -677,6 +717,42 @@ export default function ReportsVisibility() {
                 })}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        {/* Brand Domain Citations */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  Brand Website Citations
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-slate-400" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>When AI models cite your brand's own website URLs in their responses.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+                <p className="text-xs text-slate-500 mt-2">
+                  URLs from your website that AI models reference when discussing your brand.
+                </p>
+              </div>
+              {brandCitationsData && brandCitationsData.totalCitations > 0 && (
+                <div className="text-sm text-slate-600">
+                  <span className="font-semibold">{brandCitationsData.totalMentions}</span> total mentions across{' '}
+                  <span className="font-semibold">{brandCitationsData.totalCitations}</span> URLs
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <BrandDomainCitationsTable
+              citations={brandCitationsData?.citations || []}
+              isLoading={isBrandCitationsLoading}
+            />
           </CardContent>
         </Card>
           </>
