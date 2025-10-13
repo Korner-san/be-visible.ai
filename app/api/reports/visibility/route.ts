@@ -612,10 +612,19 @@ export async function GET(request: NextRequest) {
     
     totalResponsesForSoV = responseIds.size
     
-    // Convert to array format with percentages
+    // Calculate total entity response counts (brand + all competitors)
+    const totalEntityResponseCounts = Object.values(shareOfVoiceData).reduce(
+      (sum, responseSet) => sum + responseSet.size, 
+      0
+    )
+    
+    // Convert to array format with competitive percentages
     const shareOfVoice = Object.entries(shareOfVoiceData).map(([entity, responseSet]) => {
       const count = responseSet.size
-      const percentage = totalResponsesForSoV > 0 ? Math.round((count / totalResponsesForSoV) * 100) : 0
+      // Competitive SoV: brand's count / total entity counts (brand + competitors)
+      const percentage = totalEntityResponseCounts > 0 
+        ? Math.round((count / totalEntityResponseCounts) * 100) 
+        : 0
       return {
         entity,
         responseCount: count,

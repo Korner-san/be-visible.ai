@@ -399,8 +399,9 @@ export default function ReportsVisibility() {
                 <TooltipTrigger>
                   <Info className="h-4 w-4 text-slate-400" />
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p>Percentage of responses where your brand was mentioned compared to total responses</p>
+                <TooltipContent className="max-w-xs">
+                  <p className="font-semibold mb-1">Your brand's visibility compared to competitors</p>
+                  <p className="text-xs">This shows what percentage of the conversation your brand owns when AI models discuss you alongside the competitors you selected during onboarding. A higher percentage means your brand appears more frequently than your competitors.</p>
                 </TooltipContent>
               </Tooltip>
             </CardHeader>
@@ -412,7 +413,7 @@ export default function ReportsVisibility() {
               </div>
               <p className="text-xs text-slate-500">
                 {reportData?.shareOfVoice && reportData.shareOfVoice.length > 0
-                  ? `${reportData.shareOfVoice.find((s: any) => s.isBrand)?.responseCount || 0} of ${reportData.totalResponsesForSoV || 0} responses`
+                  ? 'of mentions vs your competitors'
                   : 'no data available'}
               </p>
             </CardContent>

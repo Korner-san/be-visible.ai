@@ -26,8 +26,8 @@ export const ShareOfVoiceChart: React.FC<ShareOfVoiceChartProps> = ({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Share of Voice (Response Count)</CardTitle>
-          <p className="text-xs text-slate-500">Comparing response counts across entities</p>
+          <CardTitle className="text-sm font-medium">Share of Voice: Your Brand vs Competitors</CardTitle>
+          <p className="text-xs text-slate-500">Loading competitive visibility data...</p>
         </CardHeader>
         <CardContent>
           <div className="h-80 flex items-center justify-center">
@@ -42,14 +42,14 @@ export const ShareOfVoiceChart: React.FC<ShareOfVoiceChartProps> = ({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Share of Voice (Response Count)</CardTitle>
-          <p className="text-xs text-slate-500">Comparing response counts across entities</p>
+          <CardTitle className="text-sm font-medium">Share of Voice: Your Brand vs Competitors</CardTitle>
+          <p className="text-xs text-slate-500">How often your brand appears compared to the competitors you selected</p>
         </CardHeader>
         <CardContent>
           <div className="h-80 flex items-center justify-center text-slate-500">
             <div className="text-center">
-              <p className="text-sm">No data available</p>
-              <p className="text-xs mt-1">for selected models in the selected date range</p>
+              <p className="text-sm">No competitive data available yet</p>
+              <p className="text-xs mt-1">Generate reports to see how your brand compares to competitors</p>
             </div>
           </div>
         </CardContent>
@@ -60,9 +60,9 @@ export const ShareOfVoiceChart: React.FC<ShareOfVoiceChartProps> = ({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm font-medium">Share of Voice (Response Count)</CardTitle>
+        <CardTitle className="text-sm font-medium">Share of Voice: Your Brand vs Competitors</CardTitle>
         <p className="text-xs text-slate-500">
-          Number of responses where each entity was mentioned (out of {totalResponses} total responses)
+          How often your brand appears compared to the competitors you selected. Each bar shows how many AI responses mentioned that brand. Higher percentages mean stronger visibility in the AI conversation.
         </p>
       </CardHeader>
       <CardContent>
