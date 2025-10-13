@@ -572,6 +572,57 @@ export async function GET(request: NextRequest) {
     // Sort by count descending for better display
     portrayalTypes.sort((a, b) => b.count - a.count)
 
+    // Calculate Share of Voice (Response Count)
+    const shareOfVoiceData: { [entity: string]: Set<string> } = {}
+    let totalResponsesForSoV = 0
+    const responseIds = new Set<string>()
+    
+    dailyReports?.forEach(report => {
+      report.prompt_results?.forEach((result: any) => {
+        // Filter by selected models
+        if (!selectedModels.includes(result.provider)) {
+          return
+        }
+        
+        // Track unique response IDs
+        const responseId = result.id
+        responseIds.add(responseId)
+        
+        // Count brand mentions
+        if (result.brand_mentioned) {
+          if (!shareOfVoiceData[brand.name]) {
+            shareOfVoiceData[brand.name] = new Set()
+          }
+          shareOfVoiceData[brand.name].add(responseId)
+        }
+        
+        // Count competitor mentions
+        if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
+          result.competitor_mentions.forEach((comp: any) => {
+            if (comp && comp.name) {
+              if (!shareOfVoiceData[comp.name]) {
+                shareOfVoiceData[comp.name] = new Set()
+              }
+              shareOfVoiceData[comp.name].add(responseId)
+            }
+          })
+        }
+      })
+    })
+    
+    totalResponsesForSoV = responseIds.size
+    
+    // Convert to array format with percentages
+    const shareOfVoice = Object.entries(shareOfVoiceData).map(([entity, responseSet]) => {
+      const count = responseSet.size
+      const percentage = totalResponsesForSoV > 0 ? Math.round((count / totalResponsesForSoV) * 100) : 0
+      return {
+        entity,
+        responseCount: count,
+        percentage,
+        isBrand: entity === brand.name
+      }
+    }).sort((a, b) => b.responseCount - a.responseCount) // Sort by count descending
 
     const responseData = {
       brandName: brand.name,
@@ -587,6 +638,8 @@ export async function GET(request: NextRequest) {
       ],
       mentionsVsCompetitors,
       portrayalTypes,
+      shareOfVoice,
+      totalResponsesForSoV,
       lastUpdated: dailyReports?.[dailyReports.length - 1]?.created_at || null,
       totalReports: dailyReports?.length || 0,
       debugInfo: {

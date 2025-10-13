@@ -15,6 +15,7 @@ import { useModelFilter } from "@/store/modelFilter"
 import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
 import { CoverageScoreOverTime } from "@/components/CoverageScoreOverTime"
 import { BrandDomainCitationsTable } from "@/components/BrandDomainCitationsTable"
+import { ShareOfVoiceChart } from "@/components/ShareOfVoiceChart"
 
 // Helper function to format portrayal types and get descriptions
 const getPortrayalTypeInfo = (type: string) => {
@@ -439,7 +440,7 @@ export default function ReportsVisibility() {
           </Card>
         </div>
 
-        {/* Time Series Charts */}
+        {/* Row 1: Brand Mentions Over Time + Sentiment Distribution */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Chart 1: Brand Mentions Over Time */}
           <Card>
@@ -486,11 +487,65 @@ export default function ReportsVisibility() {
             </CardContent>
           </Card>
 
-          {/* Chart 2: Competitive Position Score (Weighted) */}
-          <PositionScoreOverTime 
-            data={reportData?.positionScoreOverTime || []}
-            isLoading={isLoading}
-          />
+          {/* Sentiment Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Sentiment Distribution</CardTitle>
+              <p className="text-xs text-slate-500">Overall sentiment of brand mentions</p>
+            </CardHeader>
+            <CardContent>
+              {(hasRealSentimentData || isDemoMode) && sentimentData.some((s: any) => s.value > 0) ? (
+                <>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={sentimentData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {sentimentData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          contentStyle={{
+                            backgroundColor: 'white',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '8px',
+                            fontSize: '12px'
+                          }}
+                          formatter={(value: any, name: any) => [`${value}%`, name]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {sentimentData.map((entry, index) => (
+                      <div key={`legend-${index}`} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center">
+                          <span className="inline-block w-3 h-3 rounded-full mr-2" style={{ backgroundColor: entry.color }}></span>
+                          {entry.name}
+                        </div>
+                        <span className="font-medium">{entry.value}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-slate-500">
+                  <div className="text-center">
+                    <div className="text-sm mb-2">No sentiment data available</div>
+                    <div className="text-xs">Generate reports to see sentiment analysis</div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Chart 3: Coverage Score Over Time */}
@@ -502,9 +557,9 @@ export default function ReportsVisibility() {
           />
         </div>
 
-        {/* Charts Section */}
+        {/* Row 2: Brand vs Competitors + Portrayal Types */}
         <div className="grid grid-cols-2 gap-6 mb-8">
-          {/* Mentions vs Competitors Dot Plot */}
+          {/* Brand vs Competitors Dot Plot */}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium">Brand vs Competitors: Response Counts</CardTitle>
@@ -606,66 +661,8 @@ export default function ReportsVisibility() {
             </CardContent>
           </Card>
 
-          {/* Sentiment Pie Chart */}
+          {/* Brand Portrayal Types */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">Sentiment Analysis</CardTitle>
-              <p className="text-xs text-slate-500">Sentiment breakdown of brand mentions</p>
-            </CardHeader>
-            <CardContent>
-              {hasRealSentimentData || isDemoMode ? (
-                <>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                          data={sentimentData.filter((s: any) => s.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                          {sentimentData.filter((s: any) => s.value > 0).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip 
-                      formatter={(value) => [`${value}%`, 'Percentage']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4 space-y-2">
-                    {sentimentData.filter((s: any) => s.value > 0).map((item, index) => (
-                  <div key={index} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span>{item.name}</span>
-                    </div>
-                    <span className="font-medium">{item.value}%</span>
-                  </div>
-                ))}
-              </div>
-                </>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-slate-500">
-                  <div className="text-center">
-                    <div className="text-sm mb-2">No sentiment data available</div>
-                    <div className="text-xs">Generate reports to see sentiment analysis</div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Portrayal Type */}
-        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               Brand Portrayal Analysis (How your brand is positioned in AI responses)
@@ -719,6 +716,16 @@ export default function ReportsVisibility() {
             </Table>
           </CardContent>
         </Card>
+        </div>
+
+        {/* Share of Voice Chart */}
+        <div className="mb-8">
+          <ShareOfVoiceChart
+            data={reportData?.shareOfVoice || []}
+            totalResponses={reportData?.totalResponsesForSoV || 0}
+            isLoading={isLoading}
+          />
+        </div>
 
         {/* Brand Domain Citations */}
         <Card>
