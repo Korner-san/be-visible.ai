@@ -15,7 +15,6 @@ import { useModelFilter } from "@/store/modelFilter"
 import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
 import { CoverageScoreOverTime } from "@/components/CoverageScoreOverTime"
 import { BrandDomainCitationsTable } from "@/components/BrandDomainCitationsTable"
-import { ShareOfVoiceChart } from "@/components/ShareOfVoiceChart"
 
 // Helper function to format portrayal types and get descriptions
 const getPortrayalTypeInfo = (type: string) => {
@@ -696,15 +695,6 @@ export default function ReportsVisibility() {
             </Table>
           </CardContent>
         </Card>
-        </div>
-
-        {/* Share of Voice Chart */}
-        <div className="mb-8">
-          <ShareOfVoiceChart
-            data={reportData?.shareOfVoice || []}
-            totalResponses={reportData?.totalResponsesForSoV || 0}
-            isLoading={isLoading}
-          />
         </div>
 
         {/* Brand Domain Citations */}
