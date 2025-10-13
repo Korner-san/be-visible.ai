@@ -1,0 +1,29 @@
+---
+alwaysApply: true
+---
+
+BLOCK 3 — API & Jobs (add to Project Rules)
+
+Rule 12 — API routes stay thin
+
+Do: API handlers validate input and call orchestrators/services. No heavy logic in route files.
+
+Why: Keeps endpoints testable and stable.
+
+Rule 13 — Single classifier service
+
+Do: All portrayal classification must go through the unified classifier; provider is just a parameter.
+
+Why: Fix once; works everywhere.
+
+Rule 14 — One cron source of truth
+
+Do: Use either GitHub Actions or Vercel cron, not both.
+
+Why: Prevents double runs and quota waste.
+
+Rule 15 — Environment variables: minimal and scoped
+
+Do: Server-only secrets never appear in client code. Public vars are NEXT_PUBLIC_*.
+
+Why: Security and predictable deploys.

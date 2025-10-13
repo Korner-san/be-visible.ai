@@ -1,0 +1,35 @@
+---
+alwaysApply: true
+---
+
+BLOCK 5 — Quality Gates & PR Hygiene (add to Project Rules)
+
+Rule 21 — Query contract check
+
+Do: For every changed/added widget, confirm its view/RPC exists and accepts brand_id, date range, providers[]; typed wrapper is updated.
+
+Why: Guarantees correct wiring.
+
+Rule 22 — Provider filter propagation check
+
+Do: Changing the model filter must change network calls and rendered values in every widget.
+
+Why: Verifies end-to-end model awareness.
+
+Rule 23 — One smoke test per page
+
+Do: Each reports page loads and renders at least one metric/table row using the smallest fixture.
+
+Why: Catches “page renders nothing” fast.
+
+Rule 24 — No unrelated diffs
+
+Do: PRs include only files for the ticket; if touching shared code, explain why in the PR description.
+
+Why: Clean reviews and safer rollbacks.
+
+Rule 25 — Types and lints must pass
+
+Do: tsc --noEmit and lint checks must be clean before merging.
+
+Why: Prevents runtime surprises.

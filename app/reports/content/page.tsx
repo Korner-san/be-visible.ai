@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -7,14 +8,57 @@ import { Badge } from "@/components/ui/badge"
 import { Info, TrendingUp, TrendingDown, FileText, MessageSquare, Book, Newspaper, AlertCircle, CheckCircle2, Sparkles } from "lucide-react"
 import { useTimeRangeStore } from "@/store/timeRange"
 import { useBrandsStore } from "@/store/brands"
+import { useDateFilter } from "@/contexts/DateFilterContext"
+import { useModelFilter } from "@/store/modelFilter"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import SimpleBarChart from "@/components/bar-chart"
+import { ContentStructureTable } from "@/components/ContentStructureTable"
 
 export default function ReportsContent() {
   const { range } = useTimeRangeStore()
   const { brands, activeBrandId } = useBrandsStore()
+  const { getDateRangeForAPI } = useDateFilter()
+  const { selectedModels, getModelsForAPI } = useModelFilter()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.isDemo || false
+  
+  const [contentCategoriesData, setContentCategoriesData] = useState<any>(null)
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
+  
+  // Load content categories data
+  useEffect(() => {
+    const loadContentCategories = async () => {
+      if (!activeBrandId || isDemoMode) {
+        setIsCategoriesLoading(false)
+        return
+      }
+      
+      try {
+        setIsCategoriesLoading(true)
+        
+        const { from, to } = getDateRangeForAPI()
+        const models = getModelsForAPI()
+        let url = `/api/reports/content/categories?brandId=${activeBrandId}`
+        if (from && to) {
+          url += `&from=${from}&to=${to}`
+        }
+        if (models) {
+          url += `&selectedModels=${models}`
+        }
+        
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        setContentCategoriesData(data.categories || [])
+      } catch (err) {
+        console.error('Error loading content categories:', err)
+      } finally {
+        setIsCategoriesLoading(false)
+      }
+    }
+    
+    loadContentCategories()
+  }, [activeBrandId, isDemoMode, selectedModels, getDateRangeForAPI, getModelsForAPI])
 
   // Content categorization data for bubble chart
   const contentCategorization = [
@@ -87,12 +131,11 @@ export default function ReportsContent() {
           </Alert>
         )}
 
-        {/* Content Categorization */}
+        {/* Content Structure Analysis - NEW */}
         <div className="mb-8">
-          <SimpleBarChart 
-            title="Content Categorization"
-            description="Content types that have the most effect on how AI models answer questions about your brand"
-            data={contentCategorization}
+          <ContentStructureTable 
+            data={contentCategoriesData || []} 
+            isLoading={isCategoriesLoading} 
           />
         </div>
 

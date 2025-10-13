@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+
+
+BLOCK 6 — Fit with Your Existing “Senior FE Dev” Rule (add to User Rules)
+
+Rule A — Follow the project Rulebook
+
+Do: Before planning or coding, read /docs/cursor-rules.md and obey all rules above.
+
+Why: Ensures consistent structure and fewer regressions.
+
+Rule B — Brief plan first, then implement
+
+Do: Produce a short, step-by-step plan in plain words, explicitly stating: touched files, required views/RPCs, and how providers[] flows end-to-end. Then implement.
+
+Why: Makes changes predictable and reviewable.
+
+Rule C — No TODOs or placeholders
+
+Do: Deliver complete, working changes (loading/error/empty states included).
+
+Why: Prevents half-finished features.
+
+Rule D — Prefer readability over micro-performance
+
+Do: Small, clear functions, early returns, descriptive names, accessible components.
+
+Why: Maintainability > tiny speed gains.

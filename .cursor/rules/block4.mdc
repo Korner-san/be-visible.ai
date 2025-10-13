@@ -1,0 +1,36 @@
+---
+alwaysApply: true
+---
+
+
+BLOCK 4 — Frontend & UX (add to Project Rules)
+
+Rule 16 — Uniform loading / error / empty states
+
+Do: Every data widget shows skeleton → error with retry → empty state.
+
+Why: No blank screens; better UX.
+
+Rule 17 — File size budgets
+
+Do: Pages < 150 lines; widgets/components < 200 lines. If larger, split.
+
+Why: Maintains clarity and AI tool performance.
+
+Rule 18 — Top-nav controls the page
+
+Do: Changing model/date in top nav must refresh all widgets consistently.
+
+Why: Predictable, unified UX.
+
+Rule 19 — Heavy tables paginate
+
+Do: Citations/URLs and Prompts use server-side pagination/filtering/sorting.
+
+Why: Fast pages and smaller payloads.
+
+Rule 20 — Drilldowns reuse the same contracts
+
+Do: Domain/prompt drilldowns call the same view/RPC family with extra filters.
+
+Why: Zero duplicate logic.

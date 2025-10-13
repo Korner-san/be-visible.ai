@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+
+BLOCK 1 — Operating Principles (add to Project Rules)
+
+Rule 1 — Use Supabase MCP before touching data
+
+Do: Inspect tables, views/RPCs, indexes, and RLS with Supabase MCP before writing/altering queries.
+
+Why: Prevents wrong assumptions and mismatched types.
+
+Rule 2 — One global Model Filter controls everything
+
+Do: Every page, API, and query must respect the selected providers (Perplexity, Google AO, etc.) from the shared model filter.
+
+Why: Ensures consistent, model-aware numbers across the app.
+
+Rule 3 — No business math in React
+
+Do: All aggregations/metrics come from Supabase views/RPCs. React only renders data and handles loading/error states.
+
+Why: Keeps UI fast and numbers consistent.
+
+Rule 4 — Thin pages, focused components
+
+Do: Pages compose small widgets; data fetching sits in hooks/services; heavy logic is in SQL or server services.
+
+Why: Small, single-purpose files reduce regressions and help AI tools.
+
+Rule 5 — Do not edit unrelated files
+
+Do: A task may touch only the feature’s files plus clearly named shared services when necessary.
+
+Why: Limits blast radius and keeps PRs reviewable.
+
+

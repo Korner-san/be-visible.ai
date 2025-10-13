@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { callPerplexityAPI, extractPerplexityContent, extractPerplexityCitations } from '@/lib/providers/perplexity'
 import { callGoogleAIOverviewAPI, extractGoogleContent, extractGoogleCitations, hasGoogleResults } from '@/lib/providers/google-ai-overview'
+import { processUrlsForDailyReport, classifyPromptsForDailyReport } from '@/lib/services/url-classification-service'
 
 // Types imported from provider clients
 
@@ -702,6 +703,23 @@ export async function POST(request: NextRequest) {
       } catch (classificationError) {
         console.error('❌ [CLASSIFICATION] Error during LLM classification:', classificationError)
         // Don't fail the entire report for classification errors
+      }
+      
+      // PHASE 5: Process URLs and classify content (NEW)
+      console.log('🔍 [URL PROCESSING] Starting URL extraction and classification')
+      
+      try {
+        // Step 1: Classify prompts
+        const promptsClassified = await classifyPromptsForDailyReport(dailyReport.id)
+        console.log(`✅ [URL PROCESSING] Classified ${promptsClassified} prompts`)
+        
+        // Step 2: Process URLs (extract content and classify)
+        const urlStats = await processUrlsForDailyReport(dailyReport.id)
+        console.log(`✅ [URL PROCESSING] Processed URLs:`, urlStats)
+        
+      } catch (urlProcessingError) {
+        console.error('❌ [URL PROCESSING] Error during URL processing:', urlProcessingError)
+        // Don't fail the entire report for URL processing errors
       }
     }
 

@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+---
+
+Rule 6 — Use provider_data for provider-specific details
+
+Do: Keep core columns stable and put provider-specific payloads in provider_data (JSONB).
+
+Why: Avoids schema bloat as providers grow.
+
+Rule 7 — Rank is an integer
+
+Do: Any “position” metric must be semantic rank (1, 2, 3). Remove/hide legacy character offsets.
+
+Why: Prevents misleading charts.
+
+Rule 8 — One view/RPC per metric
+
+Do: Each widget (mentions/day, coverage, sentiment, portrayal, citations, content types) must read from exactly one view/RPC that accepts brand_id, date range, and providers[].
+
+Why: Single source of truth; easy reuse.
+
+Rule 9 — URLs are scanned once, reused everywhere
+
+Do: Store scans in url_inventory + url_content_facts. Reports filter which URLs to count by provider—never rescan per model in the UI.
+
+Why: Saves quota and separates ingestion from analytics.
+
+Rule 10 — Idempotent writes and clear statuses
+
+Do: Upsert prompt_results by (daily_report_id, brand_prompt_id, provider); track pending/running/ok/failed.
+
+Why: Safe retries without duplicates or corrupt totals.
+
+Rule 11 — Transactions or safe partial commits
+
+Do: Use DB transactions or atomic per-item upserts for provider batches.
+
+Why: Avoids half-written days.
