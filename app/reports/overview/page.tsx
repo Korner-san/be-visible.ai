@@ -259,44 +259,8 @@ export default function ReportsOverview() {
 
 
 
-      {/* KPI Grid */}
-      <div className="grid grid-cols-3 gap-6 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Report Score</CardTitle>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="h-4 w-4 text-slate-400" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Overall performance score across all metrics</p>
-              </TooltipContent>
-            </Tooltip>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">83</div>
-            <p className="text-xs text-slate-500">out of 100</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Models Indexed</CardTitle>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="h-4 w-4 text-slate-400" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Number of AI models that have indexed your content</p>
-              </TooltipContent>
-            </Tooltip>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">2 / 5</div>
-            <p className="text-xs text-slate-500">models indexed</p>
-          </CardContent>
-        </Card>
-
+      {/* KPI Grid - 4 Boxes */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Bot Scans</CardTitle>
@@ -305,31 +269,49 @@ export default function ReportsOverview() {
                 <Info className="h-4 w-4 text-slate-400" />
               </TooltipTrigger>
               <TooltipContent>
-                <p>Total number of AI bot scans on your website</p>
+                <p>Number of times AI models (ChatGPT, Claude, Gemini) scanned your website</p>
               </TooltipContent>
             </Tooltip>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,247</div>
-            <p className="text-xs text-slate-500">total scans</p>
+            <div className="text-2xl font-bold text-slate-300">—</div>
+            <p className="text-xs text-slate-400">Coming soon</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI Sessions</CardTitle>
+            <CardTitle className="text-sm font-medium">AI Referrals</CardTitle>
             <Tooltip>
               <TooltipTrigger>
                 <Info className="h-4 w-4 text-slate-400" />
               </TooltipTrigger>
               <TooltipContent>
-                <p>Website visits referred by AI model recommendations</p>
+                <p>Number of times users visited your website from links provided by AI models</p>
               </TooltipContent>
             </Tooltip>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">892</div>
-            <p className="text-xs text-slate-500">referred visits</p>
+            <div className="text-2xl font-bold text-slate-300">—</div>
+            <p className="text-xs text-slate-400">Coming soon</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pages Indexed</CardTitle>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info className="h-4 w-4 text-slate-400" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Number of your website pages visited by AI bots</p>
+              </TooltipContent>
+            </Tooltip>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-300">—</div>
+            <p className="text-xs text-slate-400">Coming soon</p>
           </CardContent>
         </Card>
 
@@ -346,26 +328,8 @@ export default function ReportsOverview() {
             </Tooltip>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3 days</div>
-            <p className="text-xs text-slate-500">ago</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pages Indexed</CardTitle>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="h-4 w-4 text-slate-400" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Number of your website pages visited by AI bots (based on global time range)</p>
-              </TooltipContent>
-            </Tooltip>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pagesIndexedData.length}</div>
-            <p className="text-xs text-slate-500">pages indexed</p>
+            <div className="text-2xl font-bold text-slate-300">—</div>
+            <p className="text-xs text-slate-400">Coming soon</p>
           </CardContent>
         </Card>
       </div>

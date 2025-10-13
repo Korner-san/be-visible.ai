@@ -250,7 +250,7 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
                 className="border-b-2 border-transparent py-4 px-1 text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 transition-all"
                 activeClassName="border-b-2 border-slate-900 py-4 px-1 text-sm font-semibold text-slate-900"
               >
-                Overview
+                Website
               </NavLink>
               <NavLink
                 href="/reports/visibility"
