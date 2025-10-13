@@ -6,17 +6,46 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
+// Category label formatters
+const formatDomainRole = (category: string | null | undefined): string => {
+  if (!category) return 'Not categorized yet'
+  const labels: Record<string, string> = {
+    'FOUNDATIONAL_AUTHORITY': 'Foundational Authority',
+    'COMPETITIVE_CONSENSUS': 'Competitive Consensus',
+    'REAL_TIME_SIGNAL': 'Real-Time Signal',
+    'COMMUNITY_VALIDATION': 'Community Validation',
+    'TACTICAL_GUIDE': 'Tactical Guide'
+  }
+  return labels[category] || category
+}
+
+const formatContentType = (category: string | null | undefined): string => {
+  if (!category) return 'Not categorized yet'
+  const labels: Record<string, string> = {
+    'DEFINITIVE_QA_BLOCK': 'Q&A Block',
+    'ORIGINAL_DATA_STUDY': 'Data Study',
+    'PRODUCT_COMPARISON_MATRIX': 'Comparison',
+    'NARRATIVE_CASE_STUDY': 'Case Study',
+    'OFFICIAL_DOCUMENTATION': 'Documentation'
+  }
+  return labels[category] || category
+}
+
 interface DomainData {
   domain: string
   urls_count: number
   mentions_count: number
   last_seen_at: string
+  domain_role_category?: string | null
+  content_structure_category?: string | null
 }
 
 interface URLData {
   url: string
   times_cited: number
   last_seen_at: string
+  domain_role_category?: string | null
+  content_structure_category?: string | null
 }
 
 interface CitationsDomainsTableProps {
@@ -129,6 +158,8 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
               <TableHead>Domain</TableHead>
               <TableHead className="text-right">Unique URLs</TableHead>
               <TableHead className="text-right">Mentions</TableHead>
+              <TableHead>Domain Role</TableHead>
+              <TableHead>Content Type</TableHead>
               <TableHead>Last Seen</TableHead>
             </TableRow>
           </TableHeader>
@@ -170,6 +201,24 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   <TableCell className="text-right">
                     {domain.mentions_count}
                   </TableCell>
+                  <TableCell className="text-xs">
+                    {domain.domain_role_category ? (
+                      <Badge variant="outline" className="text-xs">
+                        {formatDomainRole(domain.domain_role_category)}
+                      </Badge>
+                    ) : (
+                      <span className="text-slate-400 italic">Not categorized yet</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {domain.content_structure_category ? (
+                      <Badge variant="outline" className="text-xs">
+                        {formatContentType(domain.content_structure_category)}
+                      </Badge>
+                    ) : (
+                      <span className="text-slate-400 italic">Not categorized yet</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm text-slate-500">
                     {new Date(domain.last_seen_at).toLocaleDateString()}
                   </TableCell>
@@ -178,7 +227,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={5} className="bg-slate-50 p-0">
+                    <TableCell colSpan={7} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">
@@ -191,6 +240,8 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                               <TableRow>
                                 <TableHead>URL</TableHead>
                                 <TableHead className="text-right">Mentions</TableHead>
+                                <TableHead>Domain Role</TableHead>
+                                <TableHead>Content Type</TableHead>
                                 <TableHead>Last Seen</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -215,6 +266,24 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                     <Badge variant="secondary">
                                       {urlData.times_cited}
                                     </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {urlData.domain_role_category ? (
+                                      <Badge variant="outline" className="text-xs">
+                                        {formatDomainRole(urlData.domain_role_category)}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-slate-400 italic">Not yet</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {urlData.content_structure_category ? (
+                                      <Badge variant="outline" className="text-xs">
+                                        {formatContentType(urlData.content_structure_category)}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-slate-400 italic">Not yet</span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-sm text-slate-500">
                                     {new Date(urlData.last_seen_at).toLocaleDateString()}

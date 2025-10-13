@@ -72,7 +72,27 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const totalDomains = domains?.length || 0
+    // Enrich domains with category data from url_content_facts
+    const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
+      // Get the most common domain role category for this domain
+      const { data: categoryData } = await supabase
+        .from('url_inventory')
+        .select(`
+          id,
+          url_content_facts!inner(domain_role_category, content_structure_category)
+        `)
+        .eq('domain', domain.domain)
+        .limit(1)
+        .single()
+      
+      return {
+        ...domain,
+        domain_role_category: categoryData?.url_content_facts?.domain_role_category || null,
+        content_structure_category: categoryData?.url_content_facts?.content_structure_category || null
+      }
+    }))
+
+    const totalDomains = enrichedDomains?.length || 0
 
     console.log('✅ [Citations Domains API] Success:', {
       totalDomains,
@@ -82,7 +102,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        domains: domains || [],
+        domains: enrichedDomains || [],
         totalDomains
       }
     })

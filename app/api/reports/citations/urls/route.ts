@@ -82,9 +82,28 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
+    // Enrich URLs with category data from url_content_facts
+    const enrichedUrls = await Promise.all((urls || []).map(async (urlData: any) => {
+      const { data: categoryData } = await supabase
+        .from('url_inventory')
+        .select(`
+          id,
+          url_content_facts(domain_role_category, content_structure_category)
+        `)
+        .eq('url', urlData.url)
+        .limit(1)
+        .single()
+      
+      return {
+        ...urlData,
+        domain_role_category: categoryData?.url_content_facts?.domain_role_category || null,
+        content_structure_category: categoryData?.url_content_facts?.content_structure_category || null
+      }
+    }))
+
     console.log('✅ [Citations URLs API] Success:', {
       domain,
-      urlsCount: urls?.length || 0,
+      urlsCount: enrichedUrls?.length || 0,
       selectedModels
     })
 
@@ -92,7 +111,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         domain,
-        urls: urls || []
+        urls: enrichedUrls || []
       }
     })
 
