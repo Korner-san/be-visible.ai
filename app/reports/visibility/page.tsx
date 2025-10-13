@@ -391,51 +391,30 @@ export default function ReportsVisibility() {
             </CardContent>
           </Card>
 
-          {/* Average Position */}
+          {/* Share of Voice */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Average Position vs Competitors</CardTitle>
+              <CardTitle className="text-sm font-medium">Share of Voice</CardTitle>
               <Tooltip>
                 <TooltipTrigger>
                   <Info className="h-4 w-4 text-slate-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Average rank position when your brand appears with competitors (1=first, 2=second, etc.)</p>
+                  <p>Percentage of responses where your brand was mentioned compared to total responses</p>
                 </TooltipContent>
               </Tooltip>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {averagePosition ? averagePosition.toFixed(1) : 'N/A'}
+                {reportData?.shareOfVoice && reportData.shareOfVoice.length > 0 
+                  ? `${reportData.shareOfVoice.find((s: any) => s.isBrand)?.percentage || 0}%`
+                  : 'N/A'}
               </div>
               <p className="text-xs text-slate-500">
-                {averagePosition ? 'average rank position' : 'insufficient multi-entity data'}
+                {reportData?.shareOfVoice && reportData.shareOfVoice.length > 0
+                  ? `${reportData.shareOfVoice.find((s: any) => s.isBrand)?.responseCount || 0} of ${reportData.totalResponsesForSoV || 0} responses`
+                  : 'no data available'}
               </p>
-              
-              {/* Debug Block for Position Validation */}
-              {reportData && (
-                <details className="mt-4 text-xs">
-                  <summary className="cursor-pointer text-slate-600 hover:text-slate-800">Debug: Position Analysis</summary>
-                  <div className="mt-2 p-2 bg-slate-50 rounded text-slate-700">
-                    <div>Responses analyzed: {reportData.debugInfo?.totalResponsesAnalyzed || 0}</div>
-                    <div>Brand ranked 1st: {reportData.debugInfo?.brandRankCounts?.[1] || 0} times</div>
-                    <div>Brand ranked 2nd: {reportData.debugInfo?.brandRankCounts?.[2] || 0} times</div>
-                    <div>Brand ranked 3rd+: {reportData.debugInfo?.brandRankCounts?.[3] || 0} times</div>
-                    <div className="mt-2 border-t pt-2">
-                      <div className="font-semibold">Competitors ranked 1st:</div>
-                      {reportData.debugInfo?.competitorFirstCounts ? 
-                        Object.entries(reportData.debugInfo.competitorFirstCounts).map(([comp, count]) => (
-                          <div key={comp}>{comp}: {count} times</div>
-                        )) : 
-                        <div>None</div>
-                      }
-                    </div>
-                    <div className="mt-2 border-t pt-2">
-                      Computed average: {averagePosition?.toFixed(3) || 'N/A'}
-                    </div>
-                  </div>
-                </details>
-              )}
             </CardContent>
           </Card>
         </div>
