@@ -678,18 +678,28 @@ export async function POST(request: NextRequest) {
       console.log(`✅ [AGGREGATION] Updated metrics - Total mentions: ${totalMentions}, Avg rank: ${averageRankPosition}, Sentiment: ${JSON.stringify(sentimentCounts)}`)
     }
 
-    // Check completion and update final status (only after both phases attempted)
-    const isComplete = await updateCompletionStatus(supabase, dailyReport.id)
-
-    // PHASE 4: Run LLM classification for completed providers
-    if (isComplete) {
+    // PHASE 4: Run LLM classification for completed providers (BEFORE completion check)
+    const bothPhasesAttempted = await haveBothPhasesBeenAttempted(supabase, dailyReport.id)
+    
+    if (bothPhasesAttempted) {
       console.log('🤖 [CLASSIFICATION] Starting LLM classification for completed providers')
       
       try {
-        // Run classification for each provider that was processed
+        // Determine which providers to classify based on DATABASE status, not current run counters
+        // (important for resuming incomplete reports)
+        const { data: reportStatus } = await supabase
+          .from('daily_reports')
+          .select('perplexity_status, google_ai_overview_status, perplexity_ok, google_ai_overview_ok')
+          .eq('id', dailyReport.id)
+          .single()
+        
         const providersToClassify = []
-        if (perplexityCounts.attempted > 0) providersToClassify.push('perplexity')
-        if (googleCounts.attempted > 0 && googleCounts.errors === 0) providersToClassify.push('google_ai_overview')
+        if (reportStatus?.perplexity_status === 'complete' && reportStatus.perplexity_ok > 0) {
+          providersToClassify.push('perplexity')
+        }
+        if (reportStatus?.google_ai_overview_status === 'complete' && reportStatus.google_ai_overview_ok > 0) {
+          providersToClassify.push('google_ai_overview')
+        }
 
         for (const provider of providersToClassify) {
           const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify`, {
@@ -739,6 +749,9 @@ export async function POST(request: NextRequest) {
         // Report will NOT be marked as complete if URL processing fails
       }
     }
+    
+    // Check completion and update final status (AFTER URL processing)
+    const isComplete = await updateCompletionStatus(supabase, dailyReport.id)
 
     // Final summary
     console.log(`📊 [DAILY REPORT] Final Summary for ${brand.name}:`)
