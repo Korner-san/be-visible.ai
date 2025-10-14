@@ -678,57 +678,11 @@ export async function POST(request: NextRequest) {
       console.log(`✅ [AGGREGATION] Updated metrics - Total mentions: ${totalMentions}, Avg rank: ${averageRankPosition}, Sentiment: ${JSON.stringify(sentimentCounts)}`)
     }
 
-    // PHASE 4: Run LLM classification for completed providers (BEFORE completion check)
+    // PHASE 4: Process URLs and classify content (REQUIRED FOR REPORT COMPLETION)
+    // Note: Old portrayal classification removed - we now use LLM-based classification in URL processing
     const bothPhasesAttempted = await haveBothPhasesBeenAttempted(supabase, dailyReport.id)
     
     if (bothPhasesAttempted) {
-      console.log('🤖 [CLASSIFICATION] Starting LLM classification for completed providers')
-      
-      try {
-        // Determine which providers to classify based on DATABASE status, not current run counters
-        // (important for resuming incomplete reports)
-        const { data: reportStatus } = await supabase
-          .from('daily_reports')
-          .select('perplexity_status, google_ai_overview_status, perplexity_ok, google_ai_overview_ok')
-          .eq('id', dailyReport.id)
-          .single()
-        
-        const providersToClassify = []
-        if (reportStatus?.perplexity_status === 'complete' && reportStatus.perplexity_ok > 0) {
-          providersToClassify.push('perplexity')
-        }
-        if (reportStatus?.google_ai_overview_status === 'complete' && reportStatus.google_ai_overview_ok > 0) {
-          providersToClassify.push('google_ai_overview')
-        }
-
-        for (const provider of providersToClassify) {
-          const classificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/reports/classify`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              brandId: brandId,
-              provider: provider,
-              fromCron: fromCron,
-              dailyReportId: dailyReport.id
-            })
-          })
-
-          if (classificationResponse.ok) {
-            const classificationResult = await classificationResponse.json()
-            console.log(`✅ [${provider.toUpperCase()} CLASSIFICATION] Completed:`, classificationResult)
-          } else {
-            console.error(`❌ [${provider.toUpperCase()} CLASSIFICATION] Failed:`, await classificationResponse.text())
-          }
-        }
-
-      } catch (classificationError) {
-        console.error('❌ [CLASSIFICATION] Error during LLM classification:', classificationError)
-        // Don't fail the entire report for classification errors
-      }
-      
-      // PHASE 5: Process URLs and classify content (REQUIRED FOR REPORT COMPLETION)
       console.log('🔍 [URL PROCESSING] Starting URL extraction and classification')
       
       try {
