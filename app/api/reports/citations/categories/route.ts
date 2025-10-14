@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 /**
  * GET /api/reports/citations/categories
@@ -7,7 +8,9 @@ import { createClient } from '@/lib/supabase/server'
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    // Use both clients - user client for auth check, service client for queries
+    const userSupabase = await createClient()
+    const supabase = createServiceClient()
     
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
@@ -57,18 +60,17 @@ export async function GET(request: NextRequest) {
     // Get URL citations for these prompt results
     const promptResultIds = promptResults.map(r => r.id)
     
+    // First, get all citations
     const { data: citations, error: citationsError } = await supabase
       .from('url_citations')
       .select(`
         id,
         url_id,
         provider,
-        prompt_result_id,
-        url_inventory!inner(domain, url),
-        url_content_facts!inner(domain_role_category)
+        prompt_result_id
       `)
       .in('prompt_result_id', promptResultIds)
-
+    
     if (citationsError) {
       console.error('Error fetching citations:', citationsError)
       return NextResponse.json({ error: citationsError.message }, { status: 500 })
@@ -77,6 +79,37 @@ export async function GET(request: NextRequest) {
     if (!citations || citations.length === 0) {
       return NextResponse.json({ categories: [] })
     }
+
+    // Get url_inventory and url_content_facts for these citations
+    const urlIds = citations.map((c: any) => c.url_id)
+    
+    const { data: urlData, error: urlError } = await supabase
+      .from('url_inventory')
+      .select(`
+        id,
+        domain,
+        url,
+        url_content_facts!inner(domain_role_category)
+      `)
+      .in('id', urlIds)
+
+    if (urlError) {
+      console.error('Error fetching URL data:', urlError)
+      return NextResponse.json({ error: urlError.message }, { status: 500 })
+    }
+
+    if (!urlData || urlData.length === 0) {
+      return NextResponse.json({ categories: [] })
+    }
+
+    // Create a map of url_id to url data
+    const urlDataMap = new Map(
+      urlData.map((u: any) => [u.id, {
+        domain: u.domain,
+        url: u.url,
+        domain_role_category: u.url_content_facts?.domain_role_category
+      }])
+    )
 
     // Aggregate by domain role category
     const categoryStats: Record<string, {
@@ -87,9 +120,12 @@ export async function GET(request: NextRequest) {
     }> = {}
 
     citations.forEach((citation: any) => {
-      const category = citation.url_content_facts?.domain_role_category || 'FOUNDATIONAL_AUTHORITY'
-      const domain = citation.url_inventory?.domain
-      const url = citation.url_inventory?.url
+      const urlInfo = urlDataMap.get(citation.url_id)
+      if (!urlInfo || !urlInfo.domain_role_category) return // Skip URLs without classification
+
+      const category = urlInfo.domain_role_category
+      const domain = urlInfo.domain
+      const url = urlInfo.url
       const provider = citation.provider
 
       if (!categoryStats[category]) {

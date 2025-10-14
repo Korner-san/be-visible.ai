@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 /**
  * GET /api/reports/content/categories
@@ -7,7 +8,8 @@ import { createClient } from '@/lib/supabase/server'
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    // Use service client to bypass RLS for aggregation queries
+    const supabase = createServiceClient()
     
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
@@ -57,15 +59,14 @@ export async function GET(request: NextRequest) {
     // Get URL citations for these prompt results
     const promptResultIds = promptResults.map(r => r.id)
     
+    // First, get all citations
     const { data: citations, error: citationsError } = await supabase
       .from('url_citations')
       .select(`
         id,
         url_id,
         provider,
-        prompt_result_id,
-        url_inventory!inner(url),
-        url_content_facts!inner(content_structure_category, domain_role_category, extracted_at)
+        prompt_result_id
       `)
       .in('prompt_result_id', promptResultIds)
 
@@ -77,6 +78,37 @@ export async function GET(request: NextRequest) {
     if (!citations || citations.length === 0) {
       return NextResponse.json({ categories: [] })
     }
+
+    // Get url_inventory and url_content_facts for these citations
+    const urlIds = citations.map((c: any) => c.url_id)
+    
+    const { data: urlData, error: urlError } = await supabase
+      .from('url_inventory')
+      .select(`
+        id,
+        url,
+        url_content_facts!inner(content_structure_category, domain_role_category, extracted_at)
+      `)
+      .in('id', urlIds)
+
+    if (urlError) {
+      console.error('Error fetching URL data:', urlError)
+      return NextResponse.json({ error: urlError.message }, { status: 500 })
+    }
+
+    if (!urlData || urlData.length === 0) {
+      return NextResponse.json({ categories: [] })
+    }
+
+    // Create a map of url_id to url data
+    const urlDataMap = new Map(
+      urlData.map((u: any) => [u.id, {
+        url: u.url,
+        content_structure_category: u.url_content_facts?.content_structure_category,
+        domain_role_category: u.url_content_facts?.domain_role_category,
+        extracted_at: u.url_content_facts?.extracted_at
+      }])
+    )
 
     // Get prompt intent classifications
     const dailyReportIds = [...new Set(promptResults.map(r => r.daily_report_id))]
@@ -107,11 +139,14 @@ export async function GET(request: NextRequest) {
     }> = {}
 
     citations.forEach((citation: any) => {
-      const category = citation.url_content_facts?.content_structure_category || 'OFFICIAL_DOCUMENTATION'
-      const url = citation.url_inventory?.url
+      const urlInfo = urlDataMap.get(citation.url_id)
+      if (!urlInfo || !urlInfo.content_structure_category) return // Skip URLs without classification
+
+      const category = urlInfo.content_structure_category
+      const url = urlInfo.url
       const promptResultId = citation.prompt_result_id
       const intent = promptIntentMap[promptResultId] || 'FOUNDATIONAL_AUTHORITY'
-      const extractedAt = citation.url_content_facts?.extracted_at
+      const extractedAt = urlInfo.extracted_at
 
       if (!categoryStats[category]) {
         categoryStats[category] = {

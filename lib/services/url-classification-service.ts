@@ -163,8 +163,8 @@ export const processUrlsForDailyReport = async (
       }
     }
     
-    // Step 7: Extract content from URLs needing extraction (batch of 30 for now)
-    const urlsToExtract = urlsNeedingContent.slice(0, 30) // Limit to 30 for this run
+    // Step 7: Extract content from ALL URLs needing extraction
+    const urlsToExtract = urlsNeedingContent // Process ALL URLs, not just 30
     
     if (urlsToExtract.length === 0) {
       console.log('ℹ️ [URL PROCESSOR] No URLs need content extraction')
@@ -176,7 +176,7 @@ export const processUrlsForDailyReport = async (
       }
     }
     
-    console.log(`🔍 [URL PROCESSOR] Extracting content from ${urlsToExtract.length} URLs using Tavily...`)
+    console.log(`🔍 [URL PROCESSOR] Extracting content from ${urlsToExtract.length} URLs using Tavily (batches of 20)...`)
     const extractedContent = await extractUrlContentBatch(urlsToExtract)
     
     // Filter successful extractions
@@ -255,17 +255,36 @@ export const processUrlsForDailyReport = async (
       }
     }
     
-    console.log(`✅ [URL PROCESSOR] URL processing complete for daily report ${dailyReportId}`)
-    
-    return {
+    const result = {
       totalUrls: allUrls.length,
       newUrls: newUrls.length,
       extractedUrls: successfulExtractions.length,
       classifiedUrls: classifications.length
     }
     
+    // Update daily_reports with URL processing statistics and mark as complete
+    await supabase
+      .from('daily_reports')
+      .update({
+        urls_total: result.totalUrls,
+        urls_extracted: result.extractedUrls,
+        urls_classified: result.classifiedUrls,
+        url_processing_status: 'complete'
+      })
+      .eq('id', dailyReportId)
+    
+    console.log(`✅ [URL PROCESSOR] URL processing complete for daily report ${dailyReportId}`)
+    return result
+    
   } catch (error: any) {
     console.error('❌ [URL PROCESSOR] Fatal error:', error)
+    
+    // Mark URL processing as failed
+    await supabase
+      .from('daily_reports')
+      .update({ url_processing_status: 'failed' })
+      .eq('id', dailyReportId)
+    
     return { totalUrls: 0, newUrls: 0, extractedUrls: 0, classifiedUrls: 0 }
   }
 }
@@ -279,6 +298,12 @@ export const classifyPromptsForDailyReport = async (
   console.log(`🤖 [PROMPT CLASSIFIER] Starting prompt classification for daily report ${dailyReportId}`)
   
   const supabase = createServiceClient()
+  
+  // Mark URL processing as running
+  await supabase
+    .from('daily_reports')
+    .update({ url_processing_status: 'running' })
+    .eq('id', dailyReportId)
   
   try {
     // Get all prompt results for this daily report
@@ -319,10 +344,24 @@ export const classifyPromptsForDailyReport = async (
     }
     
     console.log(`✅ [PROMPT CLASSIFIER] Stored ${classificationRecords.length} prompt classifications`)
+    
+    // Update daily_reports with prompts_classified count
+    await supabase
+      .from('daily_reports')
+      .update({ prompts_classified: classificationRecords.length })
+      .eq('id', dailyReportId)
+    
     return classificationRecords.length
     
   } catch (error: any) {
     console.error('❌ [PROMPT CLASSIFIER] Fatal error:', error)
+    
+    // Mark URL processing as failed
+    await supabase
+      .from('daily_reports')
+      .update({ url_processing_status: 'failed' })
+      .eq('id', dailyReportId)
+    
     return 0
   }
 }

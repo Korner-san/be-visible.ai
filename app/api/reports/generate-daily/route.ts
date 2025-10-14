@@ -337,14 +337,27 @@ const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
   const isPerplexityComplete = await isDailyReportComplete(supabase, dailyReportId)
   const bothPhasesAttempted = await haveBothPhasesBeenAttempted(supabase, dailyReportId)
   
-  // Only mark as complete if Perplexity is complete AND both phases have been attempted
-  const shouldMarkComplete = isPerplexityComplete && bothPhasesAttempted
+  // Check if URL processing is complete
+  const { data: reportStatus } = await supabase
+    .from('daily_reports')
+    .select('url_processing_status, prompts_classified, urls_total, urls_classified')
+    .eq('id', dailyReportId)
+    .single()
+  
+  const isUrlProcessingComplete = reportStatus?.url_processing_status === 'complete' && 
+                                  reportStatus?.prompts_classified > 0
+  
+  // Only mark as complete if ALL THREE phases are complete:
+  // 1. Perplexity is complete
+  // 2. Both provider phases have been attempted
+  // 3. URL processing and classification is complete
+  const shouldMarkComplete = isPerplexityComplete && bothPhasesAttempted && isUrlProcessingComplete
   
   const { error } = await supabase
     .from('daily_reports')
     .update({
       generated: shouldMarkComplete,
-      status: shouldMarkComplete ? 'completed' : 'incomplete',
+      status: shouldMarkComplete ? 'completed' : 'running',
       completed_at: shouldMarkComplete ? new Date().toISOString() : null
     })
     .eq('id', dailyReportId)
@@ -352,7 +365,7 @@ const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
   if (error) {
     console.error('❌ [COMPLETION] Error updating completion status:', error)
   } else {
-    console.log(`✅ [COMPLETION] Report marked as ${shouldMarkComplete ? 'complete' : 'incomplete'} (Perplexity: ${isPerplexityComplete ? 'complete' : 'incomplete'}, Both phases attempted: ${bothPhasesAttempted})`)
+    console.log(`✅ [COMPLETION] Report marked as ${shouldMarkComplete ? 'complete' : 'incomplete'} (Perplexity: ${isPerplexityComplete}, Both phases: ${bothPhasesAttempted}, URL processing: ${isUrlProcessingComplete})`)
   }
 
   return shouldMarkComplete
@@ -705,7 +718,7 @@ export async function POST(request: NextRequest) {
         // Don't fail the entire report for classification errors
       }
       
-      // PHASE 5: Process URLs and classify content (NEW)
+      // PHASE 5: Process URLs and classify content (REQUIRED FOR REPORT COMPLETION)
       console.log('🔍 [URL PROCESSING] Starting URL extraction and classification')
       
       try {
@@ -717,9 +730,13 @@ export async function POST(request: NextRequest) {
         const urlStats = await processUrlsForDailyReport(dailyReport.id)
         console.log(`✅ [URL PROCESSING] Processed URLs:`, urlStats)
         
+        // URL processing is now required for report completion
+        // If it fails, the report will be marked as incomplete
+        
       } catch (urlProcessingError) {
         console.error('❌ [URL PROCESSING] Error during URL processing:', urlProcessingError)
-        // Don't fail the entire report for URL processing errors
+        // Mark URL processing as failed in database (already done in service function)
+        // Report will NOT be marked as complete if URL processing fails
       }
     }
 
