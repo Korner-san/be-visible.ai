@@ -19,7 +19,8 @@ interface DomainCategory {
   category: string
   count: number
   uniqueDomains: number
-  avgCitationsPerUrl: number
+  uniqueUrls: number
+  shareOfVoice: number
   dominantModel: string
 }
 
@@ -31,28 +32,28 @@ interface DomainCategorizationTableProps {
 const CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
   'FOUNDATIONAL_AUTHORITY': {
     label: 'Foundational Authority',
-    description: 'Domains cited for established definitions, history, and technical standards (e.g., Wikipedia, Government, Academic Sites)',
+    description: 'The Trust Anchor. Domains consistently cited for basic definitions, industry history, technical standards, or academic consensus. These sources establish the core facts the AI operates on.',
     color: 'bg-blue-100 text-blue-800'
   },
   'COMPETITIVE_CONSENSUS': {
     label: 'Competitive Consensus',
-    description: 'Domains cited for comparative data, product features, and reviews (e.g., G2, Capterra, high-tier niche analysts)',
+    description: 'The Decision-Maker. Domains frequently cited in comparative (vs.) queries, feature roundups, and product evaluation contexts. The AI uses these to summarize purchase decisions.',
     color: 'bg-purple-100 text-purple-800'
+  },
+  'TACTICAL_GUIDE': {
+    label: 'Tactical Guide',
+    description: 'The Problem-Solver. Domains cited for structured, step-by-step instructions, how-to guides, and detailed troubleshooting. The content must be easy for the AI to convert into a numbered list.',
+    color: 'bg-yellow-100 text-yellow-800'
   },
   'REAL_TIME_SIGNAL': {
     label: 'Real-Time Signal',
-    description: 'Domains cited for recent events, breaking news, or temporary spikes (e.g., major news publications, press release domains)',
+    description: 'The Recency Driver. Domains cited only for breaking news, event coverage, or time-sensitive data. High volume often indicates a successful competitor PR/news cycle.',
     color: 'bg-orange-100 text-orange-800'
   },
   'COMMUNITY_VALIDATION': {
     label: 'Community Validation',
-    description: 'Domains where user experience and peer discussion drive citation (e.g., Reddit, Stack Overflow, specific forums)',
+    description: 'The Peer-Trust Role. Domains like Reddit, Quora, and public forums that the AI uses to sample user opinion or validate a common solution.',
     color: 'bg-green-100 text-green-800'
-  },
-  'TACTICAL_GUIDE': {
-    label: 'Tactical Guide',
-    description: 'Domains cited for step-by-step instructions, troubleshooting, or product documentation (e.g., help centers, tutorials)',
-    color: 'bg-yellow-100 text-yellow-800'
   }
 }
 
@@ -125,10 +126,61 @@ export function DomainCategorizationTable({ data, isLoading }: DomainCategorizat
             <TableHeader>
               <TableRow>
                 <TableHead>Category</TableHead>
-                <TableHead className="text-right">Mentions</TableHead>
-                <TableHead className="text-right">Unique Domains</TableHead>
-                <TableHead className="text-right">Avg. Citations/URL</TableHead>
-                <TableHead className="text-right">Dominant Model</TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Mentions
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The total number of times any URL from this domain was cited by all models.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Unique Domains
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The total number of unique root domains that fall into this category.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Unique URLs
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Share of Voice
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The percentage of all citations across all categories that belong here.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Model Preference
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The AI Model that cited this category most frequently.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -160,7 +212,12 @@ export function DomainCategorizationTable({ data, isLoading }: DomainCategorizat
                       {category.uniqueDomains}
                     </TableCell>
                     <TableCell className="text-right">
-                      {category.avgCitationsPerUrl}
+                      {category.uniqueUrls}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant="outline">
+                        {category.shareOfVoice}%
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline">

@@ -31,28 +31,28 @@ interface ContentStructureTableProps {
 const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
   'DEFINITIVE_QA_BLOCK': {
     label: 'Definitive Q&A Block',
-    description: 'Concise text blocks, often schema-tagged or in FAQ sections, designed for direct answer extraction',
+    description: "The AI's Answer Key. Highly structured, short paragraphs designed to answer a single question (often tagged with FAQ/HowTo Schema). The AI extracts this with minimal editing. Goal: Be concise, clear, and factually correct.",
     color: 'bg-blue-100 text-blue-800'
-  },
-  'ORIGINAL_DATA_STUDY': {
-    label: 'Original Data Study',
-    description: 'Content focused on proprietary research, surveys, or unique data sets with stated methodology',
-    color: 'bg-purple-100 text-purple-800'
   },
   'PRODUCT_COMPARISON_MATRIX': {
     label: 'Product Comparison Matrix',
-    description: 'Content presented in bulleted lists, tables, or side-by-side product feature layouts',
+    description: 'The Feature Summary. Content presented in tables, bulleted lists, or side-by-side feature comparisons. Ideal for satisfying Competitive Consensus queries. Goal: Use clear HTML/Markdown tables with up-to-date data.',
     color: 'bg-orange-100 text-orange-800'
-  },
-  'NARRATIVE_CASE_STUDY': {
-    label: 'Narrative Case Study',
-    description: 'Story-driven content detailing a client win, problem/solution, or a project outcome',
-    color: 'bg-green-100 text-green-800'
   },
   'OFFICIAL_DOCUMENTATION': {
     label: 'Official Documentation',
-    description: 'Structured content from official help centers, APIs, or knowledge bases',
+    description: 'The Trusted Source Code. Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions. Goal: Must be perfectly accessible, fast, and free of broken links to win technical queries.',
     color: 'bg-yellow-100 text-yellow-800'
+  },
+  'NARRATIVE_CASE_STUDY': {
+    label: 'Narrative Case Study',
+    description: 'The Proof Point. Long-form content detailing a problem, solution, and clear numerical result (e.g., "Client achieved 25% ROI"). These citations are used to build trust and demonstrate Experience. Goal: Ensure the "Result" is quotable in one sentence.',
+    color: 'bg-green-100 text-green-800'
+  },
+  'ORIGINAL_DATA_STUDY': {
+    label: 'Original Data Study',
+    description: 'The Unique Asset. Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else. Goal: Invest in annual research that the entire industry must reference.',
+    color: 'bg-purple-100 text-purple-800'
   }
 }
 
@@ -133,10 +133,50 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
             <TableHeader>
               <TableRow>
                 <TableHead>Content Structure</TableHead>
-                <TableHead className="text-right">Unique URLs</TableHead>
-                <TableHead className="text-right">% of Total</TableHead>
-                <TableHead className="text-right">Primary Intent</TableHead>
-                <TableHead className="text-right">Avg. Longevity</TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Unique URLs
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      % of Total
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The percentage of all citations that use this content structure.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Primary Intent
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The most common user query intent that led to citing this content structure.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Avg. Longevity
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">The average number of days content of this type continues to be cited after first appearing.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

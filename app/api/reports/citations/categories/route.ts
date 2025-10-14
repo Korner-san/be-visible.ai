@@ -146,11 +146,16 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Calculate total citations for share of voice
+    const totalCitations = Object.values(categoryStats).reduce((sum, stats) => sum + stats.count, 0)
+
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
       const uniqueDomains = stats.uniqueDomains.size
       const uniqueUrls = stats.uniqueUrls.size
-      const avgCitationsPerUrl = uniqueUrls > 0 ? (stats.count / uniqueUrls).toFixed(1) : '0'
+      const shareOfVoice = totalCitations > 0 
+        ? Math.round((stats.count / totalCitations) * 100) 
+        : 0
       
       // Find dominant provider
       const dominantProvider = Object.entries(stats.providerCounts)
@@ -160,7 +165,8 @@ export async function GET(request: NextRequest) {
         category,
         count: stats.count,
         uniqueDomains,
-        avgCitationsPerUrl: parseFloat(avgCitationsPerUrl),
+        uniqueUrls,
+        shareOfVoice,
         dominantModel: dominantProvider
       }
     }).sort((a, b) => b.count - a.count)
