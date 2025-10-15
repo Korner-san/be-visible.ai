@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
-import { CoverageScoreOverTime } from "@/components/CoverageScoreOverTime"
+import { CoverageStackedBarChart } from "@/components/CoverageStackedBarChart"
 import { BrandDomainCitationsTable } from "@/components/BrandDomainCitationsTable"
 
 // Helper function to format portrayal types and get descriptions
@@ -529,10 +529,11 @@ export default function ReportsVisibility() {
 
         {/* Chart 3: Coverage Score Over Time */}
         <div className="grid gap-6 mb-8">
-          <CoverageScoreOverTime 
+          <CoverageStackedBarChart 
             data={reportData?.coverageOverTime || []}
             showCompetitors={true}
             isLoading={isLoading}
+            brandName={activeBrand?.name || "Brand"}
           />
         </div>
 
