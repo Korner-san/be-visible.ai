@@ -182,6 +182,10 @@ export default function SignInPage() {
               )}
             </div>
 
+          </CardContent>
+
+          {/* Remember Me Section - Between CardContent and CardFooter */}
+          <div className="px-6">
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="rememberMe"
@@ -195,9 +199,9 @@ export default function SignInPage() {
                 Remember me
               </Label>
             </div>
-          </CardContent>
+          </div>
 
-          <CardFooter className="flex flex-col space-y-6 mt-12">
+          <CardFooter className="flex flex-col space-y-6">
             <Button
               type="submit"
               className="w-full"
