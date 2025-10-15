@@ -182,7 +182,7 @@ export default function SignInPage() {
               )}
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 mb-8">
               <Checkbox
                 id="rememberMe"
                 checked={rememberMe}
