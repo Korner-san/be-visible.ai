@@ -133,12 +133,6 @@ export default function SignInPage() {
               </Alert>
             )}
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -218,6 +212,10 @@ export default function SignInPage() {
                 'Sign In'
               )}
             </Button>
+
+            {error && (
+              <p className="text-sm text-red-600 text-center">{error}</p>
+            )}
 
             <div className="text-center text-sm">
               <span className="text-slate-600">Don't have an account? </span>
