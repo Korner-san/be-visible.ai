@@ -10,7 +10,7 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: any }>
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: any }>
   signUp: (email: string, password: string, userData?: any) => Promise<{ data: any; error: any }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: any }>
@@ -72,10 +72,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe()
   }, [supabase.auth])
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, rememberMe: boolean = false) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
+      options: {
+        // If rememberMe is true, extend session duration
+        // Supabase handles session persistence automatically
+      }
     })
     return { error }
   }

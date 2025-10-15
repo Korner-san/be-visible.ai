@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -17,15 +18,37 @@ import * as z from 'zod'
 const signInSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().optional(),
 })
 
 type SignInFormData = z.infer<typeof signInSchema>
+
+// Helper functions for saving only email (not password) in localStorage
+const saveRememberedEmail = (email: string) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('be-visible-remembered-email', email)
+  }
+}
+
+const getRememberedEmail = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('be-visible-remembered-email')
+  }
+  return null
+}
+
+const clearRememberedEmail = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('be-visible-remembered-email')
+  }
+}
 
 export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [rememberMe, setRememberMe] = useState(false)
   
   const { signIn, user } = useAuth()
   const router = useRouter()
@@ -34,6 +57,8 @@ export default function SignInPage() {
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<SignInFormData>({
     resolver: zodResolver(signInSchema),
@@ -48,6 +73,15 @@ export default function SignInPage() {
   }, [searchParams])
 
   useEffect(() => {
+    // Load saved email on page load (password is never saved for security)
+    const savedEmail = getRememberedEmail()
+    if (savedEmail) {
+      setValue('email', savedEmail)
+      setRememberMe(true)
+    }
+  }, [setValue])
+
+  useEffect(() => {
     // Redirect if already authenticated - let server-side routing handle onboarding vs dashboard
     if (user) {
       router.push('/setup/onboarding')
@@ -59,11 +93,18 @@ export default function SignInPage() {
     setError(null)
 
     try {
-      const { error } = await signIn(data.email, data.password)
+      const { error } = await signIn(data.email, data.password, rememberMe)
 
       if (error) {
         setError(error.message)
       } else {
+        // Handle remember me functionality - only save email, never password
+        if (rememberMe) {
+          saveRememberedEmail(data.email)
+        } else {
+          clearRememberedEmail()
+        }
+        
         // Successful sign in - redirect to onboarding (server will handle routing logic)
         router.push('/setup/onboarding')
       }
@@ -145,6 +186,20 @@ export default function SignInPage() {
               {errors.password && (
                 <p className="text-sm text-red-600">{errors.password.message}</p>
               )}
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="rememberMe"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+              />
+              <Label
+                htmlFor="rememberMe"
+                className="text-sm font-normal cursor-pointer"
+              >
+                Remember me
+              </Label>
             </div>
           </CardContent>
 
