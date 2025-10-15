@@ -182,7 +182,7 @@ export default function SignInPage() {
               )}
             </div>
 
-            <div className="flex items-center space-x-2 mb-8">
+            <div className="flex items-center space-x-2">
               <Checkbox
                 id="rememberMe"
                 checked={rememberMe}
@@ -197,7 +197,7 @@ export default function SignInPage() {
             </div>
           </CardContent>
 
-          <CardFooter className="flex flex-col space-y-6">
+          <CardFooter className="flex flex-col space-y-6 mt-12">
             <Button
               type="submit"
               className="w-full"
