@@ -68,12 +68,17 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
     "data": { "name": "table" },
     "config": {
       "view": {
-        "continuousWidth": 400,
-        "continuousHeight": 300
+        "continuousWidth": 500,
+        "continuousHeight": 250
       },
       "background": "white",
       "title": {
-        "color": "black"
+        "color": "black",
+        "fontSize": 14
+      },
+      "axis": {
+        "labelFontSize": 12,
+        "titleFontSize": 12
       }
     },
     "mark": "bar",
@@ -84,7 +89,11 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
           "domain": domain,
           "range": range
         },
-        "title": "Entity"
+        "title": "Entity",
+        "legend": {
+          "orient": "bottom",
+          "labelFontSize": 11
+        }
       },
       "tooltip": [
         {
@@ -111,21 +120,42 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
       ],
       "x": {
         "axis": {
-          "format": "%b %d"
+          "format": "%b %d",
+          "labelAngle": -45,
+          "labelFontSize": 10
         },
         "field": "Date",
         "title": "Date",
-        "type": "temporal"
+        "type": "temporal",
+        "scale": {
+          "type": "time"
+        }
       },
       "y": {
         "field": "Coverage %",
         "title": "Coverage %",
-        "type": "quantitative"
+        "type": "quantitative",
+        "scale": {
+          "domain": [0, 100]
+        },
+        "axis": {
+          "format": ".0f",
+          "labelFontSize": 10
+        }
       }
     },
-    "height": 400,
-    "width": 600,
-    "title": `Daily Coverage % Distribution: ${brandName} vs Competitors`
+    "width": 500,
+    "height": 250,
+    "title": {
+      "text": `Daily Coverage % Distribution: ${brandName} vs Competitors`,
+      "fontSize": 14,
+      "anchor": "start"
+    },
+    "resolve": {
+      "scale": {
+        "color": "independent"
+      }
+    }
   }
 }
 
@@ -186,6 +216,11 @@ export const CoverageStackedBarChart: React.FC<CoverageStackedBarChartProps> = (
   // Transform data for Vega-Lite
   const chartData = transformCoverageData(data, brandName)
   
+  // Debug logging
+  console.log('🔍 [CoverageStackedBarChart] Raw data:', data)
+  console.log('🔍 [CoverageStackedBarChart] Transformed chart data:', chartData)
+  console.log('🔍 [CoverageStackedBarChart] Entities:', entityList)
+  
   // Generate dynamic spec
   const vegaSpec = generateVegaLiteSpec(entityList, brandName)
 
@@ -198,11 +233,15 @@ export const CoverageStackedBarChart: React.FC<CoverageStackedBarChartProps> = (
         </p>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
+        <div className="h-80 w-full overflow-hidden">
           <VegaEmbed 
             spec={vegaSpec} 
             data={{ table: chartData }}
             renderer="svg"
+            options={{
+              renderer: 'svg',
+              actions: false
+            }}
           />
         </div>
       </CardContent>

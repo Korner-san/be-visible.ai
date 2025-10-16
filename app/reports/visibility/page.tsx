@@ -104,7 +104,8 @@ export default function ReportsVisibility() {
             console.log('✅ [Visibility] Data loaded:', {
               totalMentions: visibilityData.data.totalMentions,
               models: models,
-              reportsCount: visibilityData.data.totalReports
+              reportsCount: visibilityData.data.totalReports,
+              coverageOverTime: visibilityData.data.coverageOverTime
             })
             setReportData(visibilityData.data)
           }
