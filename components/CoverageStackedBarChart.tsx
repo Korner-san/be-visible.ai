@@ -20,30 +20,39 @@ interface CoverageData {
 const transformCoverageData = (data: CoverageData[], brandName: string): any[] => {
   const transformedData: any[] = []
   
+  console.log('🔍 [Transform] Input data:', data)
+  
   data.forEach(day => {
+    console.log('🔍 [Transform] Processing day:', day)
+    
     // Add brand data
-    transformedData.push({
-      "Date": day.date,
+    const brandData = {
+      "Date": new Date(day.date).toISOString().split('T')[0], // Ensure proper date format
       "Entity": brandName,
-      "Coverage %": day.brandCoverage,
+      "Coverage %": Math.round(day.brandCoverage * 10) / 10, // Round to 1 decimal
       "Mention Count": day.brandCovered,
       "Total Responses": day.totalResponses,
       "Mention Detail": `${day.brandCovered} of ${day.totalResponses} responses`
-    })
+    }
+    transformedData.push(brandData)
+    console.log('🔍 [Transform] Added brand data:', brandData)
     
     // Add competitor data
     day.competitors?.forEach(competitor => {
-      transformedData.push({
-        "Date": day.date,
+      const competitorData = {
+        "Date": new Date(day.date).toISOString().split('T')[0], // Ensure proper date format
         "Entity": competitor.name,
-        "Coverage %": competitor.coverage,
+        "Coverage %": Math.round(competitor.coverage * 10) / 10, // Round to 1 decimal
         "Mention Count": competitor.covered,
         "Total Responses": day.totalResponses,
         "Mention Detail": `${competitor.covered} of ${day.totalResponses} responses`
-      })
+      }
+      transformedData.push(competitorData)
+      console.log('🔍 [Transform] Added competitor data:', competitorData)
     })
   })
   
+  console.log('🔍 [Transform] Final transformed data:', transformedData)
   return transformedData
 }
 
@@ -68,8 +77,8 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
     "data": { "name": "table" },
     "config": {
       "view": {
-        "continuousWidth": 500,
-        "continuousHeight": 250
+        "continuousWidth": 600,
+        "continuousHeight": 280
       },
       "background": "white",
       "title": {
@@ -77,7 +86,7 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
         "fontSize": 14
       },
       "axis": {
-        "labelFontSize": 12,
+        "labelFontSize": 11,
         "titleFontSize": 12
       }
     },
@@ -92,7 +101,9 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
         "title": "Entity",
         "legend": {
           "orient": "bottom",
-          "labelFontSize": 11
+          "labelFontSize": 10,
+          "titleFontSize": 11,
+          "offset": 10
         }
       },
       "tooltip": [
@@ -122,7 +133,8 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
         "axis": {
           "format": "%b %d",
           "labelAngle": -45,
-          "labelFontSize": 10
+          "labelFontSize": 10,
+          "titleFontSize": 11
         },
         "field": "Date",
         "title": "Date",
@@ -140,12 +152,13 @@ const generateVegaLiteSpec = (entities: string[], brandName: string) => {
         },
         "axis": {
           "format": ".0f",
-          "labelFontSize": 10
+          "labelFontSize": 10,
+          "titleFontSize": 11
         }
       }
     },
-    "width": 500,
-    "height": 250,
+    "width": 600,
+    "height": 280,
     "title": {
       "text": `Daily Coverage % Distribution: ${brandName} vs Competitors`,
       "fontSize": 14,
@@ -178,7 +191,7 @@ export const CoverageStackedBarChart: React.FC<CoverageStackedBarChartProps> = (
           <p className="text-xs text-slate-500">Loading...</p>
         </CardHeader>
         <CardContent>
-          <div className="h-80 flex items-center justify-center">
+          <div className="h-96 flex items-center justify-center">
             <div className="text-slate-400">Loading chart data...</div>
           </div>
         </CardContent>
@@ -194,7 +207,7 @@ export const CoverageStackedBarChart: React.FC<CoverageStackedBarChartProps> = (
           <p className="text-xs text-slate-500">How often brand and competitors appear in AI responses</p>
         </CardHeader>
         <CardContent>
-          <div className="h-80 flex items-center justify-center">
+          <div className="h-96 flex items-center justify-center">
             <div className="text-center text-slate-500">
               <p className="text-sm">No coverage data available</p>
               <p className="text-xs mt-1">for selected models in the selected date range</p>
@@ -233,7 +246,7 @@ export const CoverageStackedBarChart: React.FC<CoverageStackedBarChartProps> = (
         </p>
       </CardHeader>
       <CardContent>
-        <div className="h-80 w-full overflow-hidden">
+        <div className="h-96 w-full overflow-hidden flex justify-center">
           <VegaEmbed 
             spec={vegaSpec} 
             data={{ table: chartData }}
