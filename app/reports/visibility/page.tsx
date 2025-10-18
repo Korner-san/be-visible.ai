@@ -6,14 +6,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { PieChart, Pie, Cell, ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LineChart, Line, Area, AreaChart } from "recharts"
-import { Info, Play, Loader2 } from "lucide-react"
+import { Info, Play, Loader2, Sparkles } from "lucide-react"
 import { useBrandsStore } from "@/store/brands"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { PositionScoreOverTime } from "@/components/PositionScoreOverTime"
-import { CoverageStackedBarChart } from "@/components/CoverageStackedBarChart"
+import { BrandCoverageChart } from "@/components/BrandCoverageChart"
 import { BrandDomainCitationsTable } from "@/components/BrandDomainCitationsTable"
 
 // Helper function to format portrayal types and get descriptions
@@ -528,9 +528,9 @@ export default function ReportsVisibility() {
           </Card>
         </div>
 
-        {/* Chart 3: Coverage Score Over Time - Vega-Lite Stacked Bar Chart */}
+        {/* Chart 3: Coverage Score Over Time - Brand vs Competitors */}
         <div className="grid gap-6 mb-8">
-          <CoverageStackedBarChart 
+          <BrandCoverageChart 
             data={reportData?.coverageOverTime || []}
             brandName={activeBrand?.name || 'Your Brand'}
             isLoading={isLoading}
