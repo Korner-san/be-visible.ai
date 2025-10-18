@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 /**
  * GET /api/reports/citations/urls
@@ -42,29 +42,19 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const supabase = createClient()
-    
-    // Get the current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      return NextResponse.json({
-        success: false,
-        error: 'Unauthorized'
-      }, { status: 401 })
-    }
+    const supabase = createServiceClient()
 
-    // Verify brand ownership
+    // Verify brand exists (service client bypasses RLS)
     const { data: brand, error: brandError } = await supabase
       .from('brands')
-      .select('id, name, owner_user_id')
+      .select('id, name')
       .eq('id', brandId)
       .single()
 
-    if (brandError || !brand || brand.owner_user_id !== user.id) {
+    if (brandError || !brand) {
       return NextResponse.json({
         success: false,
-        error: 'Brand not found or access denied'
+        error: 'Brand not found'
       }, { status: 404 })
     }
 
