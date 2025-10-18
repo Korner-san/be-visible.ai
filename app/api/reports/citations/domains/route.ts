@@ -74,21 +74,51 @@ export async function GET(request: NextRequest) {
 
     // Enrich domains with category data from url_content_facts
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
-      // Get the most common domain role category for this domain
+      // Get the most common domain role category and content structure category for this domain
       const { data: categoryData } = await supabase
         .from('url_inventory')
         .select(`
           id,
-          url_content_facts!inner(domain_role_category, content_structure_category)
+          url_content_facts(domain_role_category, content_structure_category)
         `)
         .eq('domain', domain.domain)
-        .limit(1)
-        .single()
+        .not('url_content_facts.domain_role_category', 'is', null)
+      
+      if (!categoryData || categoryData.length === 0) {
+        return {
+          ...domain,
+          domain_role_category: null,
+          content_structure_category: null
+        }
+      }
+
+      // Find the most common domain role category for this domain
+      const domainRoleCounts: { [key: string]: number } = {}
+      const contentTypeCounts: { [key: string]: number } = {}
+      
+      categoryData.forEach((item: any) => {
+        const domainRole = item.url_content_facts?.domain_role_category
+        const contentType = item.url_content_facts?.content_structure_category
+        
+        if (domainRole) {
+          domainRoleCounts[domainRole] = (domainRoleCounts[domainRole] || 0) + 1
+        }
+        if (contentType) {
+          contentTypeCounts[contentType] = (contentTypeCounts[contentType] || 0) + 1
+        }
+      })
+
+      // Get the most common category
+      const mostCommonDomainRole = Object.entries(domainRoleCounts)
+        .sort(([, a], [, b]) => b - a)[0]?.[0] || null
+      
+      const mostCommonContentType = Object.entries(contentTypeCounts)
+        .sort(([, a], [, b]) => b - a)[0]?.[0] || null
       
       return {
         ...domain,
-        domain_role_category: categoryData?.url_content_facts?.domain_role_category || null,
-        content_structure_category: categoryData?.url_content_facts?.content_structure_category || null
+        domain_role_category: mostCommonDomainRole,
+        content_structure_category: mostCommonContentType
       }
     }))
 
