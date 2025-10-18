@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
             id,
             url,
             normalized_url,
-            url_content_facts!inner(domain_role_category, content_structure_category)
+            url_content_facts!inner(content_structure_category)
           `)
           .eq('normalized_url', urlVariation)
           .limit(1)
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
             id,
             url,
             normalized_url,
-            url_content_facts!inner(domain_role_category, content_structure_category)
+            url_content_facts!inner(content_structure_category)
           `)
           .eq('url', urlVariation)
           .limit(1)
@@ -148,7 +148,6 @@ export async function GET(request: NextRequest) {
       
       return {
         ...urlData,
-        domain_role_category: categoryData?.url_content_facts?.domain_role_category || null,
         content_structure_category: categoryData?.url_content_facts?.content_structure_category || null
       }
     }))

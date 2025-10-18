@@ -76,12 +76,12 @@ export async function GET(request: NextRequest) {
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
       console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
       
-      // Get the most common domain role category and content structure category for this domain
+      // Get the most common content structure category for this domain
       const { data: categoryData, error: categoryError } = await supabase
         .from('url_inventory')
         .select(`
           id,
-          url_content_facts!inner(domain_role_category, content_structure_category)
+          url_content_facts!inner(content_structure_category)
         `)
         .eq('domain', domain.domain)
       
@@ -93,40 +93,13 @@ export async function GET(request: NextRequest) {
         console.warn(`⚠️ [Domains API] No categorization data found for domain: ${domain.domain}`)
         return {
           ...domain,
-          domain_role_category: null,
           content_structure_category: null
         }
       }
 
       console.log(`📊 [Domains API] Found ${categoryData.length} categorized URLs for ${domain.domain}`)
 
-      // For domain categorization, we should use the domain's overall classification
-      // not aggregate individual URL categorizations
-      // Check if this domain has been properly classified at the domain level
-      const { data: domainClassification, error: domainError } = await supabase
-        .from('url_content_facts')
-        .select('domain_role_category, domain_classified_at')
-        .eq('url_id', categoryData[0].id) // Get from any URL of this domain
-        .not('domain_classified_at', 'is', null)
-        .limit(1)
-      
-      let domainRole = null
-      if (domainClassification && domainClassification.length > 0) {
-        domainRole = domainClassification[0].domain_role_category
-        console.log(`✅ [Domains API] Using domain-level classification for ${domain.domain}: ${domainRole}`)
-      } else {
-        // Fallback: use most common category from individual URLs (legacy behavior)
-        const domainRoleCounts: { [key: string]: number } = {}
-        categoryData.forEach((item: any) => {
-          const role = item.url_content_facts?.domain_role_category
-          if (role) {
-            domainRoleCounts[role] = (domainRoleCounts[role] || 0) + 1
-          }
-        })
-        domainRole = Object.entries(domainRoleCounts)
-          .sort(([, a], [, b]) => b - a)[0]?.[0] || null
-        console.log(`⚠️ [Domains API] Using aggregated classification for ${domain.domain}: ${domainRole}`)
-      }
+      // Domain role categorization has been removed - no longer needed
       
       // Content type should still be aggregated from individual URLs
       const contentTypeCounts: { [key: string]: number } = {}
@@ -140,14 +113,12 @@ export async function GET(request: NextRequest) {
         .sort(([, a], [, b]) => b - a)[0]?.[0] || null
       
       console.log(`✅ [Domains API] Enriched ${domain.domain}:`, {
-        domainRole: domainRole,
         contentType: mostCommonContentType,
         contentTypeCounts
       })
       
       return {
         ...domain,
-        domain_role_category: domainRole,
         content_structure_category: mostCommonContentType
       }
     }))
