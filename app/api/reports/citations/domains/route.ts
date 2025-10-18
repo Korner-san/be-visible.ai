@@ -56,8 +56,8 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
-    // Call the RPC to get domains
-    const { data: domains, error: domainsError } = await supabase.rpc('get_citations_by_domain', {
+    // Call the enhanced RPC to get domains with new metrics
+    const { data: domains, error: domainsError } = await supabase.rpc('get_enhanced_citations_by_domain', {
       p_brand_id: brandId,
       p_from_date: fromDate || null,
       p_to_date: toDate || null,

@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Category label formatters
 const formatDomainCategory = (category: string | null | undefined): string => {
@@ -36,6 +37,9 @@ interface DomainData {
   domain: string
   urls_count: number
   mentions_count: number
+  distinct_ai_responses: number
+  prompt_coverage: number
+  model_coverage: number
   last_seen_at: string
   domain_role_category?: string | null
   content_structure_category?: string | null
@@ -44,6 +48,10 @@ interface DomainData {
 interface URLData {
   url: string
   times_cited: number
+  distinct_ai_responses: number
+  prompt_coverage: number
+  model_coverage: number
+  first_seen_at: string
   last_seen_at: string
   domain_role_category?: string | null
   content_structure_category?: string | null
@@ -164,10 +172,66 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
             <TableRow>
               <TableHead className="w-[50px]"></TableHead>
               <TableHead>Domain</TableHead>
-              <TableHead className="text-right">Unique URLs</TableHead>
-              <TableHead className="text-right">Mentions</TableHead>
-              <TableHead>Domain Category</TableHead>
-              <TableHead>Content Type</TableHead>
+              <TableHead className="text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Unique URLs</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Number of distinct URLs from this domain that were cited by AI models.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Mentions</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Total number of responses from AI models where this domain was mentioned.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Prompt Coverage</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Number of unique prompts (out of the 15 sent daily) where the domain was cited.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Model Coverage</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Number of distinct AI models that cited this domain.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Domain Category</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Category assigned to the domain (e.g. Docs, Community).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
+                    <TooltipContent>
+                      <p>Type of content most commonly cited from this domain (e.g. Guide, Forum, Blog).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
               <TableHead>Last Seen</TableHead>
             </TableRow>
           </TableHeader>
@@ -209,6 +273,16 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   <TableCell className="text-right">
                     {domain.mentions_count}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant="outline">
+                      {domain.prompt_coverage}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant="outline">
+                      {domain.model_coverage}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="text-xs">
                     {domain.domain_role_category ? (
                       <Badge variant="outline" className="text-xs">
@@ -235,7 +309,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={6} className="bg-slate-50 p-0">
+                    <TableCell colSpan={9} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">
@@ -247,8 +321,46 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                             <TableHeader>
                               <TableRow>
                                 <TableHead>URL</TableHead>
-                                <TableHead className="text-right">Mentions</TableHead>
-                                <TableHead>Content Type</TableHead>
+                                <TableHead className="text-right">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger className="cursor-help">Mentions</TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Total number of responses from AI models where this specific URL was mentioned.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger className="cursor-help">Prompt Coverage</TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Number of unique prompts where this specific URL was cited.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger className="cursor-help">Model Coverage</TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Number of distinct AI models that cited this specific URL.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </TableHead>
+                                <TableHead>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Type of content for this specific URL (e.g. Guide, Forum, Blog).</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </TableHead>
                                 <TableHead>Last Seen</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -274,6 +386,16 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                   <TableCell className="text-right">
                                     <Badge variant="secondary">
                                       {urlData.times_cited}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Badge variant="outline">
+                                      {urlData.prompt_coverage}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Badge variant="outline">
+                                      {urlData.model_coverage}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-xs">
