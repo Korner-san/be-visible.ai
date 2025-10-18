@@ -95,8 +95,8 @@ Return only the JSON object, no additional text.`
       response_format: { type: 'json_object' }
     })
 
-    const content = completion.choices[0].message.content || '{}'
-    const parsed = JSON.parse(content)
+    const responseContent = completion.choices[0].message.content || '{}'
+    const parsed = JSON.parse(responseContent)
     
     console.log(`✅ [DOMAIN CLASSIFIER] Classified ${domain}: ${parsed.domain_role_category}`)
     
