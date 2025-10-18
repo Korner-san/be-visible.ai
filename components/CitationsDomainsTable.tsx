@@ -234,7 +234,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={7} className="bg-slate-50 p-0">
+                    <TableCell colSpan={6} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">
@@ -247,7 +247,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                               <TableRow>
                                 <TableHead>URL</TableHead>
                                 <TableHead className="text-right">Mentions</TableHead>
-                                <TableHead>Domain Category</TableHead>
                                 <TableHead>Content Type</TableHead>
                                 <TableHead>Last Seen</TableHead>
                               </TableRow>
@@ -275,15 +274,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                     <Badge variant="secondary">
                                       {urlData.times_cited}
                                     </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-xs">
-                                    {urlData.domain_role_category ? (
-                                      <Badge variant="outline" className="text-xs">
-                                        {formatDomainCategory(urlData.domain_role_category)}
-                                      </Badge>
-                                    ) : (
-                                      <span className="text-slate-400 italic">Not yet</span>
-                                    )}
                                   </TableCell>
                                   <TableCell className="text-xs">
                                     {urlData.content_structure_category ? (
