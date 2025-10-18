@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { processUrlsForDailyReport, classifyPromptsForDailyReport } from '@/lib/services/url-classification-service'
+import { processUrlsForDailyReport } from '@/lib/services/url-classification-service'
 
 /**
  * Admin endpoint to backfill URL processing for existing reports
@@ -54,18 +54,13 @@ export async function POST(request: NextRequest) {
       console.log(`\n🔄 [BACKFILL] Processing report ${reportId}`)
       
       try {
-        // Step 1: Classify prompts
-        const promptsClassified = await classifyPromptsForDailyReport(reportId)
-        console.log(`✅ [BACKFILL] Classified ${promptsClassified} prompts`)
-        
-        // Step 2: Process URLs
+        // Process URLs
         const urlStats = await processUrlsForDailyReport(reportId)
         console.log(`✅ [BACKFILL] Processed URLs:`, urlStats)
         
         results.push({
           reportId,
           success: true,
-          promptsClassified,
           urlStats
         })
       } catch (error: any) {

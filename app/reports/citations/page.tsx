@@ -12,7 +12,6 @@ import { useBrandsStore } from "@/store/brands"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { CitationsDomainsTable } from "@/components/CitationsDomainsTable"
-import { DomainCategorizationTable } from "@/components/DomainCategorizationTable"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
@@ -24,12 +23,10 @@ export default function ReportsCitations() {
   const [citationsData, setCitationsData] = useState<any>(null)
   const [summaryData, setSummaryData] = useState<any>(null)
   const [domainsData, setDomainsData] = useState<any>(null)
-  const [domainCategoriesData, setDomainCategoriesData] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
   const [isDomainsLoading, setIsDomainsLoading] = useState(true)
-  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
   const ITEMS_PER_PAGE = 8 // Changed to 8 as requested
@@ -158,40 +155,6 @@ export default function ReportsCitations() {
     loadDomainsData()
   }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
-  // Load domain categories data (NEW)
-  useEffect(() => {
-    const loadDomainCategories = async () => {
-      if (!activeBrandId || isDemoMode) {
-        setIsCategoriesLoading(false)
-        return
-      }
-      
-      try {
-        setIsCategoriesLoading(true)
-        
-        const { from, to } = getDateRangeForAPI()
-        const models = getModelsForAPI()
-        let url = `/api/reports/citations/categories?brandId=${activeBrandId}`
-        if (from && to) {
-          url += `&from=${from}&to=${to}`
-        }
-        if (models) {
-          url += `&selectedModels=${models}`
-        }
-        
-        const response = await fetch(url)
-        const data = await response.json()
-        
-        setDomainCategoriesData(data.categories || [])
-      } catch (err) {
-        console.error('Error loading domain categories:', err)
-      } finally {
-        setIsCategoriesLoading(false)
-      }
-    }
-    
-    loadDomainCategories()
-  }, [activeBrandId, isDemoMode, selectedModels, getDateRangeForAPI, getModelsForAPI])
   
   // Mock data for demo mode
   const demoData = {
@@ -318,13 +281,6 @@ export default function ReportsCitations() {
         {/* Content */}
         {!isLoading && displayData && (
           <>
-            {/* Domain Categorization - NEW */}
-            <div className="mb-8">
-              <DomainCategorizationTable 
-                data={domainCategoriesData || []} 
-                isLoading={isCategoriesLoading} 
-              />
-            </div>
 
             <div className="grid grid-cols-2 gap-6 mb-8">
 

@@ -3,22 +3,11 @@
 import { useState, useEffect } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft, Download } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Category label formatters
-const formatDomainCategory = (category: string | null | undefined): string => {
-  if (!category) return 'Not categorized yet'
-  const labels: Record<string, string> = {
-    'FOUNDATIONAL_AUTHORITY': 'Foundational Authority',
-    'COMPETITIVE_CONSENSUS': 'Competitive Consensus',
-    'REAL_TIME_SIGNAL': 'Real-Time Signal',
-    'COMMUNITY_VALIDATION': 'Community Validation',
-    'TACTICAL_GUIDE': 'Tactical Guide'
-  }
-  return labels[category] || category
-}
 
 const formatContentType = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
@@ -41,7 +30,6 @@ interface DomainData {
   prompt_coverage: number
   model_coverage: number
   last_seen_at: string
-  domain_role_category?: string | null
   content_structure_category?: string | null
 }
 
@@ -53,7 +41,6 @@ interface URLData {
   model_coverage: number
   first_seen_at: string
   last_seen_at: string
-  domain_role_category?: string | null
   content_structure_category?: string | null
 }
 
@@ -78,6 +65,33 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   const [loadingDomains, setLoadingDomains] = useState<Set<string>>(new Set())
   
   const ITEMS_PER_PAGE = 10
+  
+  // Export function for CSV download
+  const handleExportCSV = () => {
+    const headers = ['Domain', 'Unique URLs', 'Mentions', 'Prompt Coverage', 'Model Coverage', 'Content Type', 'Last Seen']
+    const csvContent = [
+      headers.join(','),
+      ...domains.map(domain => [
+        domain.domain,
+        domain.urls_count,
+        domain.mentions_count,
+        domain.prompt_coverage,
+        domain.model_coverage,
+        domain.content_structure_category ? formatContentType(domain.content_structure_category) : 'Not categorized yet',
+        new Date(domain.last_seen_at).toLocaleDateString()
+      ].join(','))
+    ].join('\n')
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', 'citation-sources-domains-report.csv')
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
   
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -166,6 +180,18 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
 
   return (
     <div>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Citation Sources by Domain</h3>
+        <Button 
+          onClick={handleExportCSV}
+          variant="outline"
+          size="sm"
+          className="flex items-center gap-2"
+        >
+          <Download className="h-4 w-4" />
+          Download Source Domains Report
+        </Button>
+      </div>
       <div className="border rounded-lg mb-4">
         <Table>
           <TableHeader>
@@ -208,16 +234,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                     <TooltipTrigger className="cursor-help">Model Coverage</TooltipTrigger>
                     <TooltipContent>
                       <p>Number of distinct AI models that cited this domain.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </TableHead>
-              <TableHead>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger className="cursor-help">Domain Category</TooltipTrigger>
-                    <TooltipContent>
-                      <p>Category assigned to the domain (e.g. Docs, Community).</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -284,15 +300,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs">
-                    {domain.domain_role_category ? (
-                      <Badge variant="outline" className="text-xs">
-                        {formatDomainCategory(domain.domain_role_category)}
-                      </Badge>
-                    ) : (
-                      <span className="text-slate-400 italic">Not categorized yet</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs">
                     {domain.content_structure_category ? (
                       <Badge variant="outline" className="text-xs">
                         {formatContentType(domain.content_structure_category)}
@@ -309,7 +316,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={9} className="bg-slate-50 p-0">
+                    <TableCell colSpan={8} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">

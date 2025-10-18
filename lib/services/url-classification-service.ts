@@ -5,7 +5,7 @@
 
 import { createServiceClient } from '@/lib/supabase/service'
 import { extractUrlContentBatch, extractDomain, normalizeUrl } from '@/lib/providers/tavily'
-import { classifyPromptIntents, classifyUrlContentBatch } from '@/lib/classifiers/content-classifier'
+import { classifyUrlContentBatch } from '@/lib/classifiers/content-classifier'
 
 interface PromptResult {
   id: string
@@ -218,7 +218,6 @@ export const processUrlsForDailyReport = async (
         raw_content: extraction.raw_content || extraction.content || '',
         content_snippet: (extraction.raw_content || extraction.content || '').substring(0, 2000),
         content_structure_category: classification?.content_structure_category || 'OFFICIAL_DOCUMENTATION',
-        domain_role_category: classification?.domain_role_category || 'FOUNDATIONAL_AUTHORITY',
         classification_confidence: 0.8,
         classifier_version: 'v1'
       }
@@ -289,80 +288,4 @@ export const processUrlsForDailyReport = async (
   }
 }
 
-/**
- * Classify prompts for a daily report
- */
-export const classifyPromptsForDailyReport = async (
-  dailyReportId: string
-): Promise<number> => {
-  console.log(`🤖 [PROMPT CLASSIFIER] Starting prompt classification for daily report ${dailyReportId}`)
-  
-  const supabase = createServiceClient()
-  
-  // Mark URL processing as running
-  await supabase
-    .from('daily_reports')
-    .update({ url_processing_status: 'running' })
-    .eq('id', dailyReportId)
-  
-  try {
-    // Get all prompt results for this daily report
-    const { data: promptResults, error: resultsError } = await supabase
-      .from('prompt_results')
-      .select('id, brand_prompt_id, prompt_text')
-      .eq('daily_report_id', dailyReportId)
-      .in('provider_status', ['ok'])
-      .eq('provider', 'perplexity') // Only classify once per prompt
-    
-    if (resultsError || !promptResults || promptResults.length === 0) {
-      console.log('ℹ️ [PROMPT CLASSIFIER] No prompts to classify')
-      return 0
-    }
-    
-    const prompts = promptResults.map(r => r.prompt_text)
-    console.log(`🤖 [PROMPT CLASSIFIER] Classifying ${prompts.length} prompts...`)
-    
-    const classifications = await classifyPromptIntents(prompts)
-    console.log(`✅ [PROMPT CLASSIFIER] Classified ${classifications.length} prompts`)
-    
-    // Store classifications
-    const classificationRecords = promptResults.map((result, index) => ({
-      brand_prompt_id: result.brand_prompt_id,
-      daily_report_id: dailyReportId,
-      prompt_text: result.prompt_text,
-      intent_category: classifications[index]?.intent_category || 'FOUNDATIONAL_AUTHORITY',
-      classification_confidence: 0.8
-    }))
-    
-    const { error: insertError } = await supabase
-      .from('prompt_intent_classifications')
-      .upsert(classificationRecords, { onConflict: 'brand_prompt_id,daily_report_id' })
-    
-    if (insertError) {
-      console.error('❌ [PROMPT CLASSIFIER] Error storing classifications:', insertError)
-      return 0
-    }
-    
-    console.log(`✅ [PROMPT CLASSIFIER] Stored ${classificationRecords.length} prompt classifications`)
-    
-    // Update daily_reports with prompts_classified count
-    await supabase
-      .from('daily_reports')
-      .update({ prompts_classified: classificationRecords.length })
-      .eq('id', dailyReportId)
-    
-    return classificationRecords.length
-    
-  } catch (error: any) {
-    console.error('❌ [PROMPT CLASSIFIER] Fatal error:', error)
-    
-    // Mark URL processing as failed
-    await supabase
-      .from('daily_reports')
-      .update({ url_processing_status: 'failed' })
-      .eq('id', dailyReportId)
-    
-    return 0
-  }
-}
 
