@@ -85,6 +85,12 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   const toggleDomain = async (domain: string) => {
     const isExpanded = expandedDomains.has(domain)
     
+    console.log(`🔍 [Frontend Debug] Toggle domain ${domain}:`, {
+      isExpanded,
+      hasDomainUrls: !!domainUrls[domain],
+      domainUrlsValue: domainUrls[domain]
+    })
+    
     if (isExpanded) {
       // Collapse
       const newExpanded = new Set(expandedDomains)
