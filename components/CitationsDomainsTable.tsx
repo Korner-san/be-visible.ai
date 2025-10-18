@@ -63,6 +63,9 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   selectedModels,
   isLoading 
 }) => {
+  // Debug logging
+  console.log('🔍 [CitationsDomainsTable] Received domains:', domains)
+  
   const [currentPage, setCurrentPage] = useState(1)
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set())
   const [domainUrls, setDomainUrls] = useState<Record<string, URLData[]>>({})
@@ -109,10 +112,13 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
           const data = await response.json()
           
           if (data.success) {
+            console.log(`🔍 [CitationsDomainsTable] URLs for ${domain}:`, data.data.urls)
             setDomainUrls(prev => ({
               ...prev,
               [domain]: data.data.urls
             }))
+          } else {
+            console.error(`❌ [CitationsDomainsTable] Failed to fetch URLs for ${domain}:`, data.error)
           }
         } catch (error) {
           console.error('Failed to fetch URLs for domain:', domain, error)
