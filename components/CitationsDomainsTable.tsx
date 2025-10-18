@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft } from "l
 import { Badge } from "@/components/ui/badge"
 
 // Category label formatters
-const formatDomainRole = (category: string | null | undefined): string => {
+const formatDomainCategory = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
   const labels: Record<string, string> = {
     'FOUNDATIONAL_AUTHORITY': 'Foundational Authority',
@@ -22,11 +22,11 @@ const formatDomainRole = (category: string | null | undefined): string => {
 const formatContentType = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
   const labels: Record<string, string> = {
-    'DEFINITIVE_QA_BLOCK': 'Q&A Block',
-    'ORIGINAL_DATA_STUDY': 'Data Study',
-    'PRODUCT_COMPARISON_MATRIX': 'Comparison',
-    'NARRATIVE_CASE_STUDY': 'Case Study',
-    'OFFICIAL_DOCUMENTATION': 'Documentation'
+    'DEFINITIVE_QA_BLOCK': 'Definitive Q&A Block',
+    'PRODUCT_COMPARISON_MATRIX': 'Product Comparison Matrix',
+    'OFFICIAL_DOCUMENTATION': 'Official Documentation',
+    'NARRATIVE_CASE_STUDY': 'Narrative Case Study',
+    'ORIGINAL_DATA_STUDY': 'Original Data Study'
   }
   return labels[category] || category
 }
@@ -158,7 +158,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
               <TableHead>Domain</TableHead>
               <TableHead className="text-right">Unique URLs</TableHead>
               <TableHead className="text-right">Mentions</TableHead>
-              <TableHead>Domain Role</TableHead>
+              <TableHead>Domain Category</TableHead>
               <TableHead>Content Type</TableHead>
               <TableHead>Last Seen</TableHead>
             </TableRow>
@@ -204,7 +204,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   <TableCell className="text-xs">
                     {domain.domain_role_category ? (
                       <Badge variant="outline" className="text-xs">
-                        {formatDomainRole(domain.domain_role_category)}
+                        {formatDomainCategory(domain.domain_role_category)}
                       </Badge>
                     ) : (
                       <span className="text-slate-400 italic">Not categorized yet</span>
@@ -240,7 +240,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                               <TableRow>
                                 <TableHead>URL</TableHead>
                                 <TableHead className="text-right">Mentions</TableHead>
-                                <TableHead>Domain Role</TableHead>
+                                <TableHead>Domain Category</TableHead>
                                 <TableHead>Content Type</TableHead>
                                 <TableHead>Last Seen</TableHead>
                               </TableRow>
@@ -270,7 +270,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                   <TableCell className="text-xs">
                                     {urlData.domain_role_category ? (
                                       <Badge variant="outline" className="text-xs">
-                                        {formatDomainRole(urlData.domain_role_category)}
+                                        {formatDomainCategory(urlData.domain_role_category)}
                                       </Badge>
                                     ) : (
                                       <span className="text-slate-400 italic">Not yet</span>
