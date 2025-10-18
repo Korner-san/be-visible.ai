@@ -100,39 +100,54 @@ export async function GET(request: NextRequest) {
 
       console.log(`📊 [Domains API] Found ${categoryData.length} categorized URLs for ${domain.domain}`)
 
-      // Find the most common domain role category for this domain
-      const domainRoleCounts: { [key: string]: number } = {}
-      const contentTypeCounts: { [key: string]: number } = {}
+      // For domain categorization, we should use the domain's overall classification
+      // not aggregate individual URL categorizations
+      // Check if this domain has been properly classified at the domain level
+      const { data: domainClassification, error: domainError } = await supabase
+        .from('url_content_facts')
+        .select('domain_role_category, domain_classified_at')
+        .eq('url_id', categoryData[0].id) // Get from any URL of this domain
+        .not('domain_classified_at', 'is', null)
+        .limit(1)
       
+      let domainRole = null
+      if (domainClassification && domainClassification.length > 0) {
+        domainRole = domainClassification[0].domain_role_category
+        console.log(`✅ [Domains API] Using domain-level classification for ${domain.domain}: ${domainRole}`)
+      } else {
+        // Fallback: use most common category from individual URLs (legacy behavior)
+        const domainRoleCounts: { [key: string]: number } = {}
+        categoryData.forEach((item: any) => {
+          const role = item.url_content_facts?.domain_role_category
+          if (role) {
+            domainRoleCounts[role] = (domainRoleCounts[role] || 0) + 1
+          }
+        })
+        domainRole = Object.entries(domainRoleCounts)
+          .sort(([, a], [, b]) => b - a)[0]?.[0] || null
+        console.log(`⚠️ [Domains API] Using aggregated classification for ${domain.domain}: ${domainRole}`)
+      }
+      
+      // Content type should still be aggregated from individual URLs
+      const contentTypeCounts: { [key: string]: number } = {}
       categoryData.forEach((item: any) => {
-        const domainRole = item.url_content_facts?.domain_role_category
         const contentType = item.url_content_facts?.content_structure_category
-        
-        if (domainRole) {
-          domainRoleCounts[domainRole] = (domainRoleCounts[domainRole] || 0) + 1
-        }
         if (contentType) {
           contentTypeCounts[contentType] = (contentTypeCounts[contentType] || 0) + 1
         }
       })
-
-      // Get the most common category
-      const mostCommonDomainRole = Object.entries(domainRoleCounts)
-        .sort(([, a], [, b]) => b - a)[0]?.[0] || null
-      
       const mostCommonContentType = Object.entries(contentTypeCounts)
         .sort(([, a], [, b]) => b - a)[0]?.[0] || null
       
       console.log(`✅ [Domains API] Enriched ${domain.domain}:`, {
-        domainRole: mostCommonDomainRole,
+        domainRole: domainRole,
         contentType: mostCommonContentType,
-        domainRoleCounts,
         contentTypeCounts
       })
       
       return {
         ...domain,
-        domain_role_category: mostCommonDomainRole,
+        domain_role_category: domainRole,
         content_structure_category: mostCommonContentType
       }
     }))
