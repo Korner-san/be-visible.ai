@@ -79,10 +79,9 @@ export async function GET(request: NextRequest) {
         .from('url_inventory')
         .select(`
           id,
-          url_content_facts(domain_role_category, content_structure_category)
+          url_content_facts!inner(domain_role_category, content_structure_category)
         `)
         .eq('domain', domain.domain)
-        .not('url_content_facts.domain_role_category', 'is', null)
       
       if (!categoryData || categoryData.length === 0) {
         return {
