@@ -26,7 +26,8 @@ const formatContentType = (category: string | null | undefined): string => {
     'PRODUCT_COMPARISON_MATRIX': 'Product Comparison Matrix',
     'OFFICIAL_DOCUMENTATION': 'Official Documentation',
     'NARRATIVE_CASE_STUDY': 'Narrative Case Study',
-    'ORIGINAL_DATA_STUDY': 'Original Data Study'
+    'ORIGINAL_DATA_STUDY': 'Original Data Study',
+    'COMMUNITY_DISCUSSION': 'Community Discussion'
   }
   return labels[category] || category
 }

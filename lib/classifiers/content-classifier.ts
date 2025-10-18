@@ -25,6 +25,7 @@ export const CONTENT_STRUCTURE_CATEGORIES = {
   PRODUCT_COMPARISON_MATRIX: 'Product Comparison Matrix',
   NARRATIVE_CASE_STUDY: 'Narrative Case Study',
   OFFICIAL_DOCUMENTATION: 'Official Documentation',
+  COMMUNITY_DISCUSSION: 'Community Discussion',
 } as const
 
 export type PromptIntentCategory = keyof typeof PROMPT_INTENT_CATEGORIES
@@ -132,6 +133,7 @@ export const classifyUrlContent = async (
 3. PRODUCT_COMPARISON_MATRIX: Content presented in bulleted lists, tables, or side-by-side product feature layouts.
 4. NARRATIVE_CASE_STUDY: Story-driven content detailing a client win, problem/solution, or a project outcome.
 5. OFFICIAL_DOCUMENTATION: Structured content from official help centers, APIs, or knowledge bases.
+6. COMMUNITY_DISCUSSION: Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences.
 
 **DOMAIN ROLE TAXONOMY:**
 1. FOUNDATIONAL_AUTHORITY: Domains cited for established definitions, history, and technical standards.
