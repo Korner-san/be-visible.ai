@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
  * Returns unique URLs for a specific domain (for expandable rows)
  */
 export async function GET(request: NextRequest) {
+  console.log('🚨 [URLs API] MAIN API CALLED - This should appear in logs!')
   try {
     const { searchParams } = new URL(request.url)
     const brandId = searchParams.get('brandId')
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
     const modelsParam = searchParams.get('models')
+    
+    console.log('🚨 [URLs API] Request params:', { brandId, domain, fromDate, toDate, modelsParam })
     
     // Parse model filter
     const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
