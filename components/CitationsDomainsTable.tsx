@@ -180,8 +180,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Citation Sources by Domain</h3>
+      <div className="flex justify-end items-center mb-4">
         <Button 
           onClick={handleExportCSV}
           variant="outline"
@@ -189,7 +188,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
           className="flex items-center gap-2"
         >
           <Download className="h-4 w-4" />
-          Download Source Domains Report
+          Download
         </Button>
       </div>
       <div className="border rounded-lg mb-4">

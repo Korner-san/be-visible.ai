@@ -282,38 +282,6 @@ export default function ReportsCitations() {
         {!isLoading && displayData && (
           <>
 
-            <div className="grid grid-cols-2 gap-6 mb-8">
-
-              {/* Export Action */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">Export Citations</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="text-sm text-slate-600">
-                      <div className="flex justify-between">
-                        <span>Total Citations:</span>
-                        <span className="font-medium">{(summaryData?.summary?.totalCitations || displayData.summary?.totalCitations) || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Total Domains:</span>
-                        <span className="font-medium">{(summaryData?.summary?.totalDomains || displayData.summary?.totalDomains) || 0}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Brand Mentions:</span>
-                        <span className="font-medium">{(summaryData?.summary?.brandMentionCitations || displayData.summary?.brandMentionCitations) || 0}</span>
-                      </div>
-                    </div>
-                    <Button variant="outline" className="w-full" disabled={isDemoMode}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Citation Report
-                    </Button>
-                    <p className="text-xs text-slate-500">Export all citation data as CSV</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
 
             {/* NEW: Citations by Domain - Model-Aware with Expandable Rows */}
             <Card>

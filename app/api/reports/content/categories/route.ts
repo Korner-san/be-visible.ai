@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         url,
-        url_content_facts!inner(content_structure_category, domain_role_category, extracted_at)
+        url_content_facts!inner(content_structure_category, extracted_at)
       `)
       .in('id', urlIds)
 
@@ -105,36 +105,14 @@ export async function GET(request: NextRequest) {
       urlData.map((u: any) => [u.id, {
         url: u.url,
         content_structure_category: u.url_content_facts?.content_structure_category,
-        domain_role_category: u.url_content_facts?.domain_role_category,
         extracted_at: u.url_content_facts?.extracted_at
       }])
     )
-
-    // Get prompt intent classifications
-    const dailyReportIds = [...new Set(promptResults.map(r => r.daily_report_id))]
-    const { data: promptIntents } = await supabase
-      .from('prompt_intent_classifications')
-      .select('daily_report_id, brand_prompt_id, intent_category')
-      .in('daily_report_id', dailyReportIds)
-
-    // Create a map of prompt_result_id to intent_category
-    const promptIntentMap: Record<string, string> = {}
-    if (promptIntents) {
-      promptIntents.forEach((intent: any) => {
-        // Find matching prompt results
-        promptResults.forEach(pr => {
-          if (pr.daily_report_id === intent.daily_report_id) {
-            promptIntentMap[pr.id] = intent.intent_category
-          }
-        })
-      })
-    }
 
     // Aggregate by content structure category
     const categoryStats: Record<string, {
       count: number
       uniqueUrls: Set<string>
-      intentCounts: Record<string, number>
       citationDates: Date[]
     }> = {}
 
@@ -144,23 +122,18 @@ export async function GET(request: NextRequest) {
 
       const category = urlInfo.content_structure_category
       const url = urlInfo.url
-      const promptResultId = citation.prompt_result_id
-      const intent = promptIntentMap[promptResultId] || 'FOUNDATIONAL_AUTHORITY'
       const extractedAt = urlInfo.extracted_at
 
       if (!categoryStats[category]) {
         categoryStats[category] = {
           count: 0,
           uniqueUrls: new Set(),
-          intentCounts: {},
           citationDates: []
         }
       }
 
       categoryStats[category].count++
       if (url) categoryStats[category].uniqueUrls.add(url)
-      categoryStats[category].intentCounts[intent] = 
-        (categoryStats[category].intentCounts[intent] || 0) + 1
       if (extractedAt) categoryStats[category].citationDates.push(new Date(extractedAt))
     })
 
@@ -172,10 +145,6 @@ export async function GET(request: NextRequest) {
       const uniqueUrls = stats.uniqueUrls.size
       const percentage = totalCitations > 0 ? ((stats.count / totalCitations) * 100).toFixed(1) : '0'
       
-      // Find primary intent
-      const primaryIntent = Object.entries(stats.intentCounts)
-        .sort(([, a], [, b]) => b - a)[0]?.[0] || 'N/A'
-
       // Calculate average citation longevity (days since first citation)
       let avgLongevity = 0
       if (stats.citationDates.length > 0) {
@@ -188,7 +157,7 @@ export async function GET(request: NextRequest) {
         category,
         count: uniqueUrls,
         percentage: parseFloat(percentage),
-        primaryIntent,
+        primaryIntent: 'N/A', // No longer available
         avgCitationLongevity: avgLongevity
       }
     }).sort((a, b) => b.percentage - a.percentage)
