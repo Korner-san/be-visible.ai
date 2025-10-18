@@ -108,6 +108,8 @@ export async function GET(request: NextRequest) {
           .from('url_inventory')
           .select(`
             id,
+            url,
+            normalized_url,
             url_content_facts!inner(domain_role_category, content_structure_category)
           `)
           .eq('normalized_url', urlVariation)
@@ -129,6 +131,8 @@ export async function GET(request: NextRequest) {
           .from('url_inventory')
           .select(`
             id,
+            url,
+            normalized_url,
             url_content_facts!inner(domain_role_category, content_structure_category)
           `)
           .eq('url', urlVariation)
