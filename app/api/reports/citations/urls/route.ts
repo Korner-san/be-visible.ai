@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
       // Try each URL variation
       for (const urlVariation of urlVariations) {
         // Try normalized_url match first
-        const { data: normalizedMatch } = await supabase
+        const { data: normalizedMatches } = await supabase
           .from('url_inventory')
           .select(`
             id,
@@ -104,15 +104,14 @@ export async function GET(request: NextRequest) {
           `)
           .eq('normalized_url', urlVariation)
           .limit(1)
-          .single()
         
-        if (normalizedMatch) {
-          categoryData = normalizedMatch
+        if (normalizedMatches && normalizedMatches.length > 0) {
+          categoryData = normalizedMatches[0]
           break
         }
         
         // Try exact url match
-        const { data: exactMatch } = await supabase
+        const { data: exactMatches } = await supabase
           .from('url_inventory')
           .select(`
             id,
@@ -120,10 +119,9 @@ export async function GET(request: NextRequest) {
           `)
           .eq('url', urlVariation)
           .limit(1)
-          .single()
         
-        if (exactMatch) {
-          categoryData = exactMatch
+        if (exactMatches && exactMatches.length > 0) {
+          categoryData = exactMatches[0]
           break
         }
       }
