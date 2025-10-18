@@ -87,10 +87,15 @@ export const processUrlsForDailyReport = async (
       return { totalUrls: 0, newUrls: 0, extractedUrls: 0, classifiedUrls: 0 }
     }
     
-    // Step 3: Check which URLs already exist in url_inventory
+    // Step 3: Check which URLs already exist in url_inventory and their content status
     const { data: existingUrls, error: existingError } = await supabase
       .from('url_inventory')
-      .select('url, id, content_extracted')
+      .select(`
+        url, 
+        id, 
+        content_extracted,
+        url_content_facts!left(content_structure_category)
+      `)
       .in('url', allUrls)
     
     if (existingError) {
@@ -98,17 +103,24 @@ export const processUrlsForDailyReport = async (
     }
     
     const existingUrlMap = new Map(
-      (existingUrls || []).map(u => [u.url, { id: u.id, content_extracted: u.content_extracted }])
+      (existingUrls || []).map(u => [u.url, { 
+        id: u.id, 
+        content_extracted: u.content_extracted,
+        has_categorization: u.url_content_facts && u.url_content_facts.length > 0 && u.url_content_facts[0].content_structure_category
+      }])
     )
     
-    // Step 4: Identify new URLs and URLs needing content extraction
+    // Step 4: Identify new URLs and URLs needing processing
     const newUrls = allUrls.filter(url => !existingUrlMap.has(url))
-    const urlsNeedingContent = allUrls.filter(url => {
+    const urlsNeedingProcessing = allUrls.filter(url => {
       const existing = existingUrlMap.get(url)
-      return !existing || !existing.content_extracted
+      if (!existing) return true // New URL
+      if (!existing.content_extracted) return true // Missing content extraction
+      if (!existing.has_categorization) return true // Missing content categorization
+      return false // Has both content extraction and categorization
     })
     
-    console.log(`📊 [URL PROCESSOR] New URLs: ${newUrls.length}, Need content extraction: ${urlsNeedingContent.length}`)
+    console.log(`📊 [URL PROCESSOR] New URLs: ${newUrls.length}, Need processing: ${urlsNeedingProcessing.length}`)
     
     // Step 5: Insert new URLs into url_inventory
     if (newUrls.length > 0) {
@@ -163,8 +175,8 @@ export const processUrlsForDailyReport = async (
       }
     }
     
-    // Step 7: Extract content from ALL URLs needing extraction
-    const urlsToExtract = urlsNeedingContent // Process ALL URLs, not just 30
+    // Step 7: Extract content from ALL URLs needing processing
+    const urlsToExtract = urlsNeedingProcessing // Process ALL URLs that need content extraction or categorization
     
     if (urlsToExtract.length === 0) {
       console.log('ℹ️ [URL PROCESSOR] No URLs need content extraction')
@@ -273,7 +285,17 @@ export const processUrlsForDailyReport = async (
       .eq('id', dailyReportId)
     
     console.log(`✅ [URL PROCESSOR] URL processing complete for daily report ${dailyReportId}`)
-    return result
+    
+    // Step 11: Process domain homepages for cited domains
+    console.log(`🌐 [URL PROCESSOR] Starting domain homepage processing...`)
+    const domainHomepageStats = await processDomainHomepages(dailyReportId, supabase)
+    console.log(`✅ [URL PROCESSOR] Domain homepage processing complete:`, domainHomepageStats)
+    
+    return {
+      ...result,
+      domainHomepagesProcessed: domainHomepageStats.processed,
+      domainHomepagesCategorized: domainHomepageStats.categorized
+    }
     
   } catch (error: any) {
     console.error('❌ [URL PROCESSOR] Fatal error:', error)
@@ -285,6 +307,219 @@ export const processUrlsForDailyReport = async (
       .eq('id', dailyReportId)
     
     return { totalUrls: 0, newUrls: 0, extractedUrls: 0, classifiedUrls: 0 }
+  }
+}
+
+/**
+ * Process domain homepages for all cited domains in a daily report
+ */
+const processDomainHomepages = async (
+  dailyReportId: string,
+  supabase: any
+): Promise<{
+  processed: number
+  categorized: number
+}> => {
+  try {
+    // Step 1: Get all unique domains from cited URLs
+    const { data: promptResults, error: resultsError } = await supabase
+      .from('prompt_results')
+      .select('citations, google_ai_overview_citations')
+      .eq('daily_report_id', dailyReportId)
+      .in('provider_status', ['ok'])
+    
+    if (resultsError) {
+      console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Error fetching prompt results:', resultsError)
+      return { processed: 0, categorized: 0 }
+    }
+    
+    if (!promptResults || promptResults.length === 0) {
+      console.log('ℹ️ [DOMAIN HOMEPAGE PROCESSOR] No prompt results found')
+      return { processed: 0, categorized: 0 }
+    }
+    
+    // Extract all unique domains from citations
+    const domainSet = new Set<string>()
+    promptResults.forEach(result => {
+      // Extract from Perplexity citations
+      if (result.citations && Array.isArray(result.citations)) {
+        result.citations.forEach((citation: any) => {
+          if (citation.url) {
+            const domain = extractDomain(citation.url)
+            if (domain) domainSet.add(domain)
+          }
+        })
+      }
+      
+      // Extract from Google AI Overview citations
+      if (result.google_ai_overview_citations && Array.isArray(result.google_ai_overview_citations)) {
+        result.google_ai_overview_citations.forEach((citation: any) => {
+          if (citation.url) {
+            const domain = extractDomain(citation.url)
+            if (domain) domainSet.add(domain)
+          }
+        })
+      }
+    })
+    
+    const uniqueDomains = Array.from(domainSet)
+    console.log(`🌐 [DOMAIN HOMEPAGE PROCESSOR] Found ${uniqueDomains.length} unique domains:`, uniqueDomains)
+    
+    if (uniqueDomains.length === 0) {
+      return { processed: 0, categorized: 0 }
+    }
+    
+    // Step 2: Generate homepage URLs and check their status
+    const homepageUrls = uniqueDomains.map(domain => `https://${domain}`)
+    
+    const { data: existingHomepages, error: existingError } = await supabase
+      .from('url_inventory')
+      .select(`
+        url, 
+        id, 
+        content_extracted,
+        url_content_facts!left(content_structure_category)
+      `)
+      .in('url', homepageUrls)
+    
+    if (existingError) {
+      console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Error checking existing homepages:', existingError)
+      return { processed: 0, categorized: 0 }
+    }
+    
+    const existingHomepageMap = new Map(
+      (existingHomepages || []).map(h => [h.url, { 
+        id: h.id, 
+        content_extracted: h.content_extracted,
+        has_categorization: h.url_content_facts && h.url_content_facts.length > 0 && h.url_content_facts[0].content_structure_category
+      }])
+    )
+    
+    // Step 3: Identify homepages needing processing
+    const newHomepages = homepageUrls.filter(url => !existingHomepageMap.has(url))
+    const homepagesNeedingProcessing = homepageUrls.filter(url => {
+      const existing = existingHomepageMap.get(url)
+      if (!existing) return true // New homepage
+      if (!existing.content_extracted) return true // Missing content extraction
+      if (!existing.has_categorization) return true // Missing content categorization
+      return false // Has both content extraction and categorization
+    })
+    
+    console.log(`🌐 [DOMAIN HOMEPAGE PROCESSOR] New homepages: ${newHomepages.length}, Need processing: ${homepagesNeedingProcessing.length}`)
+    
+    // Step 4: Insert new homepages into url_inventory
+    if (newHomepages.length > 0) {
+      const homepageInventoryRecords = newHomepages.map(url => ({
+        url,
+        normalized_url: normalizeUrl(url),
+        domain: extractDomain(url),
+        content_extracted: false
+      }))
+      
+      const { data: insertedHomepages, error: insertError } = await supabase
+        .from('url_inventory')
+        .upsert(homepageInventoryRecords, { onConflict: 'url' })
+        .select('id, url')
+      
+      if (insertError) {
+        console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Error inserting homepages:', insertError)
+      } else {
+        console.log(`✅ [DOMAIN HOMEPAGE PROCESSOR] Inserted ${insertedHomepages?.length || 0} new homepages`)
+        
+        // Update existingHomepageMap with newly inserted homepages
+        insertedHomepages?.forEach(h => {
+          existingHomepageMap.set(h.url, { id: h.id, content_extracted: false, has_categorization: false })
+        })
+      }
+    }
+    
+    // Step 5: Process homepages that need content extraction or categorization
+    if (homepagesNeedingProcessing.length === 0) {
+      console.log('ℹ️ [DOMAIN HOMEPAGE PROCESSOR] No homepages need processing')
+      return { processed: 0, categorized: 0 }
+    }
+    
+    console.log(`🔍 [DOMAIN HOMEPAGE PROCESSOR] Processing ${homepagesNeedingProcessing.length} homepages using Tavily...`)
+    const extractedContent = await extractUrlContentBatch(homepagesNeedingProcessing)
+    
+    // Filter successful extractions
+    const successfulExtractions = extractedContent.filter(e => !e.failed && e.raw_content)
+    console.log(`✅ [DOMAIN HOMEPAGE PROCESSOR] Successfully extracted ${successfulExtractions.length}/${homepagesNeedingProcessing.length} homepages`)
+    
+    if (successfulExtractions.length === 0) {
+      return { processed: 0, categorized: 0 }
+    }
+    
+    // Step 6: Classify homepage content using ChatGPT
+    console.log(`🤖 [DOMAIN HOMEPAGE PROCESSOR] Classifying ${successfulExtractions.length} homepages using ChatGPT...`)
+    const classificationsInput = successfulExtractions.map(e => ({
+      url: e.url,
+      title: e.title || '',
+      description: e.content || '',
+      contentSnippet: e.raw_content || e.content || ''
+    }))
+    
+    const classifications = await classifyUrlContentBatch(classificationsInput)
+    console.log(`✅ [DOMAIN HOMEPAGE PROCESSOR] Classified ${classifications.length} homepages`)
+    
+    // Step 7: Store homepage content and classifications
+    const homepageContentFactsRecords = successfulExtractions.map((extraction, index) => {
+      const classification = classifications[index]
+      const homepageId = existingHomepageMap.get(extraction.url)?.id
+      
+      if (!homepageId) return null
+      
+      return {
+        url_id: homepageId,
+        title: extraction.title || '',
+        description: extraction.content || '',
+        raw_content: extraction.raw_content || extraction.content || '',
+        content_snippet: (extraction.raw_content || extraction.content || '').substring(0, 2000),
+        content_structure_category: classification?.content_structure_category || 'OFFICIAL_DOCUMENTATION',
+        classification_confidence: 0.8,
+        classifier_version: 'v1'
+      }
+    }).filter(Boolean)
+    
+    if (homepageContentFactsRecords.length > 0) {
+      const { error: contentFactsError } = await supabase
+        .from('url_content_facts')
+        .upsert(homepageContentFactsRecords, { onConflict: 'url_id' })
+      
+      if (contentFactsError) {
+        console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Error storing content facts:', contentFactsError)
+      } else {
+        console.log(`✅ [DOMAIN HOMEPAGE PROCESSOR] Stored ${homepageContentFactsRecords.length} homepage content facts`)
+      }
+    }
+    
+    // Step 8: Mark homepages as content_extracted
+    const extractedHomepageIds = successfulExtractions
+      .map(e => existingHomepageMap.get(e.url)?.id)
+      .filter(Boolean)
+    
+    if (extractedHomepageIds.length > 0) {
+      const { error: updateError } = await supabase
+        .from('url_inventory')
+        .update({ 
+          content_extracted: true,
+          content_extracted_at: new Date().toISOString()
+        })
+        .in('id', extractedHomepageIds)
+      
+      if (updateError) {
+        console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Error updating content_extracted:', updateError)
+      }
+    }
+    
+    return {
+      processed: successfulExtractions.length,
+      categorized: classifications.length
+    }
+    
+  } catch (error: any) {
+    console.error('❌ [DOMAIN HOMEPAGE PROCESSOR] Fatal error:', error)
+    return { processed: 0, categorized: 0 }
   }
 }
 
