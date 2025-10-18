@@ -84,15 +84,49 @@ export async function GET(request: NextRequest) {
 
     // Enrich URLs with category data from url_content_facts
     const enrichedUrls = await Promise.all((urls || []).map(async (urlData: any) => {
-      const { data: categoryData } = await supabase
-        .from('url_inventory')
-        .select(`
-          id,
-          url_content_facts(domain_role_category, content_structure_category)
-        `)
-        .eq('url', urlData.url)
-        .limit(1)
-        .single()
+      // Try multiple URL variations to handle www. prefix differences
+      const urlVariations = [
+        urlData.url, // Original URL from RPC
+        urlData.url.replace('://', '://www.'), // Add www. prefix
+        urlData.url.replace('://www.', '://') // Remove www. prefix
+      ]
+      
+      let categoryData = null
+      
+      // Try each URL variation
+      for (const urlVariation of urlVariations) {
+        // Try normalized_url match first
+        const { data: normalizedMatch } = await supabase
+          .from('url_inventory')
+          .select(`
+            id,
+            url_content_facts!inner(domain_role_category, content_structure_category)
+          `)
+          .eq('normalized_url', urlVariation)
+          .limit(1)
+          .single()
+        
+        if (normalizedMatch) {
+          categoryData = normalizedMatch
+          break
+        }
+        
+        // Try exact url match
+        const { data: exactMatch } = await supabase
+          .from('url_inventory')
+          .select(`
+            id,
+            url_content_facts!inner(domain_role_category, content_structure_category)
+          `)
+          .eq('url', urlVariation)
+          .limit(1)
+          .single()
+        
+        if (exactMatch) {
+          categoryData = exactMatch
+          break
+        }
+      }
       
       return {
         ...urlData,
