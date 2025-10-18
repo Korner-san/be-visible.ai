@@ -74,8 +74,10 @@ export async function GET(request: NextRequest) {
 
     // Enrich domains with category data from url_content_facts
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
+      console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
+      
       // Get the most common domain role category and content structure category for this domain
-      const { data: categoryData } = await supabase
+      const { data: categoryData, error: categoryError } = await supabase
         .from('url_inventory')
         .select(`
           id,
@@ -83,13 +85,20 @@ export async function GET(request: NextRequest) {
         `)
         .eq('domain', domain.domain)
       
+      if (categoryError) {
+        console.error(`❌ [Domains API] Error fetching category data for ${domain.domain}:`, categoryError)
+      }
+      
       if (!categoryData || categoryData.length === 0) {
+        console.warn(`⚠️ [Domains API] No categorization data found for domain: ${domain.domain}`)
         return {
           ...domain,
           domain_role_category: null,
           content_structure_category: null
         }
       }
+
+      console.log(`📊 [Domains API] Found ${categoryData.length} categorized URLs for ${domain.domain}`)
 
       // Find the most common domain role category for this domain
       const domainRoleCounts: { [key: string]: number } = {}
@@ -113,6 +122,13 @@ export async function GET(request: NextRequest) {
       
       const mostCommonContentType = Object.entries(contentTypeCounts)
         .sort(([, a], [, b]) => b - a)[0]?.[0] || null
+      
+      console.log(`✅ [Domains API] Enriched ${domain.domain}:`, {
+        domainRole: mostCommonDomainRole,
+        contentType: mostCommonContentType,
+        domainRoleCounts,
+        contentTypeCounts
+      })
       
       return {
         ...domain,

@@ -84,19 +84,24 @@ export async function GET(request: NextRequest) {
 
     // Enrich URLs with category data from url_content_facts
     const enrichedUrls = await Promise.all((urls || []).map(async (urlData: any) => {
-      // Try multiple URL variations to handle www. prefix differences
+      console.log(`🔍 [URLs API] Enriching URL: ${urlData.url}`)
+      
+      // Generate URL variations - prioritize www. version since that's what's stored in DB
       const urlVariations = [
+        urlData.url.replace('://', '://www.'), // Add www. prefix (most likely to match)
         urlData.url, // Original URL from RPC
-        urlData.url.replace('://', '://www.'), // Add www. prefix
-        urlData.url.replace('://www.', '://') // Remove www. prefix
+        urlData.url.replace('://www.', '://') // Remove www. prefix (fallback)
       ]
       
       let categoryData = null
+      let matchedVariation = null
       
       // Try each URL variation
       for (const urlVariation of urlVariations) {
+        console.log(`🔍 [URLs API] Trying variation: ${urlVariation}`)
+        
         // Try normalized_url match first
-        const { data: normalizedMatches } = await supabase
+        const { data: normalizedMatches, error: normalizedError } = await supabase
           .from('url_inventory')
           .select(`
             id,
@@ -105,13 +110,19 @@ export async function GET(request: NextRequest) {
           .eq('normalized_url', urlVariation)
           .limit(1)
         
+        if (normalizedError) {
+          console.error(`❌ [URLs API] Normalized query error for ${urlVariation}:`, normalizedError)
+        }
+        
         if (normalizedMatches && normalizedMatches.length > 0) {
           categoryData = normalizedMatches[0]
+          matchedVariation = `normalized:${urlVariation}`
+          console.log(`✅ [URLs API] Found match via normalized_url: ${urlVariation}`)
           break
         }
         
         // Try exact url match
-        const { data: exactMatches } = await supabase
+        const { data: exactMatches, error: exactError } = await supabase
           .from('url_inventory')
           .select(`
             id,
@@ -120,10 +131,22 @@ export async function GET(request: NextRequest) {
           .eq('url', urlVariation)
           .limit(1)
         
+        if (exactError) {
+          console.error(`❌ [URLs API] Exact query error for ${urlVariation}:`, exactError)
+        }
+        
         if (exactMatches && exactMatches.length > 0) {
           categoryData = exactMatches[0]
+          matchedVariation = `exact:${urlVariation}`
+          console.log(`✅ [URLs API] Found match via exact url: ${urlVariation}`)
           break
         }
+      }
+      
+      if (!categoryData) {
+        console.warn(`⚠️ [URLs API] No categorization data found for URL: ${urlData.url}`)
+      } else {
+        console.log(`✅ [URLs API] Successfully enriched ${urlData.url} via ${matchedVariation}`)
       }
       
       return {
