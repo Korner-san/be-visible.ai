@@ -7,6 +7,7 @@ import { useBrandsStore } from "@/store/brands"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { ContentStructureTable } from "@/components/ContentStructureTable"
 
 export default function ReportsContent() {
