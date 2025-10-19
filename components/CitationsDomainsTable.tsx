@@ -24,6 +24,21 @@ const formatContentType = (category: string | null | undefined): string => {
   return labels[category] || category
 }
 
+const getContentTypeDescription = (category: string | null | undefined): string => {
+  if (!category) return 'This content has not been categorized yet.'
+  const descriptions: Record<string, string> = {
+    'QA_BLOCK': 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
+    'DATA_DRIVEN_REPORT': 'Content presenting proprietary data, research, or surveys. Includes numbers, charts, or visualized datasets with a clear methodology. Recognized by AI models as original and verifiable information sources.',
+    'COMPARISON_TABLE': 'Content comparing multiple tools, platforms, or services. Often structured as tables, lists, or "X vs Y" style articles. Includes "Top 5", "Best of", or feature-by-feature comparisons.',
+    'CASE_STUDY': 'Narrative content describing a real-world scenario. Highlights a specific challenge, the actions taken, and measurable outcomes. Used to document results, performance, or success examples.',
+    'DOCS_PAGE': 'Technical or instructional reference material from help centers, APIs, or developer sites. Includes installation guides, configuration steps, and parameter explanations. Structured for accuracy and reusability by AI systems.',
+    'FORUM_THREAD': 'Threaded conversations, forum posts, or community Q&A exchanges. Includes peer‑to‑peer troubleshooting, shared experiences, and informal advice. Reflects public opinion or real‑world problem solving.',
+    'TUTORIAL_STEP_BY_STEP': 'Structured instructional guide divided into sequential steps. Each step clearly marked with ordered headings or visual markers. Explains a process, setup, or workflow from start to finish.',
+    'LONG_FORM_ARTICLE': 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.'
+  }
+  return descriptions[category] || 'No description available for this content type.'
+}
+
 interface DomainData {
   domain: string
   urls_count: number
@@ -302,9 +317,18 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   </TableCell>
                   <TableCell className="text-xs">
                     {domain.content_structure_category ? (
-                      <Badge variant="outline" className="text-xs">
-                        {formatContentType(domain.content_structure_category)}
-                      </Badge>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-xs cursor-help">
+                              {formatContentType(domain.content_structure_category)}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p className="text-xs">{getContentTypeDescription(domain.content_structure_category)}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : (
                       <span className="text-slate-400 italic">Not categorized yet</span>
                     )}
@@ -408,9 +432,18 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                   </TableCell>
                                   <TableCell className="text-xs">
                                     {urlData.content_structure_category ? (
-                                      <Badge variant="outline" className="text-xs">
-                                        {formatContentType(urlData.content_structure_category)}
-                                      </Badge>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Badge variant="outline" className="text-xs cursor-help">
+                                              {formatContentType(urlData.content_structure_category)}
+                                            </Badge>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs">
+                                            <p className="text-xs">{getContentTypeDescription(urlData.content_structure_category)}</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                     ) : (
                                       <span className="text-slate-400 italic">Not yet</span>
                                     )}
