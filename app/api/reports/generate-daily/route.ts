@@ -334,6 +334,8 @@ const haveBothPhasesBeenAttempted = async (supabase: any, dailyReportId: string)
 
 // Update daily report completion status
 const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
+  console.log(`🔍 [COMPLETION] Checking completion status for report ${dailyReportId}`)
+  
   const isPerplexityComplete = await isDailyReportComplete(supabase, dailyReportId)
   const bothPhasesAttempted = await haveBothPhasesBeenAttempted(supabase, dailyReportId)
   
@@ -345,6 +347,15 @@ const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
     .single()
   
   const isUrlProcessingComplete = reportStatus?.url_processing_status === 'complete'
+  
+  console.log(`🔍 [COMPLETION] Status checks:`, {
+    isPerplexityComplete,
+    bothPhasesAttempted,
+    isUrlProcessingComplete,
+    urlProcessingStatus: reportStatus?.url_processing_status,
+    urlsTotal: reportStatus?.urls_total,
+    urlsClassified: reportStatus?.urls_classified
+  })
   
   // Only mark as complete if ALL THREE phases are complete:
   // 1. Perplexity is complete
