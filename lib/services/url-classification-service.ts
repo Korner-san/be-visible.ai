@@ -299,14 +299,24 @@ export const processUrlsForDailyReport = async (
     
   } catch (error: any) {
     console.error('❌ [URL PROCESSOR] Fatal error:', error)
+    console.error('❌ [URL PROCESSOR] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     
     // Mark URL processing as failed
     await supabase
       .from('daily_reports')
-      .update({ url_processing_status: 'failed' })
+      .update({ 
+        url_processing_status: 'failed',
+        urls_total: 0,
+        urls_classified: 0
+      })
       .eq('id', dailyReportId)
     
-    return { totalUrls: 0, newUrls: 0, extractedUrls: 0, classifiedUrls: 0 }
+    // Re-throw the error so the calling function knows it failed
+    throw error
   }
 }
 

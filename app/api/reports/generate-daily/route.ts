@@ -340,12 +340,11 @@ const updateCompletionStatus = async (supabase: any, dailyReportId: string) => {
   // Check if URL processing is complete
   const { data: reportStatus } = await supabase
     .from('daily_reports')
-    .select('url_processing_status, prompts_classified, urls_total, urls_classified')
+    .select('url_processing_status, urls_total, urls_classified')
     .eq('id', dailyReportId)
     .single()
   
-  const isUrlProcessingComplete = reportStatus?.url_processing_status === 'complete' && 
-                                  reportStatus?.prompts_classified > 0
+  const isUrlProcessingComplete = reportStatus?.url_processing_status === 'complete'
   
   // Only mark as complete if ALL THREE phases are complete:
   // 1. Perplexity is complete
@@ -376,6 +375,35 @@ export async function POST(request: NextRequest) {
     const { brandId, manual = false, fromCron = false } = await request.json()
     
     console.log('🚀 [DAILY REPORT] Starting generation for brand:', brandId, 'Manual:', manual, 'From Cron:', fromCron)
+    
+    // For manual reports, add a timeout to prevent hanging
+    if (manual) {
+      console.log('⏰ [DAILY REPORT] Manual report generation - setting 15 minute timeout')
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Manual report generation timeout after 15 minutes'))
+        }, 15 * 60 * 1000)
+      })
+      
+      const reportPromise = generateReport(brandId, manual, fromCron)
+      
+      return Promise.race([reportPromise, timeoutPromise])
+    }
+    
+    return generateReport(brandId, manual, fromCron)
+    
+  } catch (error) {
+    console.error('❌ [DAILY REPORT] Unexpected error:', error)
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
+}
+
+async function generateReport(brandId: string, manual: boolean, fromCron: boolean) {
+  try {
     
     if (!brandId) {
       return NextResponse.json({
@@ -685,19 +713,48 @@ export async function POST(request: NextRequest) {
     if (bothPhasesAttempted) {
       console.log('🔍 [URL PROCESSING] Starting URL extraction and classification')
       
+      // Mark URL processing as started
+      await supabase
+        .from('daily_reports')
+        .update({ url_processing_status: 'running' })
+        .eq('id', dailyReport.id)
+      
       try {
         // Process URLs (extract content and classify)
+        console.log(`🔍 [URL PROCESSING] Calling processUrlsForDailyReport for report ${dailyReport.id}`)
         const urlStats = await processUrlsForDailyReport(dailyReport.id)
         console.log(`✅ [URL PROCESSING] Processed URLs:`, urlStats)
+        
+        // Verify URL processing completed successfully
+        if (urlStats.totalUrls === 0) {
+          console.warn('⚠️ [URL PROCESSING] No URLs were processed - this might indicate an issue')
+        }
         
         // URL processing is now required for report completion
         // If it fails, the report will be marked as incomplete
         
       } catch (urlProcessingError) {
         console.error('❌ [URL PROCESSING] Error during URL processing:', urlProcessingError)
-        // Mark URL processing as failed in database (already done in service function)
+        console.error('❌ [URL PROCESSING] Error details:', {
+          message: urlProcessingError instanceof Error ? urlProcessingError.message : 'Unknown error',
+          stack: urlProcessingError instanceof Error ? urlProcessingError.stack : undefined
+        })
+        
+        // Mark URL processing as failed in database
+        await supabase
+          .from('daily_reports')
+          .update({ 
+            url_processing_status: 'failed',
+            urls_total: 0,
+            urls_classified: 0
+          })
+          .eq('id', dailyReport.id)
+        
         // Report will NOT be marked as complete if URL processing fails
+        console.error('❌ [URL PROCESSING] Report will remain incomplete due to URL processing failure')
       }
+    } else {
+      console.log('⚠️ [URL PROCESSING] Skipping URL processing - not all provider phases completed')
     }
     
     // Check completion and update final status (AFTER URL processing)
@@ -720,10 +777,11 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('❌ [DAILY REPORT] Unexpected error:', error)
+    console.error('❌ [DAILY REPORT] Unexpected error in generateReport:', error)
     return NextResponse.json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
