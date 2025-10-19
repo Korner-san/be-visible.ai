@@ -53,6 +53,11 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
     label: 'Original Data Study',
     description: 'The Unique Asset. Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else. Goal: Invest in annual research that the entire industry must reference.',
     color: 'bg-purple-100 text-purple-800'
+  },
+  'COMMUNITY_DISCUSSION': {
+    label: 'Community Discussion',
+    description: 'The Social Proof. Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences. Cited when the AI needs real-world validation or user experiences. Goal: Foster active community engagement and collect authentic user stories.',
+    color: 'bg-pink-100 text-pink-800'
   }
 }
 
