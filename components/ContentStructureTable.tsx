@@ -29,35 +29,45 @@ interface ContentStructureTableProps {
 }
 
 const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
-  'DEFINITIVE_QA_BLOCK': {
-    label: 'Definitive Q&A Block',
-    description: "The AI's Answer Key. Highly structured, short paragraphs designed to answer a single question (often tagged with FAQ/HowTo Schema). The AI extracts this with minimal editing. Goal: Be concise, clear, and factually correct.",
+  'QA_BLOCK': {
+    label: 'Q&A or FAQ Block',
+    description: 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
     color: 'bg-blue-100 text-blue-800'
   },
-  'PRODUCT_COMPARISON_MATRIX': {
-    label: 'Product Comparison Matrix',
-    description: 'The Feature Summary. Content presented in tables, bulleted lists, or side-by-side feature comparisons. Ideal for satisfying Competitive Consensus queries. Goal: Use clear HTML/Markdown tables with up-to-date data.',
-    color: 'bg-orange-100 text-orange-800'
-  },
-  'OFFICIAL_DOCUMENTATION': {
-    label: 'Official Documentation',
-    description: 'The Trusted Source Code. Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions. Goal: Must be perfectly accessible, fast, and free of broken links to win technical queries.',
-    color: 'bg-yellow-100 text-yellow-800'
-  },
-  'NARRATIVE_CASE_STUDY': {
-    label: 'Narrative Case Study',
-    description: 'The Proof Point. Long-form content detailing a problem, solution, and clear numerical result (e.g., "Client achieved 25% ROI"). These citations are used to build trust and demonstrate Experience. Goal: Ensure the "Result" is quotable in one sentence.',
-    color: 'bg-green-100 text-green-800'
-  },
-  'ORIGINAL_DATA_STUDY': {
-    label: 'Original Data Study',
-    description: 'The Unique Asset. Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else. Goal: Invest in annual research that the entire industry must reference.',
+  'DATA_DRIVEN_REPORT': {
+    label: 'Original Research or Data Report',
+    description: 'Content presenting proprietary data, research, or surveys. Includes numbers, charts, or visualized datasets with a clear methodology. Recognized by AI models as original and verifiable information sources.',
     color: 'bg-purple-100 text-purple-800'
   },
-  'COMMUNITY_DISCUSSION': {
+  'COMPARISON_TABLE': {
+    label: 'Product or Service Comparison',
+    description: 'Content comparing multiple tools, platforms, or services. Often structured as tables, lists, or "X vs Y" style articles. Includes "Top 5", "Best of", or feature-by-feature comparisons.',
+    color: 'bg-orange-100 text-orange-800'
+  },
+  'CASE_STUDY': {
+    label: 'Case Study',
+    description: 'Narrative content describing a real-world scenario. Highlights a specific challenge, the actions taken, and measurable outcomes. Used to document results, performance, or success examples.',
+    color: 'bg-green-100 text-green-800'
+  },
+  'DOCS_PAGE': {
+    label: 'Official Documentation',
+    description: 'Technical or instructional reference material from help centers, APIs, or developer sites. Includes installation guides, configuration steps, and parameter explanations. Structured for accuracy and reusability by AI systems.',
+    color: 'bg-yellow-100 text-yellow-800'
+  },
+  'FORUM_THREAD': {
     label: 'Community Discussion',
-    description: 'The Social Proof. Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences. Cited when the AI needs real-world validation or user experiences. Goal: Foster active community engagement and collect authentic user stories.',
+    description: 'Threaded conversations, forum posts, or community Q&A exchanges. Includes peer‑to‑peer troubleshooting, shared experiences, and informal advice. Reflects public opinion or real‑world problem solving.',
     color: 'bg-pink-100 text-pink-800'
+  },
+  'TUTORIAL_STEP_BY_STEP': {
+    label: 'How‑To Tutorial',
+    description: 'Structured instructional guide divided into sequential steps. Each step clearly marked with ordered headings or visual markers. Explains a process, setup, or workflow from start to finish.',
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  'LONG_FORM_ARTICLE': {
+    label: 'Editorial or Thought Leadership Article',
+    description: 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.',
+    color: 'bg-gray-100 text-gray-800'
   }
 }
 

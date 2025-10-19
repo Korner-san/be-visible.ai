@@ -11,12 +11,14 @@ const openai = new OpenAI({
 
 // Content Structure Categories
 export const CONTENT_STRUCTURE_CATEGORIES = {
-  DEFINITIVE_QA_BLOCK: 'Definitive Q&A Block',
-  ORIGINAL_DATA_STUDY: 'Original Data Study',
-  PRODUCT_COMPARISON_MATRIX: 'Product Comparison Matrix',
-  NARRATIVE_CASE_STUDY: 'Narrative Case Study',
-  OFFICIAL_DOCUMENTATION: 'Official Documentation',
-  COMMUNITY_DISCUSSION: 'Community Discussion',
+  QA_BLOCK: 'Q&A or FAQ Block',
+  DATA_DRIVEN_REPORT: 'Original Research or Data Report',
+  COMPARISON_TABLE: 'Product or Service Comparison',
+  CASE_STUDY: 'Case Study',
+  DOCS_PAGE: 'Official Documentation',
+  FORUM_THREAD: 'Community Discussion',
+  TUTORIAL_STEP_BY_STEP: 'How-To Tutorial',
+  LONG_FORM_ARTICLE: 'Editorial or Thought Leadership Article',
 } as const
 
 export type ContentStructureCategory = keyof typeof CONTENT_STRUCTURE_CATEGORIES
@@ -38,15 +40,17 @@ export const classifyUrlContent = async (
 ): Promise<ContentClassificationResult> => {
   console.log(`🤖 [CLASSIFIER] Classifying content for ${url}`)
   
-  const systemPrompt = `You are an expert content strategist. Your task is to analyze the provided URL's title, description, and full content to classify its content structure.
+  const systemPrompt = `You are an expert content analyst. Your task is to identify what type of content a webpage represents based on its structure and purpose.
 
 **CONTENT STRUCTURE TAXONOMY:**
-1. DEFINITIVE_QA_BLOCK: Concise text block, often schema-tagged or in an FAQ section, designed for direct answer extraction.
-2. ORIGINAL_DATA_STUDY: Content focused on proprietary research, surveys, or unique data sets with stated methodology.
-3. PRODUCT_COMPARISON_MATRIX: Content presented in bulleted lists, tables, or side-by-side product feature layouts.
-4. NARRATIVE_CASE_STUDY: Story-driven content detailing a client win, problem/solution, or a project outcome.
-5. OFFICIAL_DOCUMENTATION: Structured content from official help centers, APIs, or knowledge bases.
-6. COMMUNITY_DISCUSSION: Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences.
+1. QA_BLOCK – Short, structured text answering a single question (FAQ, glossary).
+2. DATA_DRIVEN_REPORT – Proprietary study or dataset with measurable results.
+3. COMPARISON_TABLE – Product or service comparison ("X vs Y", "Top 5", feature lists).
+4. CASE_STUDY – Narrative example describing a challenge, solution, and outcome.
+5. DOCS_PAGE – Technical or instructional documentation (API, help center, developer pages).
+6. FORUM_THREAD – Community thread, forum discussion, or user Q&A exchange.
+7. TUTORIAL_STEP_BY_STEP – Step‑by‑step instructional or how‑to guide.
+8. LONG_FORM_ARTICLE – Editorial or analytical article providing commentary or insight.
 
 **INSTRUCTIONS:**
 1. Determine the content_structure_category from the CONTENT STRUCTURE TAXONOMY.
@@ -86,14 +90,14 @@ Return only the JSON object, no additional text.`
     const parsed = JSON.parse(content)
     return {
       url: parsed.url || url,
-      content_structure_category: parsed.content_structure_category || 'OFFICIAL_DOCUMENTATION'
+      content_structure_category: parsed.content_structure_category || 'DOCS_PAGE'
     }
   } catch (error: any) {
     console.error('❌ [CLASSIFIER] Content classification failed:', error.message)
     // Return default classification
     return {
       url,
-      content_structure_category: 'OFFICIAL_DOCUMENTATION'
+      content_structure_category: 'DOCS_PAGE'
     }
   }
 }

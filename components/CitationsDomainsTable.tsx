@@ -12,12 +12,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 const formatContentType = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
   const labels: Record<string, string> = {
-    'DEFINITIVE_QA_BLOCK': 'Definitive Q&A Block',
-    'PRODUCT_COMPARISON_MATRIX': 'Product Comparison Matrix',
-    'OFFICIAL_DOCUMENTATION': 'Official Documentation',
-    'NARRATIVE_CASE_STUDY': 'Narrative Case Study',
-    'ORIGINAL_DATA_STUDY': 'Original Data Study',
-    'COMMUNITY_DISCUSSION': 'Community Discussion'
+    'QA_BLOCK': 'Q&A or FAQ Block',
+    'DATA_DRIVEN_REPORT': 'Original Research or Data Report',
+    'COMPARISON_TABLE': 'Product or Service Comparison',
+    'CASE_STUDY': 'Case Study',
+    'DOCS_PAGE': 'Official Documentation',
+    'FORUM_THREAD': 'Community Discussion',
+    'TUTORIAL_STEP_BY_STEP': 'How‑To Tutorial',
+    'LONG_FORM_ARTICLE': 'Editorial or Thought Leadership Article'
   }
   return labels[category] || category
 }
