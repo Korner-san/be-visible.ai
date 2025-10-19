@@ -11,7 +11,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const formatContentType = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
-  const labels: Record<string, string> = {
+  
+  // New 8-category system labels
+  const newLabels: Record<string, string> = {
     'QA_BLOCK': 'Q&A or FAQ Block',
     'DATA_DRIVEN_REPORT': 'Original Research or Data Report',
     'COMPARISON_TABLE': 'Product or Service Comparison',
@@ -21,12 +23,28 @@ const formatContentType = (category: string | null | undefined): string => {
     'TUTORIAL_STEP_BY_STEP': 'How‑To Tutorial',
     'LONG_FORM_ARTICLE': 'Editorial or Thought Leadership Article'
   }
-  return labels[category] || category
+  
+  // Old system labels (for backward compatibility)
+  const oldLabels: Record<string, string> = {
+    'DEFINITIVE_QA_BLOCK': 'Definitive Q&A Block',
+    'ORIGINAL_DATA_STUDY': 'Original Data Study',
+    'PRODUCT_COMPARISON_MATRIX': 'Product Comparison Matrix',
+    'NARRATIVE_CASE_STUDY': 'Narrative Case Study',
+    'OFFICIAL_DOCUMENTATION': 'Official Documentation',
+    'COMMUNITY_DISCUSSION': 'Community Discussion',
+    'TACTICAL_GUIDE': 'Tactical Guide',
+    'FOUNDATIONAL_AUTHORITY': 'Foundational Authority'
+  }
+  
+  // Check new labels first, then old labels, then return original category
+  return newLabels[category] || oldLabels[category] || category
 }
 
 const getContentTypeDescription = (category: string | null | undefined): string => {
   if (!category) return 'This content has not been categorized yet.'
-  const descriptions: Record<string, string> = {
+  
+  // New 8-category system descriptions
+  const newDescriptions: Record<string, string> = {
     'QA_BLOCK': 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
     'DATA_DRIVEN_REPORT': 'Content presenting proprietary data, research, or surveys. Includes numbers, charts, or visualized datasets with a clear methodology. Recognized by AI models as original and verifiable information sources.',
     'COMPARISON_TABLE': 'Content comparing multiple tools, platforms, or services. Often structured as tables, lists, or "X vs Y" style articles. Includes "Top 5", "Best of", or feature-by-feature comparisons.',
@@ -36,7 +54,21 @@ const getContentTypeDescription = (category: string | null | undefined): string 
     'TUTORIAL_STEP_BY_STEP': 'Structured instructional guide divided into sequential steps. Each step clearly marked with ordered headings or visual markers. Explains a process, setup, or workflow from start to finish.',
     'LONG_FORM_ARTICLE': 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.'
   }
-  return descriptions[category] || 'No description available for this content type.'
+  
+  // Old system descriptions (for backward compatibility)
+  const oldDescriptions: Record<string, string> = {
+    'DEFINITIVE_QA_BLOCK': 'The AI\'s Answer Key. Highly structured, short paragraphs designed to answer a single question (often tagged with FAQ/HowTo Schema). The AI extracts this with minimal editing. Goal: Be concise, clear, and factually correct.',
+    'ORIGINAL_DATA_STUDY': 'The Unique Asset. Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else. Goal: Invest in annual research that the entire industry must reference.',
+    'PRODUCT_COMPARISON_MATRIX': 'The Feature Summary. Content presented in tables, bulleted lists, or side-by-side feature comparisons. Ideal for satisfying Competitive Consensus queries. Goal: Use clear HTML/Markdown tables with up-to-date data.',
+    'NARRATIVE_CASE_STUDY': 'The Proof Point. Long-form content detailing a problem, solution, and clear numerical result (e.g., "Client achieved 25% ROI"). These citations are used to build trust and demonstrate Experience. Goal: Ensure the "Result" is quotable in one sentence.',
+    'OFFICIAL_DOCUMENTATION': 'The Trusted Source Code. Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions. Goal: Must be perfectly accessible, fast, and free of broken links to win technical queries.',
+    'COMMUNITY_DISCUSSION': 'The Social Proof. Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences. Cited when the AI needs real-world validation or user experiences. Goal: Foster active community engagement and collect authentic user stories.',
+    'TACTICAL_GUIDE': 'The Step-by-Step Solution. Content providing actionable instructions, workflows, or implementation guides. Cited when users need specific how-to information. Goal: Break down complex processes into clear, sequential steps.',
+    'FOUNDATIONAL_AUTHORITY': 'The Industry Standard. Content that establishes fundamental concepts, definitions, or frameworks that other sources reference. Cited when the AI needs to establish baseline knowledge. Goal: Create content that becomes the go-to reference for industry concepts.'
+  }
+  
+  // Check new descriptions first, then old descriptions
+  return newDescriptions[category] || oldDescriptions[category] || 'No description available for this content type.'
 }
 
 interface DomainData {

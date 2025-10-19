@@ -29,6 +29,7 @@ interface ContentStructureTableProps {
 }
 
 const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
+  // New 8-category system
   'QA_BLOCK': {
     label: 'Q&A or FAQ Block',
     description: 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
@@ -67,6 +68,48 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
   'LONG_FORM_ARTICLE': {
     label: 'Editorial or Thought Leadership Article',
     description: 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.',
+    color: 'bg-gray-100 text-gray-800'
+  },
+  
+  // Old system (for backward compatibility)
+  'DEFINITIVE_QA_BLOCK': {
+    label: 'Definitive Q&A Block',
+    description: 'The AI\'s Answer Key. Highly structured, short paragraphs designed to answer a single question (often tagged with FAQ/HowTo Schema). The AI extracts this with minimal editing. Goal: Be concise, clear, and factually correct.',
+    color: 'bg-blue-100 text-blue-800'
+  },
+  'ORIGINAL_DATA_STUDY': {
+    label: 'Original Data Study',
+    description: 'The Unique Asset. Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else. Goal: Invest in annual research that the entire industry must reference.',
+    color: 'bg-purple-100 text-purple-800'
+  },
+  'PRODUCT_COMPARISON_MATRIX': {
+    label: 'Product Comparison Matrix',
+    description: 'The Feature Summary. Content presented in tables, bulleted lists, or side-by-side feature comparisons. Ideal for satisfying Competitive Consensus queries. Goal: Use clear HTML/Markdown tables with up-to-date data.',
+    color: 'bg-orange-100 text-orange-800'
+  },
+  'NARRATIVE_CASE_STUDY': {
+    label: 'Narrative Case Study',
+    description: 'The Proof Point. Long-form content detailing a problem, solution, and clear numerical result (e.g., "Client achieved 25% ROI"). These citations are used to build trust and demonstrate Experience. Goal: Ensure the "Result" is quotable in one sentence.',
+    color: 'bg-green-100 text-green-800'
+  },
+  'OFFICIAL_DOCUMENTATION': {
+    label: 'Official Documentation',
+    description: 'The Trusted Source Code. Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions. Goal: Must be perfectly accessible, fast, and free of broken links to win technical queries.',
+    color: 'bg-yellow-100 text-yellow-800'
+  },
+  'COMMUNITY_DISCUSSION': {
+    label: 'Community Discussion',
+    description: 'The Social Proof. Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences. Cited when the AI needs real-world validation or user experiences. Goal: Foster active community engagement and collect authentic user stories.',
+    color: 'bg-pink-100 text-pink-800'
+  },
+  'TACTICAL_GUIDE': {
+    label: 'Tactical Guide',
+    description: 'The Step-by-Step Solution. Content providing actionable instructions, workflows, or implementation guides. Cited when users need specific how-to information. Goal: Break down complex processes into clear, sequential steps.',
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  'FOUNDATIONAL_AUTHORITY': {
+    label: 'Foundational Authority',
+    description: 'The Industry Standard. Content that establishes fundamental concepts, definitions, or frameworks that other sources reference. Cited when the AI needs to establish baseline knowledge. Goal: Create content that becomes the go-to reference for industry concepts.',
     color: 'bg-gray-100 text-gray-800'
   }
 }
