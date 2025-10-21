@@ -157,7 +157,7 @@ export default function ReportsVisibility() {
     loadBrandCitations()
   }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
-  // Manual report generation using new staged processing system
+  // Manual report generation with fallback to old system
   const generateManualReport = async () => {
     if (!activeBrandId || isDemoMode) return
     
@@ -170,16 +170,52 @@ export default function ReportsVisibility() {
         duration: 5000,
       })
       
-      // Step 1: Initialize report and queue first job
-      const response = await fetch('/api/reports/initialize', {
+      // Try new staged processing system first
+      try {
+        const response = await fetch('/api/reports/initialize', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            brandId: activeBrandId,
+            manual: true,
+            fromCron: false
+          })
+        })
+        
+        const result = await response.json()
+        
+        if (result.success) {
+          toast({
+            title: "✅ Report Initialized",
+            description: `Staged processing started for ${result.totalPrompts} prompts. Processing will continue in background.`,
+            duration: 8000,
+          })
+          
+          // Start polling for completion
+          pollReportStatus(result.reportId)
+          return
+        }
+      } catch (newSystemError) {
+        console.log('🔄 [FALLBACK] New system not available, falling back to old system')
+      }
+      
+      // Fallback to old system
+      toast({
+        title: "🤖 Generating Report",
+        description: "Running Perplexity analysis on all active prompts...",
+        duration: 5000,
+      })
+      
+      const response = await fetch('/api/reports/generate-daily', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           brandId: activeBrandId,
-          manual: true,
-          fromCron: false
+          manual: true
         })
       })
       
@@ -187,23 +223,29 @@ export default function ReportsVisibility() {
       
       if (result.success) {
         toast({
-          title: "✅ Report Initialized",
-          description: `Staged processing started for ${result.totalPrompts} prompts. Processing will continue in background.`,
+          title: "✅ Report Generated",
+          description: `Processed ${result.totalPrompts} prompts, found ${result.totalMentions} brand mentions`,
           duration: 8000,
         })
         
-        // Start polling for completion
-        pollReportStatus(result.reportId)
+        // Reload data instead of full page refresh
+        const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
+        const visibilityData = await visibilityResponse.json()
+        
+        if (visibilityData.success) {
+          setReportData(visibilityData.data)
+        }
       } else {
         throw new Error(result.error)
       }
     } catch (error) {
-      console.error('Error initializing report:', error)
+      console.error('Error generating report:', error)
       toast({
-        title: "❌ Report Initialization Failed",
-        description: error instanceof Error ? error.message : "Failed to initialize report",
+        title: "❌ Report Failed",
+        description: error instanceof Error ? error.message : "Failed to generate report",
         duration: 8000,
       })
+    } finally {
       setIsGeneratingReport(false)
     }
   }
