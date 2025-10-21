@@ -61,7 +61,15 @@ export const processUrlsForDailyReport = async (
   
   const supabase = createServiceClient()
   
-  try {
+  // Add timeout protection (10 minutes)
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('URL processing timeout after 10 minutes'))
+    }, 10 * 60 * 1000)
+  })
+  
+  const processPromise = (async () => {
+    try {
     // Step 1: Get all prompt results for this daily report
     const { data: promptResults, error: resultsError } = await supabase
       .from('prompt_results')
@@ -291,33 +299,37 @@ export const processUrlsForDailyReport = async (
     const domainHomepageStats = await processDomainHomepages(dailyReportId, supabase)
     console.log(`✅ [URL PROCESSOR] Domain homepage processing complete:`, domainHomepageStats)
     
-    return {
-      ...result,
-      domainHomepagesProcessed: domainHomepageStats.processed,
-      domainHomepagesCategorized: domainHomepageStats.categorized
-    }
-    
-  } catch (error: any) {
-    console.error('❌ [URL PROCESSOR] Fatal error:', error)
-    console.error('❌ [URL PROCESSOR] Error details:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    })
-    
-    // Mark URL processing as failed
-    await supabase
-      .from('daily_reports')
-      .update({ 
-        url_processing_status: 'failed',
-        urls_total: 0,
-        urls_classified: 0
+      return {
+        ...result,
+        domainHomepagesProcessed: domainHomepageStats.processed,
+        domainHomepagesCategorized: domainHomepageStats.categorized
+      }
+      
+    } catch (error: any) {
+      console.error('❌ [URL PROCESSOR] Fatal error:', error)
+      console.error('❌ [URL PROCESSOR] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
       })
-      .eq('id', dailyReportId)
-    
-    // Re-throw the error so the calling function knows it failed
-    throw error
-  }
+      
+      // Mark URL processing as failed
+      await supabase
+        .from('daily_reports')
+        .update({ 
+          url_processing_status: 'failed',
+          urls_total: 0,
+          urls_classified: 0
+        })
+        .eq('id', dailyReportId)
+      
+      // Re-throw the error so the calling function knows it failed
+      throw error
+    }
+  })()
+  
+  // Race between processing and timeout
+  return Promise.race([processPromise, timeoutPromise])
 }
 
 /**
