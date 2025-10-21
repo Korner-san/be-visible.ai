@@ -157,7 +157,7 @@ export default function ReportsVisibility() {
     loadBrandCitations()
   }, [activeBrandId, isDemoMode, getDateRangeForAPI, selectedModels])
   
-  // Manual report generation
+  // Manual report generation using new staged processing system
   const generateManualReport = async () => {
     if (!activeBrandId || isDemoMode) return
     
@@ -165,19 +165,21 @@ export default function ReportsVisibility() {
     
     try {
       toast({
-        title: "🤖 Generating Report",
-        description: "Running Perplexity analysis on all active prompts...",
+        title: "🚀 Initializing Report",
+        description: "Setting up staged processing for reliable report generation...",
         duration: 5000,
       })
       
-      const response = await fetch('/api/reports/generate-daily', {
+      // Step 1: Initialize report and queue first job
+      const response = await fetch('/api/reports/initialize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           brandId: activeBrandId,
-          manual: true
+          manual: true,
+          fromCron: false
         })
       })
       
@@ -185,31 +187,91 @@ export default function ReportsVisibility() {
       
       if (result.success) {
         toast({
-          title: "✅ Report Generated",
-          description: `Processed ${result.totalPrompts} prompts, found ${result.totalMentions} brand mentions`,
+          title: "✅ Report Initialized",
+          description: `Staged processing started for ${result.totalPrompts} prompts. Processing will continue in background.`,
           duration: 8000,
         })
         
-        // Reload data instead of full page refresh
-        const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
-        const visibilityData = await visibilityResponse.json()
-        
-        if (visibilityData.success) {
-          setReportData(visibilityData.data)
-        }
+        // Start polling for completion
+        pollReportStatus(result.reportId)
       } else {
         throw new Error(result.error)
       }
     } catch (error) {
-      console.error('Error generating report:', error)
+      console.error('Error initializing report:', error)
       toast({
-        title: "❌ Report Failed",
-        description: error instanceof Error ? error.message : "Failed to generate report",
+        title: "❌ Report Initialization Failed",
+        description: error instanceof Error ? error.message : "Failed to initialize report",
         duration: 8000,
       })
-    } finally {
       setIsGeneratingReport(false)
     }
+  }
+
+  // Poll report status until completion
+  const pollReportStatus = async (reportId: string) => {
+    const maxAttempts = 30 // 5 minutes with 10-second intervals
+    let attempts = 0
+    
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/reports/check-status?reportId=${reportId}`)
+        const status = await response.json()
+        
+        if (status.success && status.completed) {
+          toast({
+            title: "🎉 Report Complete",
+            description: `All stages completed successfully! Report is ready.`,
+            duration: 8000,
+          })
+          
+          // Reload data
+          const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
+          const visibilityData = await visibilityResponse.json()
+          
+          if (visibilityData.success) {
+            setReportData(visibilityData.data)
+          }
+          
+          setIsGeneratingReport(false)
+          return
+        }
+        
+        if (status.success && status.failed) {
+          toast({
+            title: "❌ Report Failed",
+            description: `Report processing failed: ${status.error || 'Unknown error'}`,
+            duration: 8000,
+          })
+          setIsGeneratingReport(false)
+          return
+        }
+        
+        // Continue polling if not complete and not failed
+        attempts++
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 10000) // Poll every 10 seconds
+        } else {
+          toast({
+            title: "⏰ Report Timeout",
+            description: "Report is still processing. Check back later or refresh the page.",
+            duration: 8000,
+          })
+          setIsGeneratingReport(false)
+        }
+      } catch (error) {
+        console.error('Error polling report status:', error)
+        attempts++
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 10000)
+        } else {
+          setIsGeneratingReport(false)
+        }
+      }
+    }
+    
+    // Start polling after 5 seconds
+    setTimeout(poll, 5000)
   }
 
   
