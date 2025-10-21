@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { PieChart, Pie, Cell, ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LineChart, Line, Area, AreaChart } from "recharts"
-import { Info, Play, Loader2, Sparkles } from "lucide-react"
+import { Info, Play, Loader2, Sparkles, Trash2 } from "lucide-react"
 import { useBrandsStore } from "@/store/brands"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
@@ -65,6 +65,7 @@ export default function ReportsVisibility() {
   const { toast } = useToast()
   
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+  const [isDeletingReport, setIsDeletingReport] = useState(false)
   const [reportData, setReportData] = useState<any>(null)
   const [brandCitationsData, setBrandCitationsData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -316,6 +317,65 @@ export default function ReportsVisibility() {
     setTimeout(poll, 5000)
   }
 
+  // Delete today's report function
+  const deleteTodaysReport = async () => {
+    if (!activeBrandId || isDemoMode) return
+    
+    setIsDeletingReport(true)
+    
+    try {
+      toast({
+        title: "🗑️ Deleting Report",
+        description: "Removing today's report to allow testing...",
+        duration: 3000,
+      })
+      
+      const response = await fetch(`/api/reports/delete-today?brandId=${activeBrandId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        if (result.deleted) {
+          toast({
+            title: "✅ Report Deleted",
+            description: `Successfully deleted today's report. You can now test the new system!`,
+            duration: 5000,
+          })
+          
+          // Reload data to reflect the deletion
+          const visibilityResponse = await fetch(`/api/reports/visibility?brandId=${activeBrandId}`)
+          const visibilityData = await visibilityResponse.json()
+          
+          if (visibilityData.success) {
+            setReportData(visibilityData.data)
+          }
+        } else {
+          toast({
+            title: "ℹ️ No Report Found",
+            description: "No report exists for today to delete.",
+            duration: 3000,
+          })
+        }
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error) {
+      console.error('Error deleting report:', error)
+      toast({
+        title: "❌ Delete Failed",
+        description: error instanceof Error ? error.message : "Failed to delete report",
+        duration: 5000,
+      })
+    } finally {
+      setIsDeletingReport(false)
+    }
+  }
+
   
   // Use real data when available, fallback to mock data for demo
   const sentimentData = reportData?.sentiment || [
@@ -434,6 +494,28 @@ export default function ReportsVisibility() {
                 <>
                   <Play className="w-4 h-4 mr-2" />
                   Generate Report
+                </>
+              )}
+            </Button>
+          )}
+          
+          {/* Delete Today's Report Button (Test User Only) */}
+          {isTestUser && !isDemoMode && (
+            <Button 
+              onClick={deleteTodaysReport}
+              disabled={isDeletingReport}
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeletingReport ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Today's Report
                 </>
               )}
             </Button>
