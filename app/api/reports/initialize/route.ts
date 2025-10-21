@@ -3,6 +3,82 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /**
+ * Background processing function for staged report generation
+ * This runs without the need for frequent cron jobs (Hobby plan compatible)
+ */
+async function processReportStages(dailyReportId: string, processingData: any) {
+  try {
+    console.log(`🚀 [BACKGROUND PROCESSOR] Starting staged processing for report ${dailyReportId}`)
+    
+    const supabase = createServiceClient()
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    
+    // Stage 1: Perplexity Processing
+    console.log(`📊 [BACKGROUND PROCESSOR] Stage 1: Perplexity processing`)
+    const perplexityResponse = await fetch(`${baseUrl}/api/reports/process-perplexity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dailyReportId,
+        jobId: 'background-' + Date.now(),
+        processingData
+      })
+    })
+    
+    if (!perplexityResponse.ok) {
+      throw new Error('Perplexity processing failed')
+    }
+    
+    // Stage 2: Google AI Overview Processing
+    console.log(`📊 [BACKGROUND PROCESSOR] Stage 2: Google AI Overview processing`)
+    const googleResponse = await fetch(`${baseUrl}/api/reports/process-google-ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dailyReportId,
+        jobId: 'background-' + Date.now(),
+        processingData
+      })
+    })
+    
+    if (!googleResponse.ok) {
+      throw new Error('Google AI Overview processing failed')
+    }
+    
+    // Stage 3: URL Processing
+    console.log(`📊 [BACKGROUND PROCESSOR] Stage 3: URL processing`)
+    const urlResponse = await fetch(`${baseUrl}/api/reports/process-urls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dailyReportId,
+        jobId: 'background-' + Date.now(),
+        processingData
+      })
+    })
+    
+    if (!urlResponse.ok) {
+      throw new Error('URL processing failed')
+    }
+    
+    console.log(`✅ [BACKGROUND PROCESSOR] All stages completed for report ${dailyReportId}`)
+    
+  } catch (error) {
+    console.error(`❌ [BACKGROUND PROCESSOR] Error processing report ${dailyReportId}:`, error)
+    
+    // Mark report as failed
+    const supabase = createServiceClient()
+    await supabase
+      .from('daily_reports')
+      .update({
+        status: 'failed',
+        processing_stage: 'failed'
+      })
+      .eq('id', dailyReportId)
+  }
+}
+
+/**
  * Initialize a new daily report and queue the first processing job
  * This is the entry point for both manual and cron-triggered reports
  */
@@ -160,48 +236,33 @@ export async function POST(request: NextRequest) {
       console.log('✅ [REPORT INIT] Created new daily report:', dailyReport.id)
     }
 
-    // Queue the first processing job (Perplexity)
-    const { data: job, error: jobError } = await supabase
-      .from('report_processing_jobs')
-      .insert({
-        daily_report_id: dailyReport.id,
-        stage: 'perplexity',
-        status: 'pending',
-        processing_data: {
-          brand_name: brand.name,
-          competitors: (brand.onboarding_answers as any)?.competitors || [],
-          total_prompts: activePrompts.length
-        }
-      })
-      .select()
-      .single()
-
-    if (jobError) {
-      console.error('❌ [REPORT INIT] Error creating processing job:', jobError)
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to queue processing job'
-      }, { status: 500 })
-    }
-
-    // Update daily report with current job
+    // For Hobby plan compatibility, start processing immediately instead of queuing jobs
+    console.log(`✅ [REPORT INIT] Starting immediate processing for ${brand.name}`)
+    
+    // Update daily report to show processing has started
     await supabase
       .from('daily_reports')
       .update({
         processing_stage: 'perplexity',
-        current_job_id: job.id,
-        next_processing_at: new Date().toISOString()
+        perplexity_status: 'running'
       })
       .eq('id', dailyReport.id)
 
-    console.log(`✅ [REPORT INIT] Queued Perplexity processing job: ${job.id}`)
+    // Start processing in background (non-blocking)
+    processReportStages(dailyReport.id, {
+      brand_name: brand.name,
+      competitors: (brand.onboarding_answers as any)?.competitors || [],
+      total_prompts: activePrompts.length
+    }).catch(error => {
+      console.error('❌ [REPORT INIT] Background processing error:', error)
+    })
+
     console.log(`✅ [REPORT INIT] Report initialization complete for ${brand.name}`)
 
     return NextResponse.json({
       success: true,
-      message: 'Report initialization complete',
+      message: 'Report initialization complete - processing started in background',
       reportId: dailyReport.id,
-      jobId: job.id,
       stage: 'perplexity',
       totalPrompts: activePrompts.length
     })

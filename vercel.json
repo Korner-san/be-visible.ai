@@ -4,10 +4,6 @@
     {
       "path": "/api/cron/daily-reports",
       "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/process-jobs",
-      "schedule": "*/2 * * * *"
     }
   ]
 }
