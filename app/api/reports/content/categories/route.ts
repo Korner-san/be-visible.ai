@@ -45,9 +45,30 @@ export async function GET(request: NextRequest) {
 
     console.log(`📊 [CONTENT API] Found ${dailyReports?.length || 0} daily reports`)
 
+    // If no daily reports in the date range, try to get ANY reports for this brand
     if (!dailyReports || dailyReports.length === 0) {
-      console.log('❌ [CONTENT API] No daily reports found')
-      return NextResponse.json({ categories: [] })
+      console.log('❌ [CONTENT API] No daily reports found in date range, trying to get any reports for this brand')
+      
+      const { data: anyReports, error: anyReportsError } = await supabase
+        .from('daily_reports')
+        .select('id, report_date')
+        .eq('brand_id', brandId)
+        .eq('status', 'completed')
+        .order('report_date', { ascending: false })
+        .limit(10) // Get the most recent 10 reports
+      
+      if (anyReportsError) {
+        console.error('❌ [CONTENT API] Error fetching any reports:', anyReportsError)
+        return NextResponse.json({ categories: [] })
+      }
+      
+      if (!anyReports || anyReports.length === 0) {
+        console.log('❌ [CONTENT API] No reports found for this brand at all')
+        return NextResponse.json({ categories: [] })
+      }
+      
+      console.log(`📊 [CONTENT API] Found ${anyReports.length} reports for this brand, using those instead`)
+      dailyReports = anyReports
     }
 
     const dailyReportIds = dailyReports.map(dr => dr.id)
