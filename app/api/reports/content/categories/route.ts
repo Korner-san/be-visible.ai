@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         url,
-        url_content_facts(content_structure_category, extracted_at)
+        url_content_facts!inner(content_structure_category, extracted_at)
       `)
       .in('id', urlIds)
 
@@ -136,8 +136,8 @@ export async function GET(request: NextRequest) {
     const urlDataMap = new Map(
       urlData.map((u: any) => [u.id, {
         url: u.url,
-        content_structure_category: u.url_content_facts?.[0]?.content_structure_category,
-        extracted_at: u.url_content_facts?.[0]?.extracted_at
+        content_structure_category: u.url_content_facts?.content_structure_category,
+        extracted_at: u.url_content_facts?.extracted_at
       }])
     )
 
