@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
       .from('daily_reports')
       .select('id, report_date')
       .eq('brand_id', brandId)
+      .eq('status', 'completed')
 
     if (from) {
       dailyReportsQuery = dailyReportsQuery.gte('report_date', from)
