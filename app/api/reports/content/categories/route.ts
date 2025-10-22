@@ -24,12 +24,19 @@ export async function GET(request: NextRequest) {
 
     // Get all prompt results for this brand within date range
     // First get the daily report IDs that match our criteria
-    const { data: dailyReports, error: reportsError } = await supabase
+    let dailyReportsQuery = supabase
       .from('daily_reports')
       .select('id, report_date')
       .eq('brand_id', brandId)
-      .gte('report_date', from || '2025-01-01')
-      .lte('report_date', to || '2025-12-31')
+
+    if (from) {
+      dailyReportsQuery = dailyReportsQuery.gte('report_date', from)
+    }
+    if (to) {
+      dailyReportsQuery = dailyReportsQuery.lte('report_date', to)
+    }
+
+    const { data: dailyReports, error: reportsError } = await dailyReportsQuery
 
     if (reportsError) {
       console.error('❌ [CONTENT API] Error fetching daily reports:', reportsError)
