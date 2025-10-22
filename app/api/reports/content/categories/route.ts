@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         url,
-        url_content_facts!inner(content_structure_category, extracted_at)
+        url_content_facts(content_structure_category, extracted_at)
       `)
       .in('id', urlIds)
 
@@ -97,15 +97,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (!urlData || urlData.length === 0) {
+      console.log('❌ [CONTENT API] No URL data found')
       return NextResponse.json({ categories: [] })
     }
+
+    console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data`)
 
     // Create a map of url_id to url data
     const urlDataMap = new Map(
       urlData.map((u: any) => [u.id, {
         url: u.url,
-        content_structure_category: u.url_content_facts?.content_structure_category,
-        extracted_at: u.url_content_facts?.extracted_at
+        content_structure_category: u.url_content_facts?.[0]?.content_structure_category,
+        extracted_at: u.url_content_facts?.[0]?.extracted_at
       }])
     )
 
@@ -139,6 +142,8 @@ export async function GET(request: NextRequest) {
 
     // Calculate total citations
     const totalCitations = Object.values(categoryStats).reduce((sum, stats) => sum + stats.count, 0)
+
+    console.log(`📊 [CONTENT API] Processing ${Object.keys(categoryStats).length} categories:`, Object.keys(categoryStats))
 
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
