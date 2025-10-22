@@ -48,11 +48,14 @@ export async function GET(request: NextRequest) {
     const { data: promptResults, error: resultsError } = await query
 
     if (resultsError) {
-      console.error('Error fetching prompt results:', resultsError)
+      console.error('❌ [CONTENT API] Error fetching prompt results:', resultsError)
       return NextResponse.json({ error: resultsError.message }, { status: 500 })
     }
 
+    console.log(`📊 [CONTENT API] Found ${promptResults?.length || 0} prompt results`)
+
     if (!promptResults || promptResults.length === 0) {
+      console.log('❌ [CONTENT API] No prompt results found')
       return NextResponse.json({ categories: [] })
     }
 
@@ -71,11 +74,14 @@ export async function GET(request: NextRequest) {
       .in('prompt_result_id', promptResultIds)
 
     if (citationsError) {
-      console.error('Error fetching citations:', citationsError)
+      console.error('❌ [CONTENT API] Error fetching citations:', citationsError)
       return NextResponse.json({ error: citationsError.message }, { status: 500 })
     }
 
+    console.log(`📊 [CONTENT API] Found ${citations?.length || 0} citations`)
+
     if (!citations || citations.length === 0) {
+      console.log('❌ [CONTENT API] No citations found')
       return NextResponse.json({ categories: [] })
     }
 
