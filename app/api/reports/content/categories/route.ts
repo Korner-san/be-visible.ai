@@ -111,14 +111,16 @@ export async function GET(request: NextRequest) {
     // Get url_inventory and url_content_facts for these citations
     const urlIds = citations.map((c: any) => c.url_id)
     
+    // Get URL data with content facts using a different approach
     const { data: urlData, error: urlError } = await supabase
-      .from('url_inventory')
+      .from('url_content_facts')
       .select(`
-        id,
-        url,
-        url_content_facts!inner(content_structure_category, extracted_at)
+        url_id,
+        content_structure_category,
+        extracted_at,
+        url_inventory!inner(id, url)
       `)
-      .in('id', urlIds)
+      .in('url_id', urlIds)
 
     if (urlError) {
       console.error('Error fetching URL data:', urlError)
@@ -134,10 +136,10 @@ export async function GET(request: NextRequest) {
 
     // Create a map of url_id to url data
     const urlDataMap = new Map(
-      urlData.map((u: any) => [u.id, {
-        url: u.url,
-        content_structure_category: u.url_content_facts?.content_structure_category,
-        extracted_at: u.url_content_facts?.extracted_at
+      urlData.map((u: any) => [u.url_id, {
+        url: u.url_inventory?.url,
+        content_structure_category: u.content_structure_category,
+        extracted_at: u.extracted_at
       }])
     )
 
