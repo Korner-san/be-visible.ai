@@ -69,7 +69,155 @@ export async function GET(request: NextRequest) {
       }
       
       console.log(`📊 [CONTENT API] Found ${anyReports.length} reports for this brand, using those instead`)
-      dailyReports = anyReports
+      // Use the fallback reports
+      const dailyReportIds = anyReports.map(dr => dr.id)
+      
+      // Now get prompt results for these daily reports
+      let query = supabase
+        .from('prompt_results')
+        .select(`
+          id,
+          provider,
+          created_at,
+          daily_report_id
+        `)
+        .in('daily_report_id', dailyReportIds)
+        .in('provider_status', ['ok'])
+
+      if (selectedModels.length > 0) {
+        query = query.in('provider', selectedModels)
+      }
+
+      const { data: promptResults, error: resultsError } = await query
+
+      if (resultsError) {
+        console.error('❌ [CONTENT API] Error fetching prompt results:', resultsError)
+        return NextResponse.json({ error: resultsError.message }, { status: 500 })
+      }
+
+      console.log(`📊 [CONTENT API] Found ${promptResults?.length || 0} prompt results`)
+
+      if (!promptResults || promptResults.length === 0) {
+        console.log('❌ [CONTENT API] No prompt results found')
+        return NextResponse.json({ categories: [] })
+      }
+
+      // Continue with the rest of the processing using the fallback data
+      const promptResultIds = promptResults.map(r => r.id)
+      
+      // Get URL citations for these prompt results
+      const { data: citations, error: citationsError } = await supabase
+        .from('url_citations')
+        .select(`
+          id,
+          url_id,
+          provider,
+          prompt_result_id
+        `)
+        .in('prompt_result_id', promptResultIds)
+
+      if (citationsError) {
+        console.error('❌ [CONTENT API] Error fetching citations:', citationsError)
+        return NextResponse.json({ error: citationsError.message }, { status: 500 })
+      }
+
+      console.log(`📊 [CONTENT API] Found ${citations?.length || 0} citations`)
+
+      if (!citations || citations.length === 0) {
+        console.log('❌ [CONTENT API] No citations found')
+        return NextResponse.json({ categories: [] })
+      }
+
+      // Get URL data with content facts using a different approach
+      const urlIds = citations.map((c: any) => c.url_id)
+      
+      const { data: urlData, error: urlError } = await supabase
+        .from('url_content_facts')
+        .select(`
+          url_id,
+          content_structure_category,
+          extracted_at,
+          url_inventory!inner(id, url)
+        `)
+        .in('url_id', urlIds)
+
+      if (urlError) {
+        console.error('Error fetching URL data:', urlError)
+        return NextResponse.json({ error: urlError.message }, { status: 500 })
+      }
+
+      if (!urlData || urlData.length === 0) {
+        console.log('❌ [CONTENT API] No URL data found')
+        return NextResponse.json({ categories: [] })
+      }
+
+      console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data`)
+
+      // Create a map of url_id to url data
+      const urlDataMap = new Map(
+        urlData.map((u: any) => [u.url_id, {
+          url: u.url_inventory?.url,
+          content_structure_category: u.content_structure_category,
+          extracted_at: u.extracted_at
+        }])
+      )
+
+      // Aggregate by content structure category
+      const categoryStats: Record<string, {
+        count: number
+        uniqueUrls: Set<string>
+        citationDates: Date[]
+      }> = {}
+
+      citations.forEach((citation: any) => {
+        const urlInfo = urlDataMap.get(citation.url_id)
+        if (!urlInfo || !urlInfo.content_structure_category) return // Skip URLs without classification
+
+        const category = urlInfo.content_structure_category
+        const url = urlInfo.url
+        const extractedAt = urlInfo.extracted_at
+
+        if (!categoryStats[category]) {
+          categoryStats[category] = {
+            count: 0,
+            uniqueUrls: new Set(),
+            citationDates: []
+          }
+        }
+
+        categoryStats[category].count++
+        if (url) categoryStats[category].uniqueUrls.add(url)
+        if (extractedAt) categoryStats[category].citationDates.push(new Date(extractedAt))
+      })
+
+      // Calculate total citations
+      const totalCitations = Object.values(categoryStats).reduce((sum, stats) => sum + stats.count, 0)
+
+      console.log(`📊 [CONTENT API] Processing ${Object.keys(categoryStats).length} categories:`, Object.keys(categoryStats))
+
+      // Format response
+      const categories = Object.entries(categoryStats).map(([category, stats]) => {
+        const uniqueUrls = stats.uniqueUrls.size
+        const percentage = totalCitations > 0 ? ((stats.count / totalCitations) * 100).toFixed(1) : '0'
+        
+        // Calculate average citation longevity (days since first citation)
+        let avgLongevity = 0
+        if (stats.citationDates.length > 0) {
+          const oldestDate = new Date(Math.min(...stats.citationDates.map(d => d.getTime())))
+          const now = new Date()
+          avgLongevity = Math.floor((now.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24))
+        }
+
+        return {
+          category,
+          count: uniqueUrls,
+          percentage: parseFloat(percentage),
+          primaryIntent: 'N/A', // No longer available
+          avgCitationLongevity: avgLongevity
+        }
+      }).sort((a, b) => b.percentage - a.percentage)
+
+      return NextResponse.json({ categories })
     }
 
     const dailyReportIds = dailyReports.map(dr => dr.id)
