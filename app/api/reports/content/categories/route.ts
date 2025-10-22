@@ -23,24 +23,40 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all prompt results for this brand within date range
+    // First get the daily report IDs that match our criteria
+    const { data: dailyReports, error: reportsError } = await supabase
+      .from('daily_reports')
+      .select('id, report_date')
+      .eq('brand_id', brandId)
+      .gte('report_date', from || '2025-01-01')
+      .lte('report_date', to || '2025-12-31')
+
+    if (reportsError) {
+      console.error('❌ [CONTENT API] Error fetching daily reports:', reportsError)
+      return NextResponse.json({ error: reportsError.message }, { status: 500 })
+    }
+
+    console.log(`📊 [CONTENT API] Found ${dailyReports?.length || 0} daily reports`)
+
+    if (!dailyReports || dailyReports.length === 0) {
+      console.log('❌ [CONTENT API] No daily reports found')
+      return NextResponse.json({ categories: [] })
+    }
+
+    const dailyReportIds = dailyReports.map(dr => dr.id)
+
+    // Now get prompt results for these daily reports
     let query = supabase
       .from('prompt_results')
       .select(`
         id,
         provider,
         created_at,
-        daily_report_id,
-        daily_reports!inner(brand_id, report_date)
+        daily_report_id
       `)
-      .eq('daily_reports.brand_id', brandId)
+      .in('daily_report_id', dailyReportIds)
       .in('provider_status', ['ok'])
 
-    if (from) {
-      query = query.gte('daily_reports.report_date', from)
-    }
-    if (to) {
-      query = query.lte('daily_reports.report_date', to)
-    }
     if (selectedModels.length > 0) {
       query = query.in('provider', selectedModels)
     }
