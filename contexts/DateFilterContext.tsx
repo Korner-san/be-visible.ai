@@ -18,12 +18,20 @@ export function DateFilterProvider({ children }: { children: ReactNode }) {
     to: new Date()
   })
 
+  // Helper function to format date in local timezone (not UTC)
+  const formatDateForAPI = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   const getDateRangeParams = () => {
     if (!dateRange.from || !dateRange.to) return ''
     
-    // Ensure inclusive date range - from date starts at beginning of day, to date ends at end of day
-    const from = dateRange.from.toISOString().split('T')[0]
-    const to = dateRange.to.toISOString().split('T')[0]
+    // Use local timezone formatting to avoid timezone conversion bugs
+    const from = formatDateForAPI(dateRange.from)
+    const to = formatDateForAPI(dateRange.to)
     
     return `&from=${from}&to=${to}`
   }
@@ -31,9 +39,10 @@ export function DateFilterProvider({ children }: { children: ReactNode }) {
   const getDateRangeForAPI = () => {
     if (!dateRange.from || !dateRange.to) return { from: null, to: null }
     
-    // Return dates as strings in YYYY-MM-DD format for inclusive filtering
-    const from = dateRange.from.toISOString().split('T')[0]
-    const to = dateRange.to.toISOString().split('T')[0]
+    // Use local timezone formatting to avoid timezone conversion bugs
+    // This ensures "Oct 26" in local time stays "2025-10-26" in the API
+    const from = formatDateForAPI(dateRange.from)
+    const to = formatDateForAPI(dateRange.to)
     
     return { from, to }
   }
