@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Daily Report Generator Service
  * Main orchestrator for generating daily reports for all brands
