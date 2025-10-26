@@ -75,20 +75,39 @@ export async function GET(request: NextRequest) {
 
     // Apply date filters if provided
     if (fromDate) {
+      console.log(`📅 [CITATIONS API] Filtering from date: ${fromDate}`)
       query = query.gte('daily_reports.report_date', fromDate)
     }
     if (toDate) {
+      console.log(`📅 [CITATIONS API] Filtering to date: ${toDate}`)
       query = query.lte('daily_reports.report_date', toDate)
     }
 
+    console.log(`🔍 [CITATIONS API] Querying with models: ${selectedModels.join(', ')}`)
+
     const { data: promptResults, error: resultsError } = await query
+    
+    console.log(`📊 [CITATIONS API] Found ${promptResults?.length || 0} prompt results`)
 
     if (resultsError) {
-      console.error('Error fetching prompt results:', resultsError)
+      console.error('❌ [CITATIONS API] Error fetching prompt results:', resultsError)
       return NextResponse.json({
         success: false,
-        error: 'Failed to fetch citations data'
+        error: 'Failed to fetch citations data',
+        details: resultsError.message
       }, { status: 500 })
+    }
+
+    if (!promptResults || promptResults.length === 0) {
+      console.log(`⚠️ [CITATIONS API] No prompt results found for brand=${brandId}, from=${fromDate}, to=${toDate}, models=${selectedModels.join(',')}`)
+      return NextResponse.json({
+        success: true,
+        data: {
+          summary: { totalCitations: 0, uniqueDomains: 0, avgCitationsPerDomain: '0.0' },
+          citations: [],
+          pagination: { currentPage: page, totalPages: 0, totalCount: 0, hasNextPage: false, hasPreviousPage: false }
+        }
+      })
     }
 
     // Flatten all citations from all prompt results
