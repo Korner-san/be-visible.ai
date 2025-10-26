@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { Database } from '../../types/database'
+import { Database } from '../types/database'
 
 let supabaseServiceClient: SupabaseClient<Database> | null = null
 

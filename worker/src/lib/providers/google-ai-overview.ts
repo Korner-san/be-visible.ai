@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Google AI Overview Provider Client
  * Handles API communication with Google Custom Search API

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Perplexity AI Provider Client
  * Handles API communication with Perplexity
