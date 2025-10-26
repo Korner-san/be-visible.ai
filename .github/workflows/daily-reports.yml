@@ -2,30 +2,34 @@ name: Cron Diagnostic Test (DISABLED - Migrated to Render Worker)
 
 # DISABLED: Daily report generation has been migrated to Render Background Worker
 # See: /worker/README.md and WORKER_DEPLOYMENT_GUIDE.md for details
+# 
+# The Render worker automatically runs daily at 01:00 UTC
+# Manual triggers: https://dashboard.render.com/worker/srv-d3v0f4ur433s73chrf6g
+#
 # on:
 #   schedule:
 #     # Generate report every 24 hours at 1:00 AM UTC
 #     - cron: '0 1 * * *'
 #   workflow_dispatch: # Allow manual triggering
 
-jobs:
-  test-cron:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate Daily Report
-        run: |
-          echo "🔥 Generating daily report..."
-          
-          # Get HTTP status code separately
-          http_code=$(curl -X GET "https://v0-be-visible-ai.vercel.app/api/cron/daily-reports" \
-            -H "User-Agent: GitHub-Actions-DailyReports/1.0" \
-            -s -o /dev/null -w "%{http_code}")
-          
-          echo "📊 HTTP Status: $http_code"
-          
-          if [[ $http_code == "200" ]]; then
-            echo "✅ Daily report generated successfully"
-          else
-            echo "❌ Daily report failed with status: $http_code"
-            exit 1
-          fi
+# jobs:
+#   test-cron:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Generate Daily Report
+#         run: |
+#           echo "🔥 Generating daily report..."
+#           
+#           # Get HTTP status code separately
+#           http_code=$(curl -X GET "https://v0-be-visible-ai.vercel.app/api/cron/daily-reports" \
+#             -H "User-Agent: GitHub-Actions-DailyReports/1.0" \
+#             -s -o /dev/null -w "%{http_code}")
+#           
+#           echo "📊 HTTP Status: $http_code"
+#           
+#           if [[ $http_code == "200" ]]; then
+#             echo "✅ Daily report generated successfully"
+#           else
+#             echo "❌ Daily report failed with status: $http_code"
+#             exit 1
+#           fi
