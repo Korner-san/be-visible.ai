@@ -1,10 +1,12 @@
-name: Cron Diagnostic Test
+name: Cron Diagnostic Test (DISABLED - Migrated to Render Worker)
 
-on:
-  schedule:
-    # Generate report every 24 hours at 1:00 AM UTC
-    - cron: '0 1 * * *'
-  workflow_dispatch: # Allow manual triggering
+# DISABLED: Daily report generation has been migrated to Render Background Worker
+# See: /worker/README.md and WORKER_DEPLOYMENT_GUIDE.md for details
+# on:
+#   schedule:
+#     # Generate report every 24 hours at 1:00 AM UTC
+#     - cron: '0 1 * * *'
+#   workflow_dispatch: # Allow manual triggering
 
 jobs:
   test-cron:

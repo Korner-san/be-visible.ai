@@ -1,0 +1,71 @@
+services:
+  - type: worker
+    name: be-visible-worker
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: CRON_SCHEDULE
+        value: "0 1 * * *"
+      # Supabase - Add these from Render dashboard
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # API Keys - Add these from Render dashboard
+      - key: PERPLEXITY_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+    healthCheckPath: /health
+
+  # Optional: Web service to expose the worker's HTTP endpoints
+  - type: web
+    name: be-visible-worker-api
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: CRON_SCHEDULE
+        value: "0 1 * * *"
+      # Supabase
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # API Keys
+      - key: PERPLEXITY_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_CSE_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+    healthCheckPath: /health
+
+
