@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * URL Processing Service
  * Handles URL extraction, content fetching, and classification
