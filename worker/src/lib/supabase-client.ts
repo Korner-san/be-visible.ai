@@ -3,9 +3,10 @@
  * Uses service role key to bypass RLS for cron jobs
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { Database } from '../../types/database'
 
-let supabaseServiceClient: ReturnType<typeof createClient> | null = null
+let supabaseServiceClient: SupabaseClient<Database> | null = null
 
 export const createServiceClient = () => {
   if (supabaseServiceClient) {
@@ -19,7 +20,7 @@ export const createServiceClient = () => {
     throw new Error('Missing Supabase environment variables')
   }
 
-  supabaseServiceClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  supabaseServiceClient = createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false
