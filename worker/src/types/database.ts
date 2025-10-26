@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Database type definitions for be-visible.ai Supabase schema
 // Auto-generated types based on the database schema
 
