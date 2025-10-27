@@ -12,23 +12,41 @@ interface ClassificationInput {
   contentSnippet: string
 }
 
-interface ClassificationResult {
-  content_structure_category: string
-  confidence?: number
+interface CategoryScores {
+  OFFICIAL_DOCS: number
+  HOW_TO_GUIDE: number
+  COMPARISON_ANALYSIS: number
+  PRODUCT_PAGE: number
+  THOUGHT_LEADERSHIP: number
+  CASE_STUDY: number
+  TECHNICAL_DEEP_DIVE: number
+  NEWS_ANNOUNCEMENT: number
+  COMMUNITY_DISCUSSION: number
+  VIDEO_CONTENT: number
+  OTHER_LOW_CONFIDENCE: number
 }
 
-const CONTENT_CATEGORIES = [
-  'OFFICIAL_DOCUMENTATION',
-  'TUTORIAL',
-  'COMPARISON_REVIEW',
-  'BLOG_POST',
-  'NEWS_ARTICLE',
-  'FORUM_DISCUSSION',
-  'SOCIAL_MEDIA',
-  'VIDEO_CONTENT',
-  'ACADEMIC_RESEARCH',
-  'OTHER'
-]
+interface ClassificationResult {
+  content_structure_category: string
+  confidence: number
+  scores: CategoryScores
+}
+
+const CONTENT_CATEGORIES = {
+  OFFICIAL_DOCS: 'Formal structured reference documentation or API instructions',
+  HOW_TO_GUIDE: 'Step-by-step instructions teaching how to perform a task or achieve an outcome',
+  COMPARISON_ANALYSIS: 'Content comparing products/services, alternatives, or presenting ranked lists',
+  PRODUCT_PAGE: 'Landing pages or feature presentations focused on sales, conversion, or product value',
+  THOUGHT_LEADERSHIP: 'Expert opinions, industry insight, trend discussion, strategic framing',
+  CASE_STUDY: 'Narrative explanation showing how a real organization or person achieved a result',
+  TECHNICAL_DEEP_DIVE: 'In-depth technical explanation, architecture design, engineering reasoning',
+  NEWS_ANNOUNCEMENT: 'Release notes, product update announcements, company news',
+  COMMUNITY_DISCUSSION: 'Informal discussions, Q&A threads, Reddit/HN/SO style content',
+  VIDEO_CONTENT: 'Video-first educational or narrative media content',
+  OTHER_LOW_CONFIDENCE: 'Use ONLY when all other categories score below 0.45'
+} as const
+
+type ContentCategory = keyof typeof CONTENT_CATEGORIES
 
 /**
  * Classify URL content in batches using ChatGPT
@@ -61,7 +79,7 @@ export const classifyUrlContentBatch = async (inputs: ClassificationInput[]): Pr
         messages: [
           {
             role: 'system',
-            content: 'You are a content classification expert. Classify web content into predefined categories based on URL, title, and content snippet.'
+            content: 'You are a content classification expert. You classify web pages based on purpose, intent, and informational structure. Always respond with valid JSON array format.'
           },
           {
             role: 'user',
@@ -69,7 +87,8 @@ export const classifyUrlContentBatch = async (inputs: ClassificationInput[]): Pr
           }
         ],
         temperature: 0.2,
-        max_tokens: 500
+        max_tokens: 2000,
+        response_format: { type: 'json_object' }
       })
       
       const classification = response.choices[0]?.message?.content || ''
@@ -88,10 +107,7 @@ export const classifyUrlContentBatch = async (inputs: ClassificationInput[]): Pr
       
       // Use fallback classification for failed batch
       batch.forEach(() => {
-        results.push({
-          content_structure_category: 'OFFICIAL_DOCUMENTATION',
-          confidence: 0.5
-        })
+        results.push(createDefaultClassification())
       })
     }
   }
@@ -104,50 +120,142 @@ export const classifyUrlContentBatch = async (inputs: ClassificationInput[]): Pr
  * Build classification prompt for a batch of URLs
  */
 const buildClassificationPrompt = (batch: ClassificationInput[]): string => {
-  const categoriesList = CONTENT_CATEGORIES.join(', ')
+  let prompt = `Here are the allowed categories (with definitions):\n\n`
   
-  let prompt = `Classify the following web content into one of these categories: ${categoriesList}\n\n`
-  prompt += `For each URL, respond with just the category name on a single line.\n\n`
+  Object.entries(CONTENT_CATEGORIES).forEach(([key, definition], index) => {
+    prompt += `${index + 1}. ${key} — ${definition}\n`
+  })
+  
+  prompt += `\n\nFor each URL below, evaluate and score ALL categories from 0.00 to 1.00 based on:\n`
+  prompt += `- Title and meta description\n`
+  prompt += `- Content summary and writing style\n`
+  prompt += `- Intent (educate? persuade? compare? narrate?)\n\n`
+  
+  prompt += `Choose the category with the HIGHEST score.\n`
+  prompt += `Use OTHER_LOW_CONFIDENCE ONLY if all other categories score below 0.45.\n\n`
+  
+  prompt += `URLs to classify:\n\n`
   
   batch.forEach((input, index) => {
     prompt += `URL ${index + 1}:\n`
     prompt += `URL: ${input.url}\n`
     prompt += `Title: ${input.title}\n`
-    prompt += `Description: ${input.description.substring(0, 200)}\n`
-    prompt += `Content Snippet: ${input.contentSnippet.substring(0, 300)}\n\n`
+    prompt += `Description: ${input.description.substring(0, 300)}\n`
+    prompt += `Content Snippet: ${input.contentSnippet.substring(0, 800)}\n\n`
   })
   
-  prompt += `\nRespond with exactly ${batch.length} lines, one category per line:`
+  prompt += `\n\nRespond with a JSON object containing a "classifications" array:\n`
+  prompt += `{\n`
+  prompt += `  "classifications": [\n`
+  prompt += `    {\n`
+  prompt += `      "url": "<URL>",\n`
+  prompt += `      "category": "<CATEGORY_KEY>",\n`
+  prompt += `      "scores": {\n`
+  prompt += `        "OFFICIAL_DOCS": 0.00,\n`
+  prompt += `        "HOW_TO_GUIDE": 0.00,\n`
+  prompt += `        "COMPARISON_ANALYSIS": 0.00,\n`
+  prompt += `        "PRODUCT_PAGE": 0.00,\n`
+  prompt += `        "THOUGHT_LEADERSHIP": 0.00,\n`
+  prompt += `        "CASE_STUDY": 0.00,\n`
+  prompt += `        "TECHNICAL_DEEP_DIVE": 0.00,\n`
+  prompt += `        "NEWS_ANNOUNCEMENT": 0.00,\n`
+  prompt += `        "COMMUNITY_DISCUSSION": 0.00,\n`
+  prompt += `        "VIDEO_CONTENT": 0.00,\n`
+  prompt += `        "OTHER_LOW_CONFIDENCE": 0.00\n`
+  prompt += `      }\n`
+  prompt += `    }\n`
+  prompt += `  ]\n`
+  prompt += `}\n`
   
   return prompt
 }
 
 /**
- * Parse classification response from ChatGPT
+ * Parse classification response from ChatGPT (JSON format)
  */
 const parseClassificationResponse = (response: string, expectedCount: number): ClassificationResult[] => {
-  const lines = response.split('\n').filter(line => line.trim().length > 0)
   const results: ClassificationResult[] = []
   
-  for (let i = 0; i < expectedCount; i++) {
-    const line = lines[i]?.trim().toUpperCase() || ''
+  try {
+    const parsed = JSON.parse(response)
+    const classifications = parsed.classifications || []
     
-    // Find matching category
-    let category = 'OFFICIAL_DOCUMENTATION' // Default
-    for (const cat of CONTENT_CATEGORIES) {
-      if (line.includes(cat)) {
-        category = cat
-        break
+    for (let i = 0; i < expectedCount; i++) {
+      const classification = classifications[i]
+      
+      if (classification && classification.category && classification.scores) {
+        // Get the highest scoring category
+        const scores = classification.scores as CategoryScores
+        const scoreEntries = Object.entries(scores) as [ContentCategory, number][]
+        const maxEntry = scoreEntries.reduce((max, curr) => 
+          curr[1] > max[1] ? curr : max
+        )
+        
+        const [topCategory, topScore] = maxEntry
+        
+        // Apply OTHER_LOW_CONFIDENCE rule
+        let finalCategory = topCategory
+        if (topCategory !== 'OTHER_LOW_CONFIDENCE' && topScore < 0.45) {
+          // Check if OTHER_LOW_CONFIDENCE is available
+          const otherCategories = scoreEntries.filter(([cat]) => cat !== 'OTHER_LOW_CONFIDENCE')
+          const maxOtherScore = Math.max(...otherCategories.map(([, score]) => score))
+          
+          if (maxOtherScore < 0.45) {
+            finalCategory = 'OTHER_LOW_CONFIDENCE'
+          }
+        }
+        
+        results.push({
+          content_structure_category: finalCategory,
+          confidence: topScore,
+          scores: scores
+        })
+      } else {
+        // Fallback if classification data is malformed
+        results.push(createDefaultClassification())
       }
     }
     
-    results.push({
-      content_structure_category: category,
-      confidence: 0.8
-    })
+    // Fill in any missing results
+    while (results.length < expectedCount) {
+      results.push(createDefaultClassification())
+    }
+    
+  } catch (error) {
+    console.error('❌ [CONTENT CLASSIFIER] Failed to parse JSON response:', error)
+    
+    // Return default classifications for all URLs
+    for (let i = 0; i < expectedCount; i++) {
+      results.push(createDefaultClassification())
+    }
   }
   
   return results
+}
+
+/**
+ * Create a default classification result
+ */
+const createDefaultClassification = (): ClassificationResult => {
+  const defaultScores: CategoryScores = {
+    OFFICIAL_DOCS: 0.5,
+    HOW_TO_GUIDE: 0.0,
+    COMPARISON_ANALYSIS: 0.0,
+    PRODUCT_PAGE: 0.0,
+    THOUGHT_LEADERSHIP: 0.0,
+    CASE_STUDY: 0.0,
+    TECHNICAL_DEEP_DIVE: 0.0,
+    NEWS_ANNOUNCEMENT: 0.0,
+    COMMUNITY_DISCUSSION: 0.0,
+    VIDEO_CONTENT: 0.0,
+    OTHER_LOW_CONFIDENCE: 0.0
+  }
+  
+  return {
+    content_structure_category: 'OFFICIAL_DOCS',
+    confidence: 0.5,
+    scores: defaultScores
+  }
 }
 
 
