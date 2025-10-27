@@ -9,6 +9,7 @@ import { useModelFilter } from "@/store/modelFilter"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ContentStructureTable } from "@/components/ContentStructureTable"
+import { ContentDiagnostics } from "@/components/ContentDiagnostics"
 
 export default function ReportsContent() {
   const { range } = useTimeRangeStore()
@@ -19,6 +20,7 @@ export default function ReportsContent() {
   const isDemoMode = activeBrand?.isDemo || false
   
   const [contentCategoriesData, setContentCategoriesData] = useState<any>(null)
+  const [diagnosticsData, setDiagnosticsData] = useState<any>(null)
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
   
   // Load content categories data
@@ -46,6 +48,7 @@ export default function ReportsContent() {
         const data = await response.json()
         
         setContentCategoriesData(data.categories || [])
+        setDiagnosticsData(data.diagnostics || null)
       } catch (err) {
         console.error('Error loading content categories:', err)
       } finally {
@@ -80,7 +83,7 @@ export default function ReportsContent() {
           </Alert>
         )}
 
-        {/* Content Structure Analysis - NEW */}
+        {/* Content Structure Analysis */}
         <div className="mb-8">
           <ContentStructureTable 
             data={contentCategoriesData || []} 
@@ -88,6 +91,13 @@ export default function ReportsContent() {
           />
         </div>
 
+        {/* Diagnostic Metrics - Shows URL & Classification Inclusion */}
+        <div className="mb-8">
+          <ContentDiagnostics 
+            diagnostics={diagnosticsData} 
+            isLoading={isCategoriesLoading} 
+          />
+        </div>
 
       </div>
     </TooltipProvider>

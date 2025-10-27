@@ -265,6 +265,24 @@ export async function GET(request: NextRequest) {
     console.log(`🔍 [VERIFICATION] url_ids with content_facts: ${urlDataMap.size}`)
     console.log(`🔍 [VERIFICATION] Missing content_facts: ${urlIds.length - urlDataMap.size}`)
 
+    // Collect diagnostic metrics
+    const diagnostics = {
+      totalCitationsRetrieved: citations.length,
+      distinctUrlsCited: urlIds.length,
+      urlsWithClassification: urlDataMap.size,
+      urlsWithoutClassification: urlIds.length - urlDataMap.size,
+      skippedCitations: 0, // Will be calculated based on UNCLASSIFIED handling
+      includedCitations: citations.length // All citations are included now (even UNCLASSIFIED)
+    }
+
+    // Count citations that were assigned UNCLASSIFIED (these are the ones without classification)
+    const unclassifiedStats = categoryStats['UNCLASSIFIED']
+    if (unclassifiedStats) {
+      diagnostics.skippedCitations = unclassifiedStats.count
+    }
+
+    console.log(`🔍 [DIAGNOSTICS]`, diagnostics)
+
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
       const uniqueUrls = stats.uniqueUrls.size
@@ -289,7 +307,7 @@ export async function GET(request: NextRequest) {
       }
     }).sort((a, b) => b.percentage - a.percentage)
 
-    return NextResponse.json({ categories })
+    return NextResponse.json({ categories, diagnostics })
 
   } catch (error: any) {
     console.error('Error in content categories API:', error)
