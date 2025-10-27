@@ -290,8 +290,9 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
-                    <TooltipContent>
-                      <p>Type of content most commonly cited from this domain (e.g. Guide, Forum, Blog).</p>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">Type of content most commonly cited from this domain (e.g. Guide, Forum, Blog).</p>
+                      <p className="text-xs mt-2 font-semibold">This content type represents the classification of the domain's homepage.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -358,6 +359,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
                             <p className="text-xs">{getContentTypeDescription(domain.content_structure_category)}</p>
+                            <p className="text-xs mt-2 font-semibold">This content type represents the classification of the domain's homepage.</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -419,8 +421,9 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Type of content for this specific URL (e.g. Guide, Forum, Blog).</p>
+                                      <TooltipContent className="max-w-xs">
+                                        <p className="text-xs">Type of content for this specific URL (e.g. Guide, Forum, Blog).</p>
+                                        <p className="text-xs mt-2 font-semibold">This content type represents the classification of the specific URL listed in this table (not the domain homepage).</p>
                                       </TooltipContent>
                                     </Tooltip>
                                   </TooltipProvider>
@@ -473,6 +476,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                           </TooltipTrigger>
                                           <TooltipContent className="max-w-xs">
                                             <p className="text-xs">{getContentTypeDescription(urlData.content_structure_category)}</p>
+                                            <p className="text-xs mt-2 font-semibold">This content type represents the classification of the specific URL listed in this table (not the domain homepage).</p>
                                           </TooltipContent>
                                         </Tooltip>
                                       </TooltipProvider>

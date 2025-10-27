@@ -198,6 +198,7 @@ export async function GET(request: NextRequest) {
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
       const uniqueUrls = stats.uniqueUrls.size
+      const totalScans = stats.count // Total citation count (includes duplicates)
       const percentage = totalCitations > 0 ? ((stats.count / totalCitations) * 100).toFixed(1) : '0'
       
       // Calculate average citation longevity (days since first citation)
@@ -211,6 +212,7 @@ export async function GET(request: NextRequest) {
       return {
         category,
         count: uniqueUrls,
+        totalScans, // NEW: Total number of URL scans in date range
         percentage: parseFloat(percentage),
         primaryIntent: 'N/A', // No longer available
         avgCitationLongevity: avgLongevity

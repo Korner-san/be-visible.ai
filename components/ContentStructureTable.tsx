@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 interface ContentCategory {
   category: string
   count: number
+  totalScans?: number // Total number of URL scans (includes duplicates)
   percentage: number
   primaryIntent: string
   avgCitationLongevity: number
@@ -205,6 +206,17 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                 <TableHead className="text-right">
                   <Tooltip>
                     <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
+                      Total URLs
+                      <Info className="h-3 w-3" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">Total number of URLs scanned from citations during the selected date range. This helps compare daily and period-to-period content variability.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TableHead>
+                <TableHead className="text-right">
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
                       % of Total
                       <Info className="h-3 w-3" />
                     </TooltipTrigger>
@@ -261,6 +273,9 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {category.count}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-slate-600">
+                      {category.totalScans || category.count}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline">
