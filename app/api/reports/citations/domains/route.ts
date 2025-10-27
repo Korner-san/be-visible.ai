@@ -79,6 +79,17 @@ export async function GET(request: NextRequest) {
       // Get the homepage's content_structure_category specifically
       // Homepage URLs are in format: https://domain.com/ or http://domain.com/
       // Try multiple variations to match the exact URL format stored
+      const homepageUrlVariations = [
+        `https://${domain.domain}/`,
+        `http://${domain.domain}/`,
+        `https://${domain.domain}`,
+        `http://${domain.domain}`,
+        `https://www.${domain.domain}/`,
+        `http://www.${domain.domain}/`,
+        `https://www.${domain.domain}`,
+        `http://www.${domain.domain}`
+      ]
+      
       const { data: homepageData, error: homepageError } = await supabase
         .from('url_inventory')
         .select(`
@@ -88,7 +99,7 @@ export async function GET(request: NextRequest) {
           )
         `)
         .eq('domain', domain.domain)
-        .or(`url.eq.https://${domain.domain}/,url.eq.http://${domain.domain}/,url.eq.https://${domain.domain},url.eq.http://${domain.domain},url.eq.https://www.${domain.domain}/,url.eq.http://www.${domain.domain}/,url.eq.https://www.${domain.domain},url.eq.http://www.${domain.domain}`)
+        .in('url', homepageUrlVariations)
         .limit(1)
       
       if (homepageError) {
