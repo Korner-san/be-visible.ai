@@ -109,23 +109,41 @@ export async function GET(request: NextRequest) {
     // Get URL citations for these prompt results
     const promptResultIds = promptResults.map(r => r.id)
     
-    // First, get all citations
-    const { data: citations, error: citationsError } = await supabase
-      .from('url_citations')
-      .select(`
-        id,
-        url_id,
-        provider,
-        prompt_result_id
-      `)
-      .in('prompt_result_id', promptResultIds)
+    console.log(`📊 [CONTENT API] Fetching citations for ${promptResultIds.length} prompt results`)
+    
+    // Batch the citations query to avoid "Bad Request" with large arrays
+    // Supabase .in() has a limit of ~1000 items, but we'll batch at 500 to be safe
+    const BATCH_SIZE = 500
+    const allCitations: any[] = []
+    
+    for (let i = 0; i < promptResultIds.length; i += BATCH_SIZE) {
+      const batch = promptResultIds.slice(i, i + BATCH_SIZE)
+      console.log(`📊 [CONTENT API] Fetching citations batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(promptResultIds.length / BATCH_SIZE)} (${batch.length} IDs)`)
+      
+      const { data: batchCitations, error: citationsError } = await supabase
+        .from('url_citations')
+        .select(`
+          id,
+          url_id,
+          provider,
+          prompt_result_id
+        `)
+        .in('prompt_result_id', batch)
 
-    if (citationsError) {
-      console.error('❌ [CONTENT API] Error fetching citations:', citationsError)
-      return NextResponse.json({ error: citationsError.message }, { status: 500 })
+      if (citationsError) {
+        console.error(`❌ [CONTENT API] Error fetching citations batch ${Math.floor(i / BATCH_SIZE) + 1}:`, citationsError)
+        return NextResponse.json({ error: citationsError.message }, { status: 500 })
+      }
+      
+      if (batchCitations && batchCitations.length > 0) {
+        allCitations.push(...batchCitations)
+        console.log(`✅ [CONTENT API] Batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${batchCitations.length} citations`)
+      }
     }
+    
+    const citations = allCitations
 
-    console.log(`📊 [CONTENT API] Found ${citations?.length || 0} citations`)
+    console.log(`📊 [CONTENT API] Total citations fetched: ${citations.length}`)
 
     if (!citations || citations.length === 0) {
       console.log('⚠️ [CONTENT API] No citations found - reports exist but have no URL citations')
@@ -133,23 +151,39 @@ export async function GET(request: NextRequest) {
     }
 
     // Get url_inventory and url_content_facts for these citations
-    const urlIds = citations.map((c: any) => c.url_id)
+    const urlIds = [...new Set(citations.map((c: any) => c.url_id))] // Get unique URL IDs
     
-    // Get URL data with content facts using a different approach
-    const { data: urlData, error: urlError } = await supabase
-      .from('url_content_facts')
-      .select(`
-        url_id,
-        content_structure_category,
-        extracted_at,
-        url_inventory!inner(id, url)
-      `)
-      .in('url_id', urlIds)
+    console.log(`📊 [CONTENT API] Fetching content data for ${urlIds.length} unique URLs`)
+    
+    // Batch the URL content facts query as well
+    const allUrlData: any[] = []
+    
+    for (let i = 0; i < urlIds.length; i += BATCH_SIZE) {
+      const batch = urlIds.slice(i, i + BATCH_SIZE)
+      console.log(`📊 [CONTENT API] Fetching URL data batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urlIds.length / BATCH_SIZE)} (${batch.length} IDs)`)
+      
+      const { data: batchUrlData, error: urlError } = await supabase
+        .from('url_content_facts')
+        .select(`
+          url_id,
+          content_structure_category,
+          extracted_at,
+          url_inventory!inner(id, url)
+        `)
+        .in('url_id', batch)
 
-    if (urlError) {
-      console.error('Error fetching URL data:', urlError)
-      return NextResponse.json({ error: urlError.message }, { status: 500 })
+      if (urlError) {
+        console.error(`❌ [CONTENT API] Error fetching URL data batch ${Math.floor(i / BATCH_SIZE) + 1}:`, urlError)
+        return NextResponse.json({ error: urlError.message }, { status: 500 })
+      }
+      
+      if (batchUrlData && batchUrlData.length > 0) {
+        allUrlData.push(...batchUrlData)
+        console.log(`✅ [CONTENT API] Batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${batchUrlData.length} URL records`)
+      }
     }
+    
+    const urlData = allUrlData
 
     if (!urlData || urlData.length === 0) {
       console.log('⚠️ [CONTENT API] No URL content data found - URLs cited but not classified yet')
@@ -157,7 +191,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data from ${dailyReports.length} reports`)
-    console.log(`📊 [CONTENT API] Citations count: ${citations.length}, URL IDs count: ${urlIds.length}`)
+    console.log(`📊 [CONTENT API] Citations count: ${citations.length}, Unique URL IDs: ${urlIds.length}, URLs with content: ${urlData.length}`)
 
     // Create a map of url_id to url data
     const urlDataMap = new Map(
