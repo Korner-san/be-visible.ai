@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 /**
  * GET /api/reports/citations/domains
@@ -73,6 +74,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Enrich domains with homepage category from url_content_facts
+    // Use service client to bypass RLS for reading homepage categorizations
+    const serviceSupabase = createServiceClient()
+    
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
       console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
       
@@ -90,7 +94,7 @@ export async function GET(request: NextRequest) {
         `http://www.${domain.domain}`
       ]
       
-      const { data: homepageData, error: homepageError } = await supabase
+      const { data: homepageData, error: homepageError } = await serviceSupabase
         .from('url_inventory')
         .select(`
           url,
