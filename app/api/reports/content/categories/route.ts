@@ -44,7 +44,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: reportsError.message }, { status: 500 })
     }
 
+    console.log(`📊 [CONTENT API] Query params:`, { brandId, from, to, selectedModels })
     console.log(`📊 [CONTENT API] Found ${dailyReports?.length || 0} daily reports for date range from=${from} to=${to}`)
+    
+    if (dailyReports && dailyReports.length > 0) {
+      console.log(`📊 [CONTENT API] Report dates:`, dailyReports.map(r => r.report_date))
+    }
 
     // If no daily reports in the date range, return empty instead of falling back
     if (!dailyReports || dailyReports.length === 0) {
@@ -152,6 +157,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data from ${dailyReports.length} reports`)
+    console.log(`📊 [CONTENT API] Citations count: ${citations.length}, URL IDs count: ${urlIds.length}`)
 
     // Create a map of url_id to url data
     const urlDataMap = new Map(
@@ -161,6 +167,8 @@ export async function GET(request: NextRequest) {
         extracted_at: u.extracted_at
       }])
     )
+    
+    console.log(`📊 [CONTENT API] URL data map size: ${urlDataMap.size}`)
 
     // Aggregate by content structure category
     const categoryStats: Record<string, {
@@ -194,6 +202,11 @@ export async function GET(request: NextRequest) {
     const totalCitations = Object.values(categoryStats).reduce((sum, stats) => sum + stats.count, 0)
 
     console.log(`📊 [CONTENT API] Processing ${Object.keys(categoryStats).length} categories:`, Object.keys(categoryStats))
+    console.log(`📊 [CONTENT API] Category stats:`, Object.entries(categoryStats).map(([cat, stats]) => ({
+      category: cat,
+      totalScans: stats.count,
+      uniqueUrls: stats.uniqueUrls.size
+    })))
 
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {

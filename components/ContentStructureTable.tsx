@@ -316,22 +316,22 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                 <TableHead className="text-right">
                   <Tooltip>
                     <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
-                      Unique URLs
+                      Total URLs
                       <Info className="h-3 w-3" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
+                      <p className="text-xs">Total number of URLs scanned from citations during the selected date range. This helps compare daily and period-to-period content variability.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TableHead>
                 <TableHead className="text-right">
                   <Tooltip>
                     <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
-                      Total URLs
+                      Unique URLs
                       <Info className="h-3 w-3" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p className="text-xs">Total number of URLs scanned from citations during the selected date range. This helps compare daily and period-to-period content variability.</p>
+                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TableHead>
@@ -392,11 +392,11 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                         </TooltipContent>
                       </Tooltip>
                     </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {category.count}
-                    </TableCell>
                     <TableCell className="text-right font-medium text-slate-600">
                       {category.totalScans || category.count}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {category.count}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline">
