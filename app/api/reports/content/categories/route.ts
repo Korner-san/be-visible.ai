@@ -155,7 +155,39 @@ export async function GET(request: NextRequest) {
     
     console.log(`📊 [CONTENT API] Fetching content data for ${urlIds.length} unique URLs`)
     
-    // Batch the URL content facts query as well
+    // STEP 1: Fetch ALL URL strings from url_inventory (regardless of classification)
+    const allUrlInventory: any[] = []
+    
+    for (let i = 0; i < urlIds.length; i += BATCH_SIZE) {
+      const batch = urlIds.slice(i, i + BATCH_SIZE)
+      
+      const { data: batchInventory, error: inventoryError } = await supabase
+        .from('url_inventory')
+        .select('id, url, domain')
+        .in('id', batch)
+
+      if (inventoryError) {
+        console.error(`❌ [CONTENT API] Error fetching url_inventory:`, inventoryError)
+        return NextResponse.json({ error: inventoryError.message }, { status: 500 })
+      }
+      
+      if (batchInventory && batchInventory.length > 0) {
+        allUrlInventory.push(...batchInventory)
+      }
+    }
+    
+    console.log(`📊 [CONTENT API] Fetched ${allUrlInventory.length} URL inventory records`)
+    
+    // Create a map of url_id to URL strings (for ALL URLs, regardless of classification)
+    const urlInventoryMap = new Map()
+    allUrlInventory.forEach((inv: any) => {
+      urlInventoryMap.set(inv.id, {
+        url: inv.url,
+        domain: inv.domain
+      })
+    })
+    
+    // STEP 2: Fetch URL classification data from url_content_facts
     const allUrlData: any[] = []
     
     for (let i = 0; i < urlIds.length; i += BATCH_SIZE) {
@@ -167,8 +199,7 @@ export async function GET(request: NextRequest) {
         .select(`
           url_id,
           content_structure_category,
-          extracted_at,
-          url_inventory!inner(id, url)
+          extracted_at
         `)
         .in('url_id', batch)
 
@@ -185,13 +216,8 @@ export async function GET(request: NextRequest) {
     
     const urlData = allUrlData
 
-    if (!urlData || urlData.length === 0) {
-      console.log('⚠️ [CONTENT API] No URL content data found - URLs cited but not classified yet')
-      return NextResponse.json({ categories: [] })
-    }
-
     console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data from ${dailyReports.length} reports`)
-    console.log(`📊 [CONTENT API] Citations count: ${citations.length}, Unique URL IDs: ${urlIds.length}, URLs with content: ${urlData.length}`)
+    console.log(`📊 [CONTENT API] Citations count: ${citations.length}, Unique URL IDs: ${urlIds.length}, URLs with content: ${urlData.length}, URL inventory: ${allUrlInventory.length}`)
     
     // DEBUG: Check for duplicate url_ids in urlData
     const urlDataUrlIds = urlData.map((u: any) => u.url_id)
@@ -201,22 +227,64 @@ export async function GET(request: NextRequest) {
       console.warn(`⚠️ [CONTENT API] This may cause incorrect unique URL counts`)
     }
 
-    // Create a map of url_id to url data
+    // Create a map of url_id to classification data
     // If there are duplicate url_ids (multiple classifications), use the latest one
-    const urlDataMap = new Map()
+    const urlClassificationMap = new Map()
     urlData.forEach((u: any) => {
       // Only add if not already in map, or if this one is newer
-      const existing = urlDataMap.get(u.url_id)
+      const existing = urlClassificationMap.get(u.url_id)
       if (!existing || (u.extracted_at && existing.extracted_at && u.extracted_at > existing.extracted_at)) {
-        urlDataMap.set(u.url_id, {
-          url: u.url_inventory?.url,
+        urlClassificationMap.set(u.url_id, {
           content_structure_category: u.content_structure_category,
           extracted_at: u.extracted_at
         })
       }
     })
     
-    console.log(`📊 [CONTENT API] URL data map size: ${urlDataMap.size} (from ${urlData.length} records)`)
+    console.log(`📊 [CONTENT API] URL classification map size: ${urlClassificationMap.size} (from ${urlData.length} records)`)
+    
+    // Build citation timeline for first-cited and classification timing analysis
+    const citationTimeline: Record<string, {
+      urlId: number
+      url: string
+      domain: string
+      firstCited: Date | null
+      classificationTimestamp: string | null
+      category: string | null
+      wasClassifiedInRange: boolean
+      categorySource: string
+    }> = {}
+    
+    citations.forEach((citation: any) => {
+      const urlId = citation.url_id
+      const inventory = urlInventoryMap.get(urlId)
+      const classification = urlClassificationMap.get(urlId)
+      
+      if (!citationTimeline[urlId]) {
+        const classificationDate = classification?.extracted_at ? new Date(classification.extracted_at) : null
+        const isInRange = classificationDate && from && to
+          ? classificationDate >= new Date(from) && classificationDate <= new Date(to)
+          : false
+        
+        citationTimeline[urlId] = {
+          urlId,
+          url: inventory?.url || `url_id_${urlId}`,
+          domain: inventory?.domain || 'unknown',
+          firstCited: null,
+          classificationTimestamp: classification?.extracted_at || null,
+          category: classification?.content_structure_category || 'UNCLASSIFIED',
+          wasClassifiedInRange: isInRange,
+          categorySource: classification ? 'url_content_facts' : 'unclassified_default'
+        }
+      }
+      
+      // Track first cited date (would need to join with prompt_results to get actual date)
+      // For now, we'll mark it as tracked
+      const currentFirst = citationTimeline[urlId].firstCited
+      // We'd need created_at from prompt_results to populate this accurately
+    })
+    
+    console.log(`📊 [CONTENT API] Citation timeline built for ${Object.keys(citationTimeline).length} URLs`)
 
     // Aggregate by content structure category
     const categoryStats: Record<string, {
@@ -226,13 +294,15 @@ export async function GET(request: NextRequest) {
     }> = {}
 
     citations.forEach((citation: any) => {
-      const urlInfo = urlDataMap.get(citation.url_id)
+      const urlId = citation.url_id
+      const inventory = urlInventoryMap.get(urlId)
+      const classification = urlClassificationMap.get(urlId)
       
-      // FIXED: Don't skip citations without classification - put them in "UNCLASSIFIED"
-      // This ensures ALL citations are counted, regardless of classification availability
-      const category = urlInfo?.content_structure_category || 'UNCLASSIFIED'
-      const url = urlInfo?.url || `url_id_${citation.url_id}` // Fallback to url_id if url string missing
-      const extractedAt = urlInfo?.extracted_at
+      // CRITICAL FIX: Use URL string from inventory (available for ALL URLs)
+      // Classification is a LABEL, not a FILTER
+      const category = classification?.content_structure_category || 'UNCLASSIFIED'
+      const url = inventory?.url || `url_id_${urlId}` // Should always have inventory now
+      const extractedAt = classification?.extracted_at
 
       if (!categoryStats[category]) {
         categoryStats[category] = {
@@ -243,7 +313,7 @@ export async function GET(request: NextRequest) {
       }
 
       categoryStats[category].count++
-      categoryStats[category].uniqueUrls.add(url) // Always add, even if fallback url_id
+      categoryStats[category].uniqueUrls.add(url) // Always add with real URL string
       if (extractedAt) categoryStats[category].citationDates.push(new Date(extractedAt))
     })
 
@@ -262,15 +332,15 @@ export async function GET(request: NextRequest) {
     const skippedCitations = citations.length - citationsWithClassification
     console.log(`🔍 [VERIFICATION] Citations: ${citations.length}, With classification: ${citationsWithClassification}, Skipped: ${skippedCitations}`)
     console.log(`🔍 [VERIFICATION] Distinct citation url_ids: ${urlIds.length}`)
-    console.log(`🔍 [VERIFICATION] url_ids with content_facts: ${urlDataMap.size}`)
-    console.log(`🔍 [VERIFICATION] Missing content_facts: ${urlIds.length - urlDataMap.size}`)
+    console.log(`🔍 [VERIFICATION] url_ids with content_facts: ${urlClassificationMap.size}`)
+    console.log(`🔍 [VERIFICATION] Missing content_facts: ${urlIds.length - urlClassificationMap.size}`)
 
-    // Collect diagnostic metrics
+    // Collect basic diagnostic metrics
     const diagnostics = {
       totalCitationsRetrieved: citations.length,
       distinctUrlsCited: urlIds.length,
-      urlsWithClassification: urlDataMap.size,
-      urlsWithoutClassification: urlIds.length - urlDataMap.size,
+      urlsWithClassification: urlClassificationMap.size,
+      urlsWithoutClassification: urlIds.length - urlClassificationMap.size,
       skippedCitations: 0, // Will be calculated based on UNCLASSIFIED handling
       includedCitations: citations.length // All citations are included now (even UNCLASSIFIED)
     }
@@ -282,6 +352,40 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`🔍 [DIAGNOSTICS]`, diagnostics)
+    
+    // Collect expanded diagnostic data (first 50 URLs with detailed timeline)
+    const urlDetailsList = Object.values(citationTimeline)
+      .slice(0, 50)
+      .map(detail => ({
+        urlId: detail.urlId,
+        url: detail.url,
+        domain: detail.domain,
+        category: detail.category,
+        classificationTimestamp: detail.classificationTimestamp,
+        wasClassifiedInRange: detail.wasClassifiedInRange,
+        categorySource: detail.categorySource
+      }))
+    
+    // Group URLs by domain for summary view
+    const domainGroups: Record<string, number> = {}
+    Object.values(citationTimeline).forEach(detail => {
+      domainGroups[detail.domain] = (domainGroups[detail.domain] || 0) + 1
+    })
+    
+    const expandedDiagnostics = {
+      urlDetails: urlDetailsList,
+      domainGroups: Object.entries(domainGroups)
+        .map(([domain, count]) => ({ domain, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 20), // Top 20 domains
+      dateRangeUsed: { from, to },
+      classificationInRangeCount: Object.values(citationTimeline)
+        .filter(d => d.wasClassifiedInRange).length,
+      classificationOutsideRangeCount: Object.values(citationTimeline)
+        .filter(d => !d.wasClassifiedInRange && d.category !== 'UNCLASSIFIED').length
+    }
+    
+    console.log(`🔍 [EXPANDED DIAGNOSTICS] URL details: ${urlDetailsList.length}, Domain groups: ${Object.keys(domainGroups).length}`)
 
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
@@ -307,7 +411,11 @@ export async function GET(request: NextRequest) {
       }
     }).sort((a, b) => b.percentage - a.percentage)
 
-    return NextResponse.json({ categories, diagnostics })
+    return NextResponse.json({ 
+      categories, 
+      diagnostics,
+      expandedDiagnostics 
+    })
 
   } catch (error: any) {
     console.error('Error in content categories API:', error)

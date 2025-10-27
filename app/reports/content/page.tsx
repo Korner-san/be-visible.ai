@@ -21,6 +21,7 @@ export default function ReportsContent() {
   
   const [contentCategoriesData, setContentCategoriesData] = useState<any>(null)
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null)
+  const [expandedDiagnosticsData, setExpandedDiagnosticsData] = useState<any>(null)
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
   
   // Load content categories data
@@ -49,6 +50,7 @@ export default function ReportsContent() {
         
         setContentCategoriesData(data.categories || [])
         setDiagnosticsData(data.diagnostics || null)
+        setExpandedDiagnosticsData(data.expandedDiagnostics || null)
       } catch (err) {
         console.error('Error loading content categories:', err)
       } finally {
@@ -94,7 +96,8 @@ export default function ReportsContent() {
         {/* Diagnostic Metrics - Shows URL & Classification Inclusion */}
         <div className="mb-8">
           <ContentDiagnostics 
-            diagnostics={diagnosticsData} 
+            diagnostics={diagnosticsData}
+            expandedDiagnostics={expandedDiagnosticsData}
             isLoading={isCategoriesLoading} 
           />
         </div>
