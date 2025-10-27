@@ -76,27 +76,27 @@ export async function GET(request: NextRequest) {
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
       console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
       
-      // Get the homepage's domain_category specifically
+      // Get the homepage's content_structure_category specifically
       // Homepage URLs are in format: https://domain.com/ or http://domain.com/
+      // Try multiple variations to match the exact URL format stored
       const { data: homepageData, error: homepageError } = await supabase
         .from('url_inventory')
         .select(`
           url,
           url_content_facts!inner(
-            domain_category,
             content_structure_category
           )
         `)
         .eq('domain', domain.domain)
-        .or(`url.eq.https://${domain.domain}/,url.eq.http://${domain.domain}/,url.eq.https://${domain.domain},url.eq.http://${domain.domain}`)
+        .or(`url.eq.https://${domain.domain}/,url.eq.http://${domain.domain}/,url.eq.https://${domain.domain},url.eq.http://${domain.domain},url.eq.https://www.${domain.domain}/,url.eq.http://www.${domain.domain}/,url.eq.https://www.${domain.domain},url.eq.http://www.${domain.domain}`)
         .limit(1)
       
       if (homepageError) {
         console.error(`❌ [Domains API] Error fetching homepage for ${domain.domain}:`, homepageError)
       }
       
-      // Use homepage's domain_category if available
-      const homepageCategory = homepageData?.[0]?.url_content_facts?.domain_category
+      // Get the homepage's content_structure_category
+      const homepageCategory = homepageData?.[0]?.url_content_facts?.content_structure_category
       
       if (homepageCategory) {
         console.log(`✅ [Domains API] Found homepage category for ${domain.domain}: ${homepageCategory}`)
@@ -106,18 +106,7 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      // Fallback: if no homepage category, try to find homepage by content_structure_category
-      const homepageContentCategory = homepageData?.[0]?.url_content_facts?.content_structure_category
-      
-      if (homepageContentCategory) {
-        console.log(`⚠️ [Domains API] Using homepage content_structure_category for ${domain.domain}: ${homepageContentCategory}`)
-        return {
-          ...domain,
-          content_structure_category: homepageContentCategory
-        }
-      }
-      
-      console.warn(`⚠️ [Domains API] No homepage categorization found for domain: ${domain.domain}`)
+      console.log(`⚠️ [Domains API] No homepage categorization found for domain: ${domain.domain}`)
       return {
         ...domain,
         content_structure_category: null
