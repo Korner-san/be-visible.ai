@@ -44,6 +44,7 @@ const formatCategoryLabel = (category: string): string => {
     'COMMUNITY_DISCUSSION': 'Community discussion',
     'VIDEO_CONTENT': 'Video content',
     'OTHER_LOW_CONFIDENCE': 'Other (low confidence)',
+    'UNCLASSIFIED': 'Unclassified',
     
     // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Q&A or FAQ block',
@@ -134,6 +135,11 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
     label: formatCategoryLabel('OTHER_LOW_CONFIDENCE'),
     description: 'Use ONLY when all other categories score below 0.45.',
     color: 'bg-gray-100 text-gray-800'
+  },
+  'UNCLASSIFIED': {
+    label: formatCategoryLabel('UNCLASSIFIED'),
+    description: 'URLs that have been cited but not yet classified by the content analyzer.',
+    color: 'bg-slate-200 text-slate-700'
   },
   
   // Old 8-category system (backward compatibility)
