@@ -192,17 +192,31 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data from ${dailyReports.length} reports`)
     console.log(`📊 [CONTENT API] Citations count: ${citations.length}, Unique URL IDs: ${urlIds.length}, URLs with content: ${urlData.length}`)
+    
+    // DEBUG: Check for duplicate url_ids in urlData
+    const urlDataUrlIds = urlData.map((u: any) => u.url_id)
+    const uniqueUrlDataIds = new Set(urlDataUrlIds)
+    if (urlDataUrlIds.length !== uniqueUrlDataIds.size) {
+      console.warn(`⚠️ [CONTENT API] Found ${urlDataUrlIds.length - uniqueUrlDataIds.size} duplicate url_ids in url_content_facts!`)
+      console.warn(`⚠️ [CONTENT API] This may cause incorrect unique URL counts`)
+    }
 
     // Create a map of url_id to url data
-    const urlDataMap = new Map(
-      urlData.map((u: any) => [u.url_id, {
-        url: u.url_inventory?.url,
-        content_structure_category: u.content_structure_category,
-        extracted_at: u.extracted_at
-      }])
-    )
+    // If there are duplicate url_ids (multiple classifications), use the latest one
+    const urlDataMap = new Map()
+    urlData.forEach((u: any) => {
+      // Only add if not already in map, or if this one is newer
+      const existing = urlDataMap.get(u.url_id)
+      if (!existing || (u.extracted_at && existing.extracted_at && u.extracted_at > existing.extracted_at)) {
+        urlDataMap.set(u.url_id, {
+          url: u.url_inventory?.url,
+          content_structure_category: u.content_structure_category,
+          extracted_at: u.extracted_at
+        })
+      }
+    })
     
-    console.log(`📊 [CONTENT API] URL data map size: ${urlDataMap.size}`)
+    console.log(`📊 [CONTENT API] URL data map size: ${urlDataMap.size} (from ${urlData.length} records)`)
 
     // Aggregate by content structure category
     const categoryStats: Record<string, {
