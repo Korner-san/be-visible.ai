@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     console.log(`📊 [CONTENT API] Found ${promptResults?.length || 0} prompt results`)
 
     if (!promptResults || promptResults.length === 0) {
-      console.log('❌ [CONTENT API] No prompt results found')
+      console.log('⚠️ [CONTENT API] No prompt results found - this is OK if reports have no data yet')
       return NextResponse.json({ categories: [] })
     }
 
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
     console.log(`📊 [CONTENT API] Found ${citations?.length || 0} citations`)
 
     if (!citations || citations.length === 0) {
-      console.log('❌ [CONTENT API] No citations found')
+      console.log('⚠️ [CONTENT API] No citations found - reports exist but have no URL citations')
       return NextResponse.json({ categories: [] })
     }
 
@@ -147,11 +147,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (!urlData || urlData.length === 0) {
-      console.log('❌ [CONTENT API] No URL data found')
+      console.log('⚠️ [CONTENT API] No URL content data found - URLs cited but not classified yet')
       return NextResponse.json({ categories: [] })
     }
 
-    console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data`)
+    console.log(`✅ [CONTENT API] Found ${urlData.length} URLs with content data from ${dailyReports.length} reports`)
 
     // Create a map of url_id to url data
     const urlDataMap = new Map(

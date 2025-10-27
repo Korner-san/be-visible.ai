@@ -72,54 +72,55 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Enrich domains with category data from url_content_facts
+    // Enrich domains with homepage category from url_content_facts
     const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
       console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
       
-      // Get the most common content structure category for this domain
-      const { data: categoryData, error: categoryError } = await supabase
+      // Get the homepage's domain_category specifically
+      // Homepage URLs are in format: https://domain.com/ or http://domain.com/
+      const { data: homepageData, error: homepageError } = await supabase
         .from('url_inventory')
         .select(`
-          id,
-          url_content_facts!inner(content_structure_category)
+          url,
+          url_content_facts!inner(
+            domain_category,
+            content_structure_category
+          )
         `)
         .eq('domain', domain.domain)
+        .or(`url.eq.https://${domain.domain}/,url.eq.http://${domain.domain}/,url.eq.https://${domain.domain},url.eq.http://${domain.domain}`)
+        .limit(1)
       
-      if (categoryError) {
-        console.error(`❌ [Domains API] Error fetching category data for ${domain.domain}:`, categoryError)
+      if (homepageError) {
+        console.error(`❌ [Domains API] Error fetching homepage for ${domain.domain}:`, homepageError)
       }
       
-      if (!categoryData || categoryData.length === 0) {
-        console.warn(`⚠️ [Domains API] No categorization data found for domain: ${domain.domain}`)
+      // Use homepage's domain_category if available
+      const homepageCategory = homepageData?.[0]?.url_content_facts?.domain_category
+      
+      if (homepageCategory) {
+        console.log(`✅ [Domains API] Found homepage category for ${domain.domain}: ${homepageCategory}`)
         return {
           ...domain,
-          content_structure_category: null
+          content_structure_category: homepageCategory
         }
       }
-
-      console.log(`📊 [Domains API] Found ${categoryData.length} categorized URLs for ${domain.domain}`)
-
-      // Domain role categorization has been removed - no longer needed
       
-      // Content type should still be aggregated from individual URLs
-      const contentTypeCounts: { [key: string]: number } = {}
-      categoryData.forEach((item: any) => {
-        const contentType = item.url_content_facts?.content_structure_category
-        if (contentType) {
-          contentTypeCounts[contentType] = (contentTypeCounts[contentType] || 0) + 1
+      // Fallback: if no homepage category, try to find homepage by content_structure_category
+      const homepageContentCategory = homepageData?.[0]?.url_content_facts?.content_structure_category
+      
+      if (homepageContentCategory) {
+        console.log(`⚠️ [Domains API] Using homepage content_structure_category for ${domain.domain}: ${homepageContentCategory}`)
+        return {
+          ...domain,
+          content_structure_category: homepageContentCategory
         }
-      })
-      const mostCommonContentType = Object.entries(contentTypeCounts)
-        .sort(([, a], [, b]) => b - a)[0]?.[0] || null
+      }
       
-      console.log(`✅ [Domains API] Enriched ${domain.domain}:`, {
-        contentType: mostCommonContentType,
-        contentTypeCounts
-      })
-      
+      console.warn(`⚠️ [Domains API] No homepage categorization found for domain: ${domain.domain}`)
       return {
         ...domain,
-        content_structure_category: mostCommonContentType
+        content_structure_category: null
       }
     }))
 
