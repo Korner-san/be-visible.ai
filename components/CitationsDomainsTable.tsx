@@ -377,7 +377,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
                             <p className="text-xs">{getContentTypeDescription(domain.content_structure_category)}</p>
-                            <p className="text-xs mt-2 font-semibold">This content type represents the classification of the domain's homepage.</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
