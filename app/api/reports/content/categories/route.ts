@@ -227,11 +227,12 @@ export async function GET(request: NextRequest) {
 
     citations.forEach((citation: any) => {
       const urlInfo = urlDataMap.get(citation.url_id)
-      if (!urlInfo || !urlInfo.content_structure_category) return // Skip URLs without classification
-
-      const category = urlInfo.content_structure_category
-      const url = urlInfo.url
-      const extractedAt = urlInfo.extracted_at
+      
+      // FIXED: Don't skip citations without classification - put them in "UNCLASSIFIED"
+      // This ensures ALL citations are counted, regardless of classification availability
+      const category = urlInfo?.content_structure_category || 'UNCLASSIFIED'
+      const url = urlInfo?.url || `url_id_${citation.url_id}` // Fallback to url_id if url string missing
+      const extractedAt = urlInfo?.extracted_at
 
       if (!categoryStats[category]) {
         categoryStats[category] = {
@@ -242,7 +243,7 @@ export async function GET(request: NextRequest) {
       }
 
       categoryStats[category].count++
-      if (url) categoryStats[category].uniqueUrls.add(url)
+      categoryStats[category].uniqueUrls.add(url) // Always add, even if fallback url_id
       if (extractedAt) categoryStats[category].citationDates.push(new Date(extractedAt))
     })
 
@@ -255,6 +256,14 @@ export async function GET(request: NextRequest) {
       totalScans: stats.count,
       uniqueUrls: stats.uniqueUrls.size
     })))
+    
+    // VERIFICATION: Count citations that were skipped due to missing classification
+    const citationsWithClassification = Object.values(categoryStats).reduce((sum, stats) => sum + stats.count, 0)
+    const skippedCitations = citations.length - citationsWithClassification
+    console.log(`🔍 [VERIFICATION] Citations: ${citations.length}, With classification: ${citationsWithClassification}, Skipped: ${skippedCitations}`)
+    console.log(`🔍 [VERIFICATION] Distinct citation url_ids: ${urlIds.length}`)
+    console.log(`🔍 [VERIFICATION] url_ids with content_facts: ${urlDataMap.size}`)
+    console.log(`🔍 [VERIFICATION] Missing content_facts: ${urlIds.length - urlDataMap.size}`)
 
     // Format response
     const categories = Object.entries(categoryStats).map(([category, stats]) => {
