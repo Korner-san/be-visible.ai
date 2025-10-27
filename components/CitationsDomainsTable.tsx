@@ -14,27 +14,36 @@ const formatContentType = (category: string | null | undefined): string => {
   
   // Specific mappings for known categories
   const labels: Record<string, string> = {
-    // New 8-category system
+    // New 11-category system
+    'OFFICIAL_DOCS': 'Official docs',
+    'HOW_TO_GUIDE': 'How-to guide',
+    'COMPARISON_ANALYSIS': 'Comparison analysis',
+    'PRODUCT_PAGE': 'Product page',
+    'THOUGHT_LEADERSHIP': 'Thought leadership',
+    'CASE_STUDY': 'Case study',
+    'TECHNICAL_DEEP_DIVE': 'Technical deep dive',
+    'NEWS_ANNOUNCEMENT': 'News announcement',
+    'COMMUNITY_DISCUSSION': 'Community discussion',
+    'VIDEO_CONTENT': 'Video content',
+    'OTHER_LOW_CONFIDENCE': 'Other (low confidence)',
+    
+    // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Q&A or FAQ block',
     'DATA_DRIVEN_REPORT': 'Original research or data report',
     'COMPARISON_TABLE': 'Product or service comparison',
-    'CASE_STUDY': 'Case study',
     'DOCS_PAGE': 'Official documentation',
     'FORUM_THREAD': 'Community discussion',
     'TUTORIAL_STEP_BY_STEP': 'How-to tutorial',
     'LONG_FORM_ARTICLE': 'Editorial or thought leadership article',
     
-    // Old system (for backward compatibility)
+    // Older system (backward compatibility)
     'DEFINITIVE_QA_BLOCK': 'Definitive Q&A block',
     'ORIGINAL_DATA_STUDY': 'Original data study',
     'PRODUCT_COMPARISON_MATRIX': 'Product comparison matrix',
     'NARRATIVE_CASE_STUDY': 'Narrative case study',
     'OFFICIAL_DOCUMENTATION': 'Official documentation',
-    'COMMUNITY_DISCUSSION': 'Community discussion',
     'TACTICAL_GUIDE': 'Tactical guide',
     'FOUNDATIONAL_AUTHORITY': 'Foundational authority',
-    
-    // Additional categories found in database
     'BLOG_POST': 'Blog post',
     'NEWS_ARTICLE': 'News article',
     'TUTORIAL': 'Tutorial',
@@ -58,27 +67,36 @@ const getContentTypeDescription = (category: string | null | undefined): string 
   if (!category) return 'This content has not been categorized yet.'
   
   const descriptions: Record<string, string> = {
-    // New 8-category system
+    // New 11-category system
+    'OFFICIAL_DOCS': 'Formal structured reference documentation or API instructions.',
+    'HOW_TO_GUIDE': 'Step-by-step instructions teaching how to perform a task or achieve an outcome.',
+    'COMPARISON_ANALYSIS': 'Content comparing products/services, alternatives, or presenting ranked lists.',
+    'PRODUCT_PAGE': 'Landing pages or feature presentations focused on sales, conversion, or product value.',
+    'THOUGHT_LEADERSHIP': 'Expert opinions, industry insight, trend discussion, strategic framing.',
+    'CASE_STUDY': 'Narrative explanation showing how a real organization or person achieved a result.',
+    'TECHNICAL_DEEP_DIVE': 'In-depth technical explanation, architecture design, engineering reasoning.',
+    'NEWS_ANNOUNCEMENT': 'Release notes, product update announcements, company news.',
+    'COMMUNITY_DISCUSSION': 'Informal discussions, Q&A threads, Reddit/HN/SO style content.',
+    'VIDEO_CONTENT': 'Video-first educational or narrative media content.',
+    'OTHER_LOW_CONFIDENCE': 'Use ONLY when all other categories score below 0.45.',
+    
+    // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
     'DATA_DRIVEN_REPORT': 'Content presenting proprietary data, research, or surveys. Includes numbers, charts, or visualized datasets with a clear methodology. Recognized by AI models as original and verifiable information sources.',
     'COMPARISON_TABLE': 'Content comparing multiple tools, platforms, or services. Often structured as tables, lists, or "X vs Y" style articles. Includes "Top 5", "Best of", or feature-by-feature comparisons.',
-    'CASE_STUDY': 'Narrative content describing a real-world scenario. Highlights a specific challenge, the actions taken, and measurable outcomes. Used to document results, performance, or success examples.',
     'DOCS_PAGE': 'Technical or instructional reference material from help centers, APIs, or developer sites. Includes installation guides, configuration steps, and parameter explanations. Structured for accuracy and reusability by AI systems.',
     'FORUM_THREAD': 'Threaded conversations, forum posts, or community Q&A exchanges. Includes peer‑to‑peer troubleshooting, shared experiences, and informal advice. Reflects public opinion or real‑world problem solving.',
     'TUTORIAL_STEP_BY_STEP': 'Structured instructional guide divided into sequential steps. Each step clearly marked with ordered headings or visual markers. Explains a process, setup, or workflow from start to finish.',
     'LONG_FORM_ARTICLE': 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.',
     
-    // Old system (for backward compatibility)
+    // Older system (backward compatibility)
     'DEFINITIVE_QA_BLOCK': 'Highly structured, short paragraphs designed to answer a single question (often tagged with FAQ/HowTo Schema). The AI extracts this with minimal editing.',
     'ORIGINAL_DATA_STUDY': 'Content containing proprietary research, unique data sets, or survey results with a clear methodology. The AI is citing this because the fact exists nowhere else.',
     'PRODUCT_COMPARISON_MATRIX': 'Content presented in tables, bulleted lists, or side-by-side feature comparisons. Ideal for satisfying competitive consensus queries.',
     'NARRATIVE_CASE_STUDY': 'Long-form content detailing a problem, solution, and clear numerical result. These citations are used to build trust and demonstrate experience.',
     'OFFICIAL_DOCUMENTATION': 'Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions.',
-    'COMMUNITY_DISCUSSION': 'Forum posts, discussion threads, Q&A exchanges, and community-driven conversations where users interact and share experiences. Cited when the AI needs real-world validation.',
     'TACTICAL_GUIDE': 'Content providing actionable instructions, workflows, or implementation guides. Cited when users need specific how-to information.',
     'FOUNDATIONAL_AUTHORITY': 'Content that establishes fundamental concepts, definitions, or frameworks that other sources reference. Cited when the AI needs to establish baseline knowledge.',
-    
-    // Additional categories
     'BLOG_POST': 'Informative article or post typically published on a blog. May cover a variety of topics with personal insights, news, or educational content.',
     'NEWS_ARTICLE': 'Timely news coverage or press releases. Provides current information about events, announcements, or industry developments.',
     'TUTORIAL': 'Step-by-step instructional content teaching how to accomplish a specific task or use a particular tool or technology.',
@@ -309,8 +327,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   <Tooltip>
                     <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p className="text-xs">Type of content most commonly cited from this domain (e.g. Guide, Forum, Blog).</p>
-                      <p className="text-xs mt-2 font-semibold">This content type represents the classification of the domain's homepage.</p>
+                      <p className="text-xs">Classification of the domain's homepage.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -439,8 +456,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                                     <Tooltip>
                                       <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
                                       <TooltipContent className="max-w-xs">
-                                        <p className="text-xs">Type of content for this specific URL (e.g. Guide, Forum, Blog).</p>
-                                        <p className="text-xs mt-2 font-semibold">This content type represents the classification of the specific URL listed in this table (not the domain homepage).</p>
+                                        <p className="text-xs">Classification of this specific URL.</p>
                                       </TooltipContent>
                                     </Tooltip>
                                   </TooltipProvider>

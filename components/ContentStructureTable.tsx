@@ -32,27 +32,36 @@ interface ContentStructureTableProps {
 // Helper to format category labels to Title case
 const formatCategoryLabel = (category: string): string => {
   const labels: Record<string, string> = {
-    // New 8-category system
+    // New 11-category system
+    'OFFICIAL_DOCS': 'Official docs',
+    'HOW_TO_GUIDE': 'How-to guide',
+    'COMPARISON_ANALYSIS': 'Comparison analysis',
+    'PRODUCT_PAGE': 'Product page',
+    'THOUGHT_LEADERSHIP': 'Thought leadership',
+    'CASE_STUDY': 'Case study',
+    'TECHNICAL_DEEP_DIVE': 'Technical deep dive',
+    'NEWS_ANNOUNCEMENT': 'News announcement',
+    'COMMUNITY_DISCUSSION': 'Community discussion',
+    'VIDEO_CONTENT': 'Video content',
+    'OTHER_LOW_CONFIDENCE': 'Other (low confidence)',
+    
+    // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Q&A or FAQ block',
     'DATA_DRIVEN_REPORT': 'Original research or data report',
     'COMPARISON_TABLE': 'Product or service comparison',
-    'CASE_STUDY': 'Case study',
     'DOCS_PAGE': 'Official documentation',
     'FORUM_THREAD': 'Community discussion',
     'TUTORIAL_STEP_BY_STEP': 'How-to tutorial',
     'LONG_FORM_ARTICLE': 'Editorial or thought leadership article',
     
-    // Old system
+    // Older system (backward compatibility)
     'DEFINITIVE_QA_BLOCK': 'Definitive Q&A block',
     'ORIGINAL_DATA_STUDY': 'Original data study',
     'PRODUCT_COMPARISON_MATRIX': 'Product comparison matrix',
     'NARRATIVE_CASE_STUDY': 'Narrative case study',
     'OFFICIAL_DOCUMENTATION': 'Official documentation',
-    'COMMUNITY_DISCUSSION': 'Community discussion',
     'TACTICAL_GUIDE': 'Tactical guide',
     'FOUNDATIONAL_AUTHORITY': 'Foundational authority',
-    
-    // Additional categories
     'BLOG_POST': 'Blog post',
     'NEWS_ARTICLE': 'News article',
     'TUTORIAL': 'Tutorial',
@@ -70,57 +79,109 @@ const formatCategoryLabel = (category: string): string => {
 }
 
 const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
-  // New 8-category system
+  // New 11-category system
+  'OFFICIAL_DOCS': {
+    label: formatCategoryLabel('OFFICIAL_DOCS'),
+    description: 'Formal structured reference documentation or API instructions.',
+    color: 'bg-blue-100 text-blue-800'
+  },
+  'HOW_TO_GUIDE': {
+    label: formatCategoryLabel('HOW_TO_GUIDE'),
+    description: 'Step-by-step instructions teaching how to perform a task or achieve an outcome.',
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  'COMPARISON_ANALYSIS': {
+    label: formatCategoryLabel('COMPARISON_ANALYSIS'),
+    description: 'Content comparing products/services, alternatives, or presenting ranked lists.',
+    color: 'bg-orange-100 text-orange-800'
+  },
+  'PRODUCT_PAGE': {
+    label: formatCategoryLabel('PRODUCT_PAGE'),
+    description: 'Landing pages or feature presentations focused on sales, conversion, or product value.',
+    color: 'bg-purple-100 text-purple-800'
+  },
+  'THOUGHT_LEADERSHIP': {
+    label: formatCategoryLabel('THOUGHT_LEADERSHIP'),
+    description: 'Expert opinions, industry insight, trend discussion, strategic framing.',
+    color: 'bg-teal-100 text-teal-800'
+  },
+  'CASE_STUDY': {
+    label: formatCategoryLabel('CASE_STUDY'),
+    description: 'Narrative explanation showing how a real organization or person achieved a result.',
+    color: 'bg-green-100 text-green-800'
+  },
+  'TECHNICAL_DEEP_DIVE': {
+    label: formatCategoryLabel('TECHNICAL_DEEP_DIVE'),
+    description: 'In-depth technical explanation, architecture design, engineering reasoning.',
+    color: 'bg-slate-100 text-slate-800'
+  },
+  'NEWS_ANNOUNCEMENT': {
+    label: formatCategoryLabel('NEWS_ANNOUNCEMENT'),
+    description: 'Release notes, product update announcements, company news.',
+    color: 'bg-cyan-100 text-cyan-800'
+  },
+  'COMMUNITY_DISCUSSION': {
+    label: formatCategoryLabel('COMMUNITY_DISCUSSION'),
+    description: 'Informal discussions, Q&A threads, Reddit/HN/SO style content.',
+    color: 'bg-pink-100 text-pink-800'
+  },
+  'VIDEO_CONTENT': {
+    label: formatCategoryLabel('VIDEO_CONTENT'),
+    description: 'Video-first educational or narrative media content.',
+    color: 'bg-red-100 text-red-800'
+  },
+  'OTHER_LOW_CONFIDENCE': {
+    label: formatCategoryLabel('OTHER_LOW_CONFIDENCE'),
+    description: 'Use ONLY when all other categories score below 0.45.',
+    color: 'bg-gray-100 text-gray-800'
+  },
+  
+  // Old 8-category system (backward compatibility)
   'QA_BLOCK': {
     label: formatCategoryLabel('QA_BLOCK'),
-    description: 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',
+    description: 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections.',
     color: 'bg-blue-100 text-blue-800'
   },
   'DATA_DRIVEN_REPORT': {
     label: formatCategoryLabel('DATA_DRIVEN_REPORT'),
-    description: 'Content presenting proprietary data, research, or surveys. Includes numbers, charts, or visualized datasets with a clear methodology. Recognized by AI models as original and verifiable information sources.',
+    description: 'Content presenting proprietary data, research, or surveys with clear methodology.',
     color: 'bg-purple-100 text-purple-800'
   },
   'COMPARISON_TABLE': {
     label: formatCategoryLabel('COMPARISON_TABLE'),
-    description: 'Content comparing multiple tools, platforms, or services. Often structured as tables, lists, or "X vs Y" style articles. Includes "Top 5", "Best of", or feature-by-feature comparisons.',
+    description: 'Content comparing multiple tools, platforms, or services in tables or lists.',
     color: 'bg-orange-100 text-orange-800'
-  },
-  'CASE_STUDY': {
-    label: formatCategoryLabel('CASE_STUDY'),
-    description: 'Narrative content describing a real-world scenario. Highlights a specific challenge, the actions taken, and measurable outcomes. Used to document results, performance, or success examples.',
-    color: 'bg-green-100 text-green-800'
   },
   'DOCS_PAGE': {
     label: formatCategoryLabel('DOCS_PAGE'),
-    description: 'Technical or instructional reference material from help centers, APIs, or developer sites. Includes installation guides, configuration steps, and parameter explanations. Structured for accuracy and reusability by AI systems.',
+    description: 'Technical or instructional reference material from help centers, APIs, or developer sites.',
     color: 'bg-yellow-100 text-yellow-800'
   },
   'FORUM_THREAD': {
     label: formatCategoryLabel('FORUM_THREAD'),
-    description: 'Threaded conversations, forum posts, or community Q&A exchanges. Includes peer‑to‑peer troubleshooting, shared experiences, and informal advice. Reflects public opinion or real‑world problem solving.',
+    description: 'Threaded conversations, forum posts, or community Q&A exchanges.',
     color: 'bg-pink-100 text-pink-800'
   },
   'TUTORIAL_STEP_BY_STEP': {
     label: formatCategoryLabel('TUTORIAL_STEP_BY_STEP'),
-    description: 'Structured instructional guide divided into sequential steps. Each step clearly marked with ordered headings or visual markers. Explains a process, setup, or workflow from start to finish.',
+    description: 'Structured instructional guide divided into sequential steps.',
     color: 'bg-indigo-100 text-indigo-800'
   },
   'LONG_FORM_ARTICLE': {
     label: formatCategoryLabel('LONG_FORM_ARTICLE'),
-    description: 'In‑depth, long‑form writing with analysis or commentary. May include opinions, frameworks, or explanatory narratives. Characterized by longer paragraphs and contextual depth.',
+    description: 'In‑depth, long‑form writing with analysis or commentary.',
     color: 'bg-gray-100 text-gray-800'
   },
   
-  // Old system (for backward compatibility)
+  // Older system (backward compatibility)
   'DEFINITIVE_QA_BLOCK': {
     label: formatCategoryLabel('DEFINITIVE_QA_BLOCK'),
-    description: 'Highly structured, short paragraphs designed to answer a single question. The AI extracts this with minimal editing.',
+    description: 'Highly structured, short paragraphs designed to answer a single question.',
     color: 'bg-blue-100 text-blue-800'
   },
   'ORIGINAL_DATA_STUDY': {
     label: formatCategoryLabel('ORIGINAL_DATA_STUDY'),
-    description: 'Content containing proprietary research, unique data sets, or survey results with a clear methodology.',
+    description: 'Content containing proprietary research, unique data sets, or survey results.',
     color: 'bg-purple-100 text-purple-800'
   },
   'PRODUCT_COMPARISON_MATRIX': {
@@ -135,13 +196,8 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
   },
   'OFFICIAL_DOCUMENTATION': {
     label: formatCategoryLabel('OFFICIAL_DOCUMENTATION'),
-    description: 'Structured content from help centers, API docs, or knowledge bases. Cited when the AI needs authoritative, technical instructions.',
+    description: 'Structured content from help centers, API docs, or knowledge bases.',
     color: 'bg-yellow-100 text-yellow-800'
-  },
-  'COMMUNITY_DISCUSSION': {
-    label: formatCategoryLabel('COMMUNITY_DISCUSSION'),
-    description: 'Forum posts, discussion threads, Q&A exchanges, and community-driven conversations.',
-    color: 'bg-pink-100 text-pink-800'
   },
   'TACTICAL_GUIDE': {
     label: formatCategoryLabel('TACTICAL_GUIDE'),
@@ -153,16 +209,14 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
     description: 'Content that establishes fundamental concepts, definitions, or frameworks.',
     color: 'bg-gray-100 text-gray-800'
   },
-  
-  // Additional categories
   'BLOG_POST': {
     label: formatCategoryLabel('BLOG_POST'),
-    description: 'Informative article or post typically published on a blog with personal insights, news, or educational content.',
+    description: 'Informative article or post typically published on a blog.',
     color: 'bg-slate-100 text-slate-800'
   },
   'NEWS_ARTICLE': {
     label: formatCategoryLabel('NEWS_ARTICLE'),
-    description: 'Timely news coverage or press releases about events, announcements, or industry developments.',
+    description: 'Timely news coverage or press releases about events or announcements.',
     color: 'bg-cyan-100 text-cyan-800'
   },
   'TUTORIAL': {
@@ -172,12 +226,12 @@ const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string
   },
   'COMPARISON_REVIEW': {
     label: formatCategoryLabel('COMPARISON_REVIEW'),
-    description: 'Detailed comparison of products or services with evaluation criteria and recommendations.',
+    description: 'Detailed comparison of products or services with evaluation criteria.',
     color: 'bg-orange-100 text-orange-800'
   },
   'OTHER': {
     label: formatCategoryLabel('OTHER'),
-    description: 'Content that doesn\'t fit into standard categories, such as landing pages or mixed-format content.',
+    description: 'Content that doesn\'t fit into standard categories.',
     color: 'bg-gray-100 text-gray-800'
   }
 }
@@ -262,22 +316,22 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                 <TableHead className="text-right">
                   <Tooltip>
                     <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
-                      Total URLs
+                      Unique URLs
                       <Info className="h-3 w-3" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p className="text-xs">Total number of URLs scanned from citations during the selected date range. This helps compare daily and period-to-period content variability.</p>
+                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TableHead>
                 <TableHead className="text-right">
                   <Tooltip>
                     <TooltipTrigger className="cursor-help flex items-center justify-end gap-1">
-                      Unique URLs
+                      Total URLs
                       <Info className="h-3 w-3" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p className="text-xs">The total count of unique pages of this format that were cited across all domains.</p>
+                      <p className="text-xs">Total number of URLs scanned from citations during the selected date range. This helps compare daily and period-to-period content variability.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TableHead>
@@ -338,11 +392,11 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
                         </TooltipContent>
                       </Tooltip>
                     </TableCell>
-                    <TableCell className="text-right font-medium text-slate-600">
-                      {category.totalScans || category.count}
-                    </TableCell>
                     <TableCell className="text-right font-medium">
                       {category.count}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-slate-600">
+                      {category.totalScans || category.count}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline">
