@@ -3,11 +3,26 @@ import cron from 'node-cron'
 import dotenv from 'dotenv'
 import { generateDailyReports } from './services/report-generator'
 
-// Load environment variables
-dotenv.config()
+// Wrap everything in try-catch to catch startup errors
+try {
+  console.log('🚀 [WORKER] Starting application...')
+  
+  // Load environment variables
+  dotenv.config()
+  
+  console.log('✅ [WORKER] Environment variables loaded')
+  console.log('📊 [WORKER] ENV Check:', {
+    NODE_ENV: process.env.NODE_ENV,
+    PORT: process.env.PORT,
+    hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    hasSupabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    hasBrowserlessToken: !!process.env.BROWSERLESS_TOKEN
+  })
 
-const app = express()
-const PORT = process.env.PORT || 3001
+  const app = express()
+  const PORT = process.env.PORT || 3001
+  
+  console.log(`✅ [WORKER] Express app created, PORT=${PORT}`)
 
 // Middleware
 app.use(express.json())
@@ -101,15 +116,20 @@ app.listen(PORT, () => {
   }, 5000) // Wait 5 seconds after startup to ensure everything is ready
 })
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('⚠️ [WORKER] SIGTERM received, shutting down gracefully')
-  process.exit(0)
-})
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('⚠️ [WORKER] SIGTERM received, shutting down gracefully')
+    process.exit(0)
+  })
 
-process.on('SIGINT', () => {
-  console.log('⚠️ [WORKER] SIGINT received, shutting down gracefully')
-  process.exit(0)
-})
+  process.on('SIGINT', () => {
+    console.log('⚠️ [WORKER] SIGINT received, shutting down gracefully')
+    process.exit(0)
+  })
 
-
+} catch (error) {
+  console.error('💥 [WORKER] FATAL STARTUP ERROR:', error)
+  console.error('💥 [WORKER] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+  console.error('💥 [WORKER] Error message:', error instanceof Error ? error.message : String(error))
+  process.exit(1)
+}
