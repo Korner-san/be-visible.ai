@@ -291,8 +291,10 @@ const updateCompletionStatus = async (dailyReportId: string): Promise<boolean> =
   const reportDate = report.report_date
   
   // Check if all phases are complete
-  // CHATGPT-ONLY MODE: Only ChatGPT and URL processing need to be complete
-  const isChatGPTComplete = report.chatgpt_status === 'complete' || report.chatgpt_status === 'failed'
+  // CHATGPT-ONLY MODE: Report is complete ONLY if:
+  // 1. ChatGPT provided text AND citations (status = 'complete', not 'failed')
+  // 2. Citations were categorized by Tavily (url_processing_status = 'complete')
+  const isChatGPTComplete = report.chatgpt_status === 'complete' // Must be 'complete', not 'failed'
   const isUrlProcessingComplete = report.url_processing_status === 'complete'
   
   // Perplexity and Google AO are skipped for Basic plan
@@ -308,7 +310,8 @@ const updateCompletionStatus = async (dailyReportId: string): Promise<boolean> =
     today
   })
   
-  // Report is complete when ChatGPT and URL processing are complete
+  // Report is complete ONLY when ChatGPT succeeded AND URL processing is complete
+  // Failed ChatGPT runs do NOT count as complete
   const shouldMarkComplete = isChatGPTComplete && isUrlProcessingComplete
   
   const { error: updateError } = await supabase
