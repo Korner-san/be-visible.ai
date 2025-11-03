@@ -118,14 +118,25 @@ async function connectToBrowserless(account: ChatGPTAccount): Promise<Browser> {
   logger.log('🌐 Connecting to Browserless...');
   logger.startTimer('connection');
 
+  // Validate Browserless token
+  if (!CONFIG.browserless.token) {
+    throw new Error('BROWSERLESS_TOKEN or BROWSERLESS_API_KEY environment variable is not set');
+  }
+
   const wsEndpoint = `${CONFIG.browserless.endpoint}?token=${CONFIG.browserless.token}&proxy=residential&proxyCountry=us&proxySticky=true`;
+  
+  logger.log(`📡 WebSocket endpoint: ${CONFIG.browserless.endpoint}`);
+  logger.log(`🔑 Token length: ${CONFIG.browserless.token.length} characters`);
 
-  const browser = await chromium.connect(wsEndpoint, {
-    timeout: CONFIG.browserless.timeout,
-  });
-
-  // Get the default context and set cookies
-  const context = browser.contexts()[0];
+  try {
+    const browser = await chromium.connect(wsEndpoint, {
+      timeout: 60000, // 60 seconds (reduced from 15 minutes)
+    });
+    
+    logger.log('✅ Connected to Browserless successfully', 'SUCCESS');
+    
+    // Get the default context and set cookies
+    const context = browser.contexts()[0];
   
   const cookies = [
     {
@@ -176,12 +187,17 @@ async function connectToBrowserless(account: ChatGPTAccount): Promise<Browser> {
     });
   }
 
-  await context.addCookies(cookies);
+    await context.addCookies(cookies);
 
-  logger.endTimer('connection');
-  logger.log(`✅ Connected with ${account.display_name || account.email} cookies`, 'SUCCESS');
+    logger.endTimer('connection');
+    logger.log(`✅ Connected with ${account.display_name || account.email} cookies`, 'SUCCESS');
 
-  return browser;
+    return browser;
+  } catch (error) {
+    logger.log(`❌ Connection failed: ${(error as Error).message}`, 'ERROR');
+    logger.log(`📊 Error details: ${JSON.stringify(error)}`, 'ERROR');
+    throw new Error(`Failed to connect to Browserless: ${(error as Error).message}`);
+  }
 }
 
 // ============================================================================
