@@ -1,3 +1,11 @@
+// Log IMMEDIATELY before any imports to catch import errors
+console.log('═══════════════════════════════════════════════════════')
+console.log('🔥 [WORKER] ENTRY POINT REACHED - Before any imports')
+console.log('🔥 [WORKER] Node version:', process.version)
+console.log('🔥 [WORKER] Current directory:', process.cwd())
+console.log('🔥 [WORKER] Environment:', process.env.NODE_ENV)
+console.log('═══════════════════════════════════════════════════════')
+
 import express, { Request, Response } from 'express'
 import cron from 'node-cron'
 import dotenv from 'dotenv'
@@ -5,7 +13,7 @@ import { generateDailyReports } from './services/report-generator'
 
 // Wrap everything in try-catch to catch startup errors
 try {
-  console.log('🚀 [WORKER] Starting application...')
+  console.log('🚀 [WORKER] Starting application (after imports)...')
   
   // Load environment variables
   dotenv.config()
