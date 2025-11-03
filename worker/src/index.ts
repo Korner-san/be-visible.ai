@@ -86,6 +86,20 @@ app.listen(PORT, () => {
   })
   
   console.log('✅ [WORKER] Cron job scheduled successfully')
+  
+  // 🔥 TRIGGER REPORT GENERATION ON STARTUP (for testing)
+  // Check environment variable to run immediately on deployment
+  if (process.env.RUN_ON_STARTUP === 'true') {
+    console.log('🚀 [WORKER] RUN_ON_STARTUP enabled - Starting immediate report generation')
+    setTimeout(async () => {
+      try {
+        const result = await generateDailyReports()
+        console.log('✅ [WORKER] Startup report generation completed:', result)
+      } catch (error) {
+        console.error('❌ [WORKER] Startup report generation failed:', error)
+      }
+    }, 5000) // Wait 5 seconds after startup to ensure everything is ready
+  }
 })
 
 // Graceful shutdown
