@@ -72,14 +72,14 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     })
 
-    // Auto-select already selected prompts, then add more up to 15 total
+    // Auto-select already selected prompts, then add more up to 10 total
     const alreadySelected = sortedPrompts.filter(p => p.status === 'selected')
     const availableForSelection = sortedPrompts.filter(p => p.status === 'draft' || p.status === 'improved' || p.status === 'inactive')
     
     const toSelect = [
       ...alreadySelected,
-      ...availableForSelection.slice(0, Math.max(0, Math.min(15, prompts.length) - alreadySelected.length))
-    ].slice(0, 15)
+      ...availableForSelection.slice(0, Math.max(0, Math.min(10, prompts.length) - alreadySelected.length))
+    ].slice(0, 10)
 
     const selectedIds = new Set(toSelect.map(p => p.id))
     setSelectedPrompts(selectedIds)
@@ -96,7 +96,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
     const newSelected = new Set(selectedPrompts)
     if (newSelected.has(promptId)) {
       newSelected.delete(promptId)
-    } else if (newSelected.size < 15) {
+    } else if (newSelected.size < 10) {
       newSelected.add(promptId)
     }
     setSelectedPrompts(newSelected)
@@ -105,13 +105,13 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
   }
 
   const handleSelectAll = () => {
-    // Select first 15 prompts by template code order
+    // Select first 10 prompts by template code order (Basic plan limit)
     const sortedPrompts = [...prompts].sort((a, b) => 
       a.source_template_code.localeCompare(b.source_template_code)
     )
-    const newSelected = new Set(sortedPrompts.slice(0, 15).map(p => p.id))
+    const newSelected = new Set(sortedPrompts.slice(0, 10).map(p => p.id))
     setSelectedPrompts(newSelected)
-    console.log('🔄 [REVIEW PROMPTS CLIENT] Selected all (first 15):', newSelected.size)
+    console.log('🔄 [REVIEW PROMPTS CLIENT] Selected all (first 10):', newSelected.size)
   }
 
   const handleDeselectAll = () => {
@@ -124,8 +124,8 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
       setError('Please select at least 1 prompt to continue.')
       return
     }
-    if (selectedPrompts.size > 15) {
-      setError('Please select no more than 15 prompts.')
+    if (selectedPrompts.size > 10) {
+      setError('Please select no more than 10 prompts (Basic plan limit).')
       return
     }
 
@@ -192,7 +192,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
   }
 
   const selectedCount = selectedPrompts.size
-  const canProceed = selectedCount > 0 && selectedCount <= 15
+  const canProceed = selectedCount > 0 && selectedCount <= 10
 
   // Group prompts by category for better organization
   // Separate AI-generated and user-added prompts
@@ -219,7 +219,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
           </h1>
           <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
             We've prepared {aiPrompts.length} AI-generated prompts{userPrompts.length > 0 ? ` and ${userPrompts.length} custom prompts` : ''} for <strong>{brand.name}</strong>. 
-            Select up to 15 prompts total to power your brand visibility analysis.
+            Select up to 10 prompts total to power your brand visibility analysis (Basic plan).
           </p>
         </div>
 
@@ -227,8 +227,8 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
         <div className="bg-gray-50 border rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className={`text-lg font-bold ${canProceed ? 'text-green-600' : selectedCount > 15 ? 'text-red-600' : 'text-blue-600'}`}>
-                {selectedCount} / 15 Selected
+              <div className={`text-lg font-bold ${canProceed ? 'text-green-600' : selectedCount > 10 ? 'text-red-600' : 'text-blue-600'}`}>
+                {selectedCount} / 10 Selected
               </div>
               {canProceed ? (
                 <Badge className="bg-green-500 text-white">
@@ -239,13 +239,13 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
                 <Badge variant="outline" className="text-blue-600 border-blue-300">
                   Select at least 1 prompt
                 </Badge>
-              ) : selectedCount > 15 ? (
+              ) : selectedCount > 10 ? (
                 <Badge variant="outline" className="text-red-600 border-red-300">
-                  Remove {selectedCount - 15}
+                  Remove {selectedCount - 10}
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-blue-600 border-blue-300">
-                  {15 - selectedCount} more available
+                  {10 - selectedCount} more available
                 </Badge>
               )}
             </div>
@@ -258,7 +258,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
                 disabled={isSubmitting}
                 className="text-xs"
               >
-                Auto-select 15
+                Auto-select 10
               </Button>
               <Button
                 variant="outline"
@@ -310,7 +310,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
               <div className="bg-gray-50 rounded-lg border overflow-hidden">
                 {categoryPrompts.map((prompt, index) => {
                   const isSelected = selectedPrompts.has(prompt.id)
-                  const canSelect = isSelected || selectedPrompts.size < 15
+                  const canSelect = isSelected || selectedPrompts.size < 10
                   
                   return (
                     <div 
@@ -394,7 +394,7 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
               <div className="bg-gray-50 rounded-lg border overflow-hidden">
                 {userPrompts.map((prompt, index) => {
                   const isSelected = selectedPrompts.has(prompt.id)
-                  const canSelect = isSelected || selectedPrompts.size < 15
+                  const canSelect = isSelected || selectedPrompts.size < 10
                   const hasWarning = prompt.generation_metadata?.hasWarning
                   
                   return (
@@ -463,9 +463,9 @@ export function ReviewPromptsClient({ brand, prompts, userId }: ReviewPromptsCli
                 ? `Perfect! You've selected ${selectedCount} prompt${selectedCount !== 1 ? 's' : ''}. Ready to complete your onboarding?`
                 : selectedCount === 0
                   ? 'Please select at least 1 prompt to continue.'
-                  : selectedCount > 15
-                    ? `Please remove ${selectedCount - 15} prompt${selectedCount - 15 !== 1 ? 's' : ''} (maximum 15 allowed).`
-                    : 'You can select more prompts if you want (up to 15 total).'
+                  : selectedCount > 10
+                    ? `Please remove ${selectedCount - 10} prompt${selectedCount - 10 !== 1 ? 's' : ''} (maximum 10 allowed for Basic plan).`
+                    : 'You can select more prompts if you want (up to 10 total for Basic plan).'
               }
             </p>
             <Button

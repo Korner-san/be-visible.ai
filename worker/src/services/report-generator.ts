@@ -29,6 +29,12 @@ interface ReportResult {
     noResult: number
     errors: number
   }
+  chatgpt?: {
+    attempted: number
+    ok: number
+    noResult: number
+    errors: number
+  }
 }
 
 /**
@@ -45,15 +51,20 @@ export const generateDailyReports = async (): Promise<{
   const supabase = createServiceClient()
   
   try {
-    // Get test user (for now, limit to test user only)
-    const { data: testUser, error: userError } = await supabase
+    // Get all eligible users for reports (excludes free_trial, reports_enabled=false)
+    const { data: eligibleUsers, error: usersError } = await supabase
       .from('users')
-      .select('id')
-      .eq('email', 'kk1995current@gmail.com')
-      .single()
+      .select('id, email, subscription_plan, reports_enabled')
+      .eq('reports_enabled', true)
+      .neq('subscription_plan', 'free_trial')
 
-    if (userError || !testUser) {
-      console.log('ℹ️ [REPORT GENERATOR] Test user not found, skipping daily reports')
+    if (usersError) {
+      console.error('❌ [REPORT GENERATOR] Error fetching users:', usersError)
+      throw new Error(`Failed to fetch users: ${usersError.message}`)
+    }
+
+    if (!eligibleUsers || eligibleUsers.length === 0) {
+      console.log('ℹ️ [REPORT GENERATOR] No eligible users found for report generation')
       return {
         success: true,
         processedBrands: 0,
@@ -61,9 +72,13 @@ export const generateDailyReports = async (): Promise<{
       }
     }
 
-    console.log(`👤 [REPORT GENERATOR] Found test user: ${testUser.id}`)
+    console.log(`👥 [REPORT GENERATOR] Found ${eligibleUsers.length} eligible users:`, 
+      eligibleUsers.map(u => `${u.email} (${u.subscription_plan})`))
 
-    // Get brands for test user with active prompts
+    // Get all eligible user IDs
+    const userIds = eligibleUsers.map(u => u.id)
+
+    // Get brands for eligible users with active prompts
     const { data: brands, error: brandsError } = await supabase
       .from('brands')
       .select(`
@@ -73,9 +88,9 @@ export const generateDailyReports = async (): Promise<{
         onboarding_answers,
         brand_prompts!inner(id)
       `)
-      .eq('owner_user_id', testUser.id)
+      .in('owner_user_id', userIds)
       .eq('onboarding_completed', true)
-      .eq('brand_prompts.status', 'active')
+      .eq('brand_prompts.is_active', true)
 
     if (brandsError) {
       console.error('❌ [REPORT GENERATOR] Error fetching brands:', brandsError)
@@ -228,8 +243,9 @@ const processBrandReport = async (brand: any): Promise<ReportResult> => {
     
     // Final summary
     console.log(`📊 [REPORT GENERATOR] Final Summary for ${brand.name}:`)
-    console.log(`  Perplexity: ${promptResult.perplexity.attempted} attempted, ${promptResult.perplexity.ok} ok, ${promptResult.perplexity.noResult} no result, ${promptResult.perplexity.errors} errors`)
-    console.log(`  Google AI Overview: ${promptResult.googleAIOverview.attempted} attempted, ${promptResult.googleAIOverview.ok} ok, ${promptResult.googleAIOverview.noResult} no result, ${promptResult.googleAIOverview.errors} errors`)
+    console.log(`  ChatGPT: ${promptResult.chatgpt.attempted} attempted, ${promptResult.chatgpt.ok} ok, ${promptResult.chatgpt.noResult} no result, ${promptResult.chatgpt.errors} errors`)
+    console.log(`  Perplexity: ${promptResult.perplexity.attempted} attempted (Reserved for Advanced plan)`)
+    console.log(`  Google AI Overview: ${promptResult.googleAIOverview.attempted} attempted (Reserved for Advanced plan)`)
     console.log(`  URL Processing: ${urlResult.totalUrls} total, ${urlResult.extractedUrls} extracted, ${urlResult.classifiedUrls} classified`)
     console.log(`  Report Status: ${isComplete ? 'COMPLETE' : 'INCOMPLETE'}`)
 
@@ -242,7 +258,8 @@ const processBrandReport = async (brand: any): Promise<ReportResult> => {
       totalMentions: promptResult.totalMentions,
       averagePosition: promptResult.averagePosition,
       perplexity: promptResult.perplexity,
-      googleAIOverview: promptResult.googleAIOverview
+      googleAIOverview: promptResult.googleAIOverview,
+      chatgpt: promptResult.chatgpt
     }
 
   } catch (error) {
@@ -261,7 +278,7 @@ const updateCompletionStatus = async (dailyReportId: string): Promise<boolean> =
   
   const { data: report, error } = await supabase
     .from('daily_reports')
-    .select('perplexity_status, google_ai_overview_status, url_processing_status, report_date')
+    .select('perplexity_status, google_ai_overview_status, chatgpt_status, url_processing_status, report_date')
     .eq('id', dailyReportId)
     .single()
 
@@ -274,13 +291,16 @@ const updateCompletionStatus = async (dailyReportId: string): Promise<boolean> =
   const reportDate = report.report_date
   
   // Check if all phases are complete
-  const isPerplexityComplete = report.perplexity_status === 'complete'
-  const isGoogleComplete = reportDate < today 
-    ? ['expired', 'skipped', 'complete', 'failed'].includes(report.google_ai_overview_status)
-    : ['complete', 'failed'].includes(report.google_ai_overview_status)
+  // CHATGPT-ONLY MODE: Only ChatGPT and URL processing need to be complete
+  const isChatGPTComplete = report.chatgpt_status === 'complete' || report.chatgpt_status === 'failed'
   const isUrlProcessingComplete = report.url_processing_status === 'complete'
   
+  // Perplexity and Google AO are skipped for Basic plan
+  const isPerplexityComplete = true // Always complete (skipped for Basic plan)
+  const isGoogleComplete = true     // Always complete (skipped for Basic plan)
+  
   console.log(`🔍 [COMPLETION] Status checks:`, {
+    isChatGPTComplete,
     isPerplexityComplete,
     isGoogleComplete,
     isUrlProcessingComplete,
@@ -288,8 +308,8 @@ const updateCompletionStatus = async (dailyReportId: string): Promise<boolean> =
     today
   })
   
-  // Report is complete when ALL THREE phases are complete
-  const shouldMarkComplete = isPerplexityComplete && isGoogleComplete && isUrlProcessingComplete
+  // Report is complete when ChatGPT and URL processing are complete
+  const shouldMarkComplete = isChatGPTComplete && isUrlProcessingComplete
   
   const { error: updateError } = await supabase
     .from('daily_reports')

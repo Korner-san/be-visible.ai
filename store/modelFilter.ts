@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Provider, ACTIVE_PROVIDERS } from '@/types/domain/provider'
+import { Provider, ACTIVE_PROVIDERS, LOCKED_PROVIDERS } from '@/types/domain/provider'
 
 interface ModelFilterState {
   selectedModels: Provider[]
@@ -10,6 +10,7 @@ interface ModelFilterState {
   toggleModel: (model: Provider) => void
   selectAllModels: () => void
   isModelSelected: (model: Provider) => boolean
+  isModelLocked: (model: Provider) => boolean
   getSelectedCount: () => number
   getModelsForAPI: () => string
 }
@@ -70,6 +71,10 @@ export const useModelFilterStore = create<ModelFilterState>()(
         return get().selectedModels.includes(model)
       },
 
+      isModelLocked: (model) => {
+        return LOCKED_PROVIDERS.includes(model as any)
+      },
+
       getSelectedCount: () => {
         return get().selectedModels.length
       },
@@ -99,6 +104,7 @@ export const useModelFilter = () => {
     toggleModel: store.toggleModel,
     selectAllModels: store.selectAllModels,
     isModelSelected: store.isModelSelected,
+    isModelLocked: store.isModelLocked,
     getSelectedCount: store.getSelectedCount,
     getModelsForAPI: store.getModelsForAPI
   }

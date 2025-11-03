@@ -164,9 +164,9 @@ export function PromptsManagementClient({ brands }: PromptsManagementClientProps
     return acc
   }, {} as Record<PromptStatus, number>)
   
-  // Calculate active prompts and limit
+  // Calculate active prompts and limit (ChatGPT-only Basic plan = 10 prompts)
   const activeCount = statusCounts.active || 0
-  const maxActivePrompts = 15
+  const maxActivePrompts = 10
   const canActivateMore = activeCount < maxActivePrompts
 
   return (

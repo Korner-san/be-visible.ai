@@ -7,6 +7,10 @@
 import { createServiceClient } from '../lib/supabase-client'
 import { callPerplexityAPI, extractPerplexityContent, extractPerplexityCitations } from '../lib/providers/perplexity'
 import { callGoogleAIOverviewAPI, extractGoogleContent, extractGoogleCitations, hasGoogleResults } from '../lib/providers/google-ai-overview'
+import { processChatGPTBatch } from '../lib/providers/chatgpt-browserless'
+
+// CHATGPT-ONLY MODE: Basic plan supports 10 active prompts with ChatGPT
+const MAX_ACTIVE_PROMPTS = 10
 
 interface BrandMentionAnalysis {
   mentioned: boolean
@@ -97,7 +101,7 @@ const processProviderPrompts = async (
   activePrompts: any[],
   brandName: string,
   competitors: string[],
-  provider: 'perplexity' | 'google_ai_overview'
+  provider: 'perplexity' | 'google_ai_overview' | 'chatgpt'
 ): Promise<{
   attempted: number
   ok: number
@@ -141,6 +145,16 @@ const processProviderPrompts = async (
           noResult++
           providerError = 'No search results found'
         }
+      } else if (provider === 'chatgpt') {
+        const chatgptResponse = await callChatGPTAPI(promptText)
+        if (hasChatGPTResults(chatgptResponse)) {
+          responseContent = extractChatGPTContent(chatgptResponse)
+          responseTimeMs = chatgptResponse.responseTimeMs || 0
+          citations = extractChatGPTCitations(chatgptResponse)
+        } else {
+          noResult++
+          providerError = chatgptResponse.error || 'No response from ChatGPT'
+        }
       }
 
       if (responseContent) {
@@ -175,6 +189,10 @@ const processProviderPrompts = async (
           resultData.google_ai_overview_response = responseContent
           resultData.google_ai_overview_response_time_ms = responseTimeMs
           resultData.google_ai_overview_citations = citations
+        } else if (provider === 'chatgpt') {
+          resultData.chatgpt_response = responseContent
+          resultData.chatgpt_response_time_ms = responseTimeMs
+          resultData.chatgpt_citations = citations
         }
 
         // Upsert the result (idempotent)
@@ -259,7 +277,7 @@ const processProviderPrompts = async (
  */
 const updateProviderStatus = async (
   dailyReportId: string,
-  provider: 'perplexity' | 'google_ai_overview',
+  provider: 'perplexity' | 'google_ai_overview' | 'chatgpt',
   status: 'not_started' | 'running' | 'complete' | 'failed',
   counts?: { attempted: number; ok: number; noResult: number; errors: number }
 ) => {
@@ -279,6 +297,13 @@ const updateProviderStatus = async (
       updateData.google_ai_overview_attempted = counts.attempted
       updateData.google_ai_overview_ok = counts.ok
       updateData.google_ai_overview_no_result = counts.noResult
+    }
+  } else if (provider === 'chatgpt') {
+    updateData.chatgpt_status = status
+    if (counts) {
+      updateData.chatgpt_attempted = counts.attempted
+      updateData.chatgpt_ok = counts.ok
+      updateData.chatgpt_no_result = counts.noResult
     }
   }
 
@@ -306,79 +331,139 @@ export const processPromptsForBrand = async (
   averagePosition: number | null
   perplexity: { attempted: number; ok: number; noResult: number; errors: number }
   googleAIOverview: { attempted: number; ok: number; noResult: number; errors: number }
+  chatgpt: { attempted: number; ok: number; noResult: number; errors: number }
 }> => {
   const supabase = createServiceClient()
   
-  // Get active prompts
+  // Get active prompts - limit to MAX_ACTIVE_PROMPTS (10 for ChatGPT-only mode)
   const { data: activePrompts, error: promptsError } = await supabase
     .from('brand_prompts')
     .select('id, raw_prompt, improved_prompt, source_template_code, category')
     .eq('brand_id', brand.id)
-    .eq('status', 'active')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(MAX_ACTIVE_PROMPTS)
 
   if (promptsError || !activePrompts || activePrompts.length === 0) {
     throw new Error('No active prompts found for brand')
   }
 
-  console.log(`📊 [PROMPT PROCESSOR] Found ${activePrompts.length} active prompts for brand: ${brand.name}`)
+  console.log(`📊 [PROMPT PROCESSOR] Found ${activePrompts.length} active prompts for brand: ${brand.name} (max ${MAX_ACTIVE_PROMPTS})`)
 
   const competitors = (brand.onboarding_answers as any)?.competitors || []
   console.log('🏢 [PROMPT PROCESSOR] Competitors:', competitors)
 
   let perplexityCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
   let googleCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
+  let chatgptCounts = { attempted: 0, ok: 0, noResult: 0, errors: 0 }
 
-  // PHASE 1: Process Perplexity prompts (if not already complete)
-  if (dailyReport.perplexity_status !== 'complete') {
-    console.log('🚀 [PERPLEXITY] Starting Perplexity pass')
+  // CHATGPT-ONLY MODE: Process ChatGPT first (primary provider for Basic plan)
+  if (dailyReport.chatgpt_status !== 'complete') {
+    console.log('🚀 [CHATGPT] Starting ChatGPT pass via Browserless (Basic plan primary provider)')
     
-    await updateProviderStatus(dailyReport.id, 'perplexity', 'running')
+    await updateProviderStatus(dailyReport.id, 'chatgpt', 'running')
     
-    perplexityCounts = await processProviderPrompts(
-      dailyReport.id,
-      activePrompts,
-      brand.name,
-      competitors,
-      'perplexity'
-    )
-    
-    const perplexityStatus = perplexityCounts.errors > 0 ? 'failed' : 'complete'
-    await updateProviderStatus(dailyReport.id, 'perplexity', perplexityStatus, perplexityCounts)
-    
-    console.log(`✅ [PERPLEXITY] Pass completed - Status: ${perplexityStatus}`)
+    try {
+      // Process all prompts in a single Browserless session
+      const reportDate = dailyReport.report_date
+      const promptsForBatch = activePrompts.map(p => ({
+        id: p.id,
+        text: p.improved_prompt || p.raw_prompt
+      }))
+      
+      const batchResult = await processChatGPTBatch(brand.id, promptsForBatch, reportDate)
+      
+      // Save results to Supabase
+      for (const result of batchResult.results) {
+        if (!result.success) {
+          chatgptCounts.errors++
+          chatgptCounts.attempted++
+          continue
+        }
+        
+        chatgptCounts.attempted++
+        
+        if (result.citations.length === 0) {
+          chatgptCounts.noResult++
+        } else {
+          chatgptCounts.ok++
+        }
+        
+        // Analyze brand mentions
+        const analysis = analyzeBrandMention(result.responseText, brand.name, competitors)
+        
+        // Save prompt result
+        const { error: upsertError } = await supabase
+          .from('prompt_results')
+          .upsert({
+            daily_report_id: dailyReport.id,
+            brand_prompt_id: result.promptId,
+            prompt_text: result.promptText,
+            provider: 'chatgpt',
+            provider_status: 'ok',
+            brand_mentioned: analysis.mentioned,
+            brand_position: analysis.mentioned ? analysis.position : null,
+            competitor_mentions: analysis.competitorMentions,
+            sentiment_score: analysis.sentiment,
+            chatgpt_response: result.responseText,
+            chatgpt_response_time_ms: result.timeMs,
+            chatgpt_citations: result.citations.map(c => c.url),
+            created_at: new Date().toISOString()
+          }, {
+            onConflict: 'daily_report_id,brand_prompt_id,provider'
+          })
+        
+        if (upsertError) {
+          console.error(`❌ [CHATGPT] Error saving result:`, upsertError)
+          chatgptCounts.errors++
+          chatgptCounts.ok-- // Adjust the ok count
+        }
+        
+        // Save citations to url_inventory
+        for (const citation of result.citations) {
+          try {
+            await supabase
+              .from('url_inventory')
+              .upsert({
+                url: citation.url,
+                title: citation.title,
+                domain: new URL(citation.url).hostname,
+                first_seen_date: reportDate,
+                last_seen_date: reportDate,
+                total_mentions: 1,
+                source_provider: 'chatgpt',
+              }, {
+                onConflict: 'url'
+              })
+          } catch (urlError) {
+            console.error(`⚠️ [CHATGPT] Error saving citation:`, urlError)
+          }
+        }
+      }
+      
+      const chatgptStatus = chatgptCounts.errors > 0 ? 'failed' : 'complete'
+      await updateProviderStatus(dailyReport.id, 'chatgpt', chatgptStatus, chatgptCounts)
+      
+      console.log(`✅ [CHATGPT] Batch completed - Status: ${chatgptStatus}`)
+      console.log(`📊 [CHATGPT] Results: ${batchResult.successfulPrompts}/${batchResult.totalPrompts} successful, ${batchResult.totalCitations} citations`)
+      
+    } catch (error) {
+      console.error(`❌ [CHATGPT] Batch processing failed:`, error)
+      chatgptCounts.errors = activePrompts.length
+      chatgptCounts.attempted = activePrompts.length
+      await updateProviderStatus(dailyReport.id, 'chatgpt', 'failed', chatgptCounts)
+    }
   } else {
-    console.log('⏭️ [PERPLEXITY] Pass already complete, skipping')
+    console.log('⏭️ [CHATGPT] Pass already complete, skipping')
   }
 
-  // PHASE 2: Process Google AI Overview prompts (today's date only)
-  const today = new Date().toISOString().split('T')[0]
-  const reportDate = dailyReport.report_date
-  
-  if (dailyReport.google_ai_overview_status !== 'complete' && 
-      dailyReport.google_ai_overview_status !== 'expired' && 
-      dailyReport.google_ai_overview_status !== 'skipped' &&
-      reportDate === today) {
-    console.log('🚀 [GOOGLE AI OVERVIEW] Starting Google AI Overview pass for today only')
-    
-    await updateProviderStatus(dailyReport.id, 'google_ai_overview', 'running')
-    
-    googleCounts = await processProviderPrompts(
-      dailyReport.id,
-      activePrompts,
-      brand.name,
-      competitors,
-      'google_ai_overview'
-    )
-    
-    const googleStatus = googleCounts.errors > 0 ? 'failed' : 'complete'
-    await updateProviderStatus(dailyReport.id, 'google_ai_overview', googleStatus, googleCounts)
-    
-    console.log(`✅ [GOOGLE AI OVERVIEW] Pass completed - Status: ${googleStatus}`)
-  } else if (reportDate < today) {
-    console.log(`⏭️ [GOOGLE AI OVERVIEW] Skipping past date (${reportDate})`)
-  } else {
-    console.log('⏭️ [GOOGLE AI OVERVIEW] Pass already complete or expired, skipping')
-  }
+  // PHASE 1: Process Perplexity prompts (Advanced plan only - currently skipped)
+  // Note: Perplexity is reserved for Advanced/Business/Corporate plans
+  console.log('⏭️ [PERPLEXITY] Skipped - Reserved for Advanced plan')
+
+  // PHASE 2: Process Google AI Overview prompts (Advanced plan only - currently skipped)
+  // Note: Google AI Overview is reserved for Advanced/Business/Corporate plans
+  console.log('⏭️ [GOOGLE AI OVERVIEW] Skipped - Reserved for Advanced plan')
 
   // PHASE 3: Update aggregated metrics
   console.log('📊 [AGGREGATION] Calculating aggregated metrics from all providers')
@@ -457,7 +542,8 @@ export const processPromptsForBrand = async (
     totalMentions,
     averagePosition,
     perplexity: perplexityCounts,
-    googleAIOverview: googleCounts
+    googleAIOverview: googleCounts,
+    chatgpt: chatgptCounts
   }
 }
 

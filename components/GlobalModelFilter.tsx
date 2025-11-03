@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useModelFilter } from '@/store/modelFilter'
-import { PROVIDER_DISPLAY_NAMES, ACTIVE_PROVIDERS, Provider } from '@/types/domain/provider'
+import { PROVIDER_DISPLAY_NAMES, ACTIVE_PROVIDERS, LOCKED_PROVIDERS, Provider } from '@/types/domain/provider'
+import { Lock } from 'lucide-react'
 
 export const GlobalModelFilter: React.FC = () => {
   const {
@@ -20,6 +21,7 @@ export const GlobalModelFilter: React.FC = () => {
     toggleModel,
     selectAllModels,
     isModelSelected,
+    isModelLocked,
     getSelectedCount
   } = useModelFilter()
 
@@ -73,6 +75,7 @@ export const GlobalModelFilter: React.FC = () => {
         
         <DropdownMenuSeparator />
         
+        {/* Active providers - ChatGPT only for Basic plan */}
         {ACTIVE_PROVIDERS.map((provider) => {
           const isSelected = isModelSelected(provider)
           const isLastSelected = selectedCount === 1 && isSelected
@@ -90,6 +93,27 @@ export const GlobalModelFilter: React.FC = () => {
             </DropdownMenuCheckboxItem>
           )
         })}
+        
+        {/* Locked providers - Visible but disabled (for Advanced plan) */}
+        {LOCKED_PROVIDERS.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              Advanced Plan Required
+            </div>
+            {LOCKED_PROVIDERS.map((provider) => (
+              <DropdownMenuCheckboxItem
+                key={provider}
+                checked={false}
+                disabled={true}
+                className="opacity-50 cursor-not-allowed"
+              >
+                <Lock className="mr-2 h-3 w-3" />
+                {PROVIDER_DISPLAY_NAMES[provider]}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </>
+        )}
         
         {selectedCount === 1 && (
           <>

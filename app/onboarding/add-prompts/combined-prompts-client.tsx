@@ -100,8 +100,8 @@ export default function CombinedPromptsClient({ brand }: CombinedPromptsClientPr
           
           const toSelect = [
             ...alreadySelected,
-            ...availableForSelection.slice(0, Math.max(0, Math.min(15, data.prompts.length) - alreadySelected.length))
-          ].slice(0, 15)
+            ...availableForSelection.slice(0, Math.max(0, Math.min(10, data.prompts.length) - alreadySelected.length))
+          ].slice(0, 10)
 
           const selectedIds = new Set(toSelect.map(p => p.id))
           setSelectedPrompts(selectedIds)
@@ -174,10 +174,10 @@ export default function CombinedPromptsClient({ brand }: CombinedPromptsClientPr
     const newSelected = new Set(selectedPrompts)
     if (newSelected.has(promptId)) {
       newSelected.delete(promptId)
-    } else if (newSelected.size + customPrompts.length < 15) {
+    } else if (newSelected.size + customPrompts.length < 10) {
       newSelected.add(promptId)
     } else {
-      toast.error('You can select up to 15 total prompts (including custom ones)')
+      toast.error('You can select up to 10 total prompts (including custom ones)')
     }
     setSelectedPrompts(newSelected)
   }
@@ -306,11 +306,11 @@ export default function CombinedPromptsClient({ brand }: CombinedPromptsClientPr
               Review & Select Your Prompts
             </CardTitle>
             <p className="text-sm text-gray-600 mt-2">
-              Select up to 15 prompts total. Generated prompts are ready to use, or add your own custom prompts.
+              Select up to 10 prompts total (Basic plan). Generated prompts are ready to use, or add your own custom prompts.
             </p>
             <div className="flex justify-center mt-4">
               <Badge variant="outline" className="text-sm">
-                {totalSelected}/15 prompts selected
+                {totalSelected}/10 prompts selected
               </Badge>
             </div>
           </CardHeader>

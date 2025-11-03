@@ -19,7 +19,14 @@ export const PROVIDER_DISPLAY_NAMES: Record<Provider, string> = {
   claude: 'Claude'
 }
 
+// CHATGPT-ONLY MODE: Only ChatGPT is active for Basic plan ($30)
+// Perplexity and Google AI Overview are reserved for Advanced/Business/Corporate plans
 export const ACTIVE_PROVIDERS: readonly Provider[] = [
+  'chatgpt'
+] as const
+
+// Future Advanced plan providers (currently locked in UI)
+export const LOCKED_PROVIDERS: readonly Provider[] = [
   'perplexity',
   'google_ai_overview'
 ] as const
