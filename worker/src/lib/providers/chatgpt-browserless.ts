@@ -160,7 +160,7 @@ async function connectToBrowserless(account: ChatGPTAccount): Promise<Browser> {
       path: '/',
       secure: true,
       httpOnly: false,
-      sameSite: 'None' as const,
+      sameSite: 'Lax',
     });
   }
 
@@ -172,7 +172,7 @@ async function connectToBrowserless(account: ChatGPTAccount): Promise<Browser> {
       path: '/',
       secure: true,
       httpOnly: true,
-      sameSite: 'None' as const,
+      sameSite: 'Lax',
     });
   }
 
