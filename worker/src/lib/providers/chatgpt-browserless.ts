@@ -615,13 +615,16 @@ export async function processChatGPTBatchHTTP(
     // Browserless provides 'page' object (Puppeteer API, not Playwright!)
     const puppeteerCode = `
       export default async ({ page, context }) => {
+        // Helper function for waiting (Puppeteer doesn't have waitForTimeout)
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        
         // Inject cookies using Puppeteer API (not context.addCookies!)
         const cookies = ${JSON.stringify(cookies)};
         await page.setCookie(...cookies);
         
         // Navigate to ChatGPT
         await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(2000);
+        await wait(2000);
         
         const results = [];
         const prompts = ${JSON.stringify(prompts)};
@@ -649,14 +652,14 @@ export async function processChatGPTBatchHTTP(
             await page.click('button[data-testid="send-button"]');
             
             // Wait for response to start appearing
-            await page.waitForTimeout(5000);
+            await wait(5000);
             
             // Wait for response to stabilize (stop growing)
             let stable = 0;
             let lastLength = 0;
             
             for (let j = 0; j < 40; j++) {
-              await page.waitForTimeout(1500);
+              await wait(1500);
               
               // Check if assistant messages exist (Puppeteer API)
               const messages = await page.$$('[data-message-author-role="assistant"]');
@@ -688,7 +691,7 @@ export async function processChatGPTBatchHTTP(
             
             if (sourcesButtons.length > 0) {
               await sourcesButtons[0].click();
-              await page.waitForTimeout(2000);
+              await wait(2000);
               
               // Extract citation links from dialog (Puppeteer API)
               const citationLinks = await page.$$eval(
@@ -728,7 +731,7 @@ export async function processChatGPTBatchHTTP(
               const closeButton = await page.$('[role="dialog"] button[aria-label="Close"]');
               if (closeButton) {
                 await closeButton.click();
-                await page.waitForTimeout(500);
+                await wait(500);
               }
             }
             
@@ -740,7 +743,7 @@ export async function processChatGPTBatchHTTP(
             await page.keyboard.press('KeyO');
             await page.keyboard.up('Shift');
             await page.keyboard.up('Control');
-            await page.waitForTimeout(2000);
+            await wait(2000);
             
           } catch (error) {
             result.error = error.message;
