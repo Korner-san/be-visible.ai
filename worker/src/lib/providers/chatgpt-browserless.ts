@@ -833,16 +833,16 @@ export async function processChatGPTBatchAuto(
   prompts: Array<{ id: string; text: string }>,
   reportDate: string
 ): Promise<ChatGPTBatchResult> {
-  const mode = process.env.BROWSERLESS_MODE || 'http';
+  const mode = process.env.BROWSERLESS_MODE || 'websocket';
   
   logger.log(`🔧 Browserless mode: ${mode.toUpperCase()}`);
   
-  if (mode === 'websocket') {
-    logger.log('📡 Using WebSocket connection (for Fly.io / local dev)');
-    return processChatGPTBatch(brandId, prompts, reportDate);
-  } else {
+  if (mode === 'http') {
     logger.log('🌐 Using HTTP API (for Render)');
     return processChatGPTBatchHTTP(brandId, prompts, reportDate);
+  } else {
+    logger.log('📡 Using WebSocket connection (for Fly.io / local dev)');
+    return processChatGPTBatch(brandId, prompts, reportDate);
   }
 }
 
