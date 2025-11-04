@@ -611,13 +611,13 @@ export async function processChatGPTBatchHTTP(
 
     logger.log(`🍪 Prepared ${cookies.length} cookies for authentication`);
 
-    // Create Playwright script for Browserless HTTP API
-    // Browserless provides page and context automatically
-    const playwrightCode = `
+    // Create Puppeteer script for Browserless HTTP API
+    // Browserless provides 'page' object (Puppeteer API, not Playwright!)
+    const puppeteerCode = `
       export default async ({ page, context }) => {
-        // Add cookies
+        // Inject cookies using Puppeteer API (not context.addCookies!)
         const cookies = ${JSON.stringify(cookies)};
-        await context.addCookies(cookies);
+        await page.setCookie(...cookies);
         
         // Navigate to ChatGPT
         await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
@@ -639,56 +639,70 @@ export async function processChatGPTBatchHTTP(
           };
           
           try {
-            // Type prompt
-            const textarea = page.locator('#prompt-textarea').first();
-            await textarea.waitFor({ state: 'visible', timeout: 5000 });
-            await textarea.fill(prompt.text);
+            // Wait for textarea (Puppeteer API)
+            await page.waitForSelector('#prompt-textarea', { visible: true, timeout: 10000 });
             
-            // Send
-            await page.locator('button[data-testid="send-button"]').click();
+            // Type prompt (Puppeteer API)
+            await page.type('#prompt-textarea', prompt.text);
             
-            // Wait for response to complete
+            // Click send button (Puppeteer API)
+            await page.click('button[data-testid="send-button"]');
+            
+            // Wait for response to start appearing
             await page.waitForTimeout(5000);
             
+            // Wait for response to stabilize (stop growing)
             let stable = 0;
             let lastLength = 0;
             
-            for (let j = 0; j < 30; j++) {
-              await page.waitForTimeout(1000);
-              const messages = await page.locator('[data-message-author-role="assistant"]').all();
+            for (let j = 0; j < 40; j++) {
+              await page.waitForTimeout(1500);
               
+              // Check if assistant messages exist (Puppeteer API)
+              const messages = await page.$$('[data-message-author-role="assistant"]');
               if (messages.length === 0) continue;
               
-              const currentLength = (await messages[messages.length - 1]?.textContent() || '').length;
+              // Get text content of last message
+              const lastMessage = messages[messages.length - 1];
+              const currentText = await page.evaluate(el => el.innerText, lastMessage);
+              const currentLength = currentText.length;
               
               if (currentLength === lastLength && currentLength > 0) {
                 stable++;
-                if (stable >= 3) break;
+                if (stable >= 3) break; // Stable for 3 checks = done
               } else {
                 stable = 0;
               }
               lastLength = currentLength;
             }
             
-            // Extract response text
-            const messages = await page.locator('[data-message-author-role="assistant"]').all();
-            const lastMessage = messages[messages.length - 1];
-            result.responseText = await lastMessage?.textContent() || '';
+            // Extract final response text (Puppeteer API)
+            const messages = await page.$$('[data-message-author-role="assistant"]');
+            if (messages.length > 0) {
+              const lastMessage = messages[messages.length - 1];
+              result.responseText = await page.evaluate(el => el.innerText, lastMessage);
+            }
             
-            // Extract citations
-            const sourcesButton = page.locator('button').filter({ hasText: /sources/i }).first();
-            const hasSourcesButton = await sourcesButton.count() > 0;
+            // Extract citations (Puppeteer API with XPath)
+            const sourcesButtons = await page.$x("//button[contains(translate(., 'SOURCES', 'sources'), 'sources')]");
             
-            if (hasSourcesButton) {
-              await sourcesButton.click();
+            if (sourcesButtons.length > 0) {
+              await sourcesButtons[0].click();
               await page.waitForTimeout(2000);
               
-              const citationLinks = await page.locator('[role="dialog"] a[href^="http"]').all();
+              // Extract citation links from dialog (Puppeteer API)
+              const citationLinks = await page.$$eval(
+                '[role="dialog"] a[href^="http"]',
+                links => links.map(link => ({
+                  href: link.href,
+                  text: link.textContent.trim()
+                }))
+              );
               
               for (const link of citationLinks) {
                 try {
-                  let href = await link.getAttribute('href');
-                  const text = (await link.textContent() || '').trim();
+                  let href = link.href;
+                  const text = link.text;
                   
                   // Extract actual URL from ChatGPT redirect
                   if (href && href.includes('chatgpt.com/link')) {
@@ -710,9 +724,9 @@ export async function processChatGPTBatchHTTP(
                 }
               }
               
-              // Close the Links panel
-              const closeButton = page.locator('[role="dialog"] button[aria-label="Close"]').first();
-              if (await closeButton.count() > 0) {
+              // Close the Links panel (Puppeteer API)
+              const closeButton = await page.$('[role="dialog"] button[aria-label="Close"]');
+              if (closeButton) {
                 await closeButton.click();
                 await page.waitForTimeout(500);
               }
@@ -720,8 +734,12 @@ export async function processChatGPTBatchHTTP(
             
             result.success = true;
             
-            // Start new conversation for next prompt (Ctrl+Shift+O)
-            await page.keyboard.press('Control+Shift+KeyO');
+            // Start new conversation for next prompt (keyboard shortcut)
+            await page.keyboard.down('Control');
+            await page.keyboard.down('Shift');
+            await page.keyboard.press('KeyO');
+            await page.keyboard.up('Shift');
+            await page.keyboard.up('Control');
             await page.waitForTimeout(2000);
             
           } catch (error) {
@@ -731,7 +749,7 @@ export async function processChatGPTBatchHTTP(
           results.push(result);
         }
         
-        // Browserless manages browser cleanup automatically
+        // Return results (Browserless handles cleanup)
         return results;
       };
     `;
@@ -746,7 +764,7 @@ export async function processChatGPTBatchHTTP(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        code: playwrightCode,
+        code: puppeteerCode,
         context: {
           timeout: 300000, // 5 minutes
         },
