@@ -7,7 +7,7 @@
 import { createServiceClient } from '../lib/supabase-client'
 import { callPerplexityAPI, extractPerplexityContent, extractPerplexityCitations } from '../lib/providers/perplexity'
 import { callGoogleAIOverviewAPI, extractGoogleContent, extractGoogleCitations, hasGoogleResults } from '../lib/providers/google-ai-overview'
-import { processChatGPTBatchAuto as processChatGPTBatch } from '../lib/providers/chatgpt-browserless'
+import { processChatGPTBatch } from '../lib/providers/chatgpt-browserless'
 
 // CHATGPT-ONLY MODE: Basic plan supports 10 active prompts with ChatGPT
 const MAX_ACTIVE_PROMPTS = 10
