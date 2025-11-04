@@ -612,18 +612,12 @@ export async function processChatGPTBatchHTTP(
     logger.log(`🍪 Prepared ${cookies.length} cookies for authentication`);
 
     // Create Playwright script for Browserless HTTP API
+    // Browserless provides page and context automatically
     const playwrightCode = `
-      const { chromium } = require('playwright');
-      
-      module.exports = async () => {
-        const browser = await chromium.launch({ headless: true });
-        const context = await browser.newContext();
-        
+      export default async ({ page, context }) => {
         // Add cookies
         const cookies = ${JSON.stringify(cookies)};
         await context.addCookies(cookies);
-        
-        const page = await context.newPage();
         
         // Navigate to ChatGPT
         await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
@@ -737,7 +731,7 @@ export async function processChatGPTBatchHTTP(
           results.push(result);
         }
         
-        await browser.close();
+        // Browserless manages browser cleanup automatically
         return results;
       };
     `;
