@@ -20,14 +20,39 @@ export const createServiceClient = () => {
     throw new Error('Missing Supabase environment variables')
   }
 
-  supabaseServiceClient = createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  })
+  console.log('🔧 [SUPABASE CLIENT] Creating Supabase client...')
+  console.log('🔧 [SUPABASE CLIENT] URL:', supabaseUrl)
+  console.log('🔧 [SUPABASE CLIENT] Key present:', !!supabaseServiceRoleKey)
+  console.log('🔧 [SUPABASE CLIENT] Key length:', supabaseServiceRoleKey.length)
 
-  return supabaseServiceClient
+  try {
+    supabaseServiceClient = createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      },
+      global: {
+        fetch: (...args) => {
+          console.log('🌐 [SUPABASE FETCH] Request:', args[0])
+          return fetch(...args).catch((error) => {
+            console.error('❌ [SUPABASE FETCH] Error:', {
+              message: error.message,
+              code: error.code,
+              cause: error.cause,
+              stack: error.stack
+            })
+            throw error
+          })
+        }
+      }
+    })
+
+    console.log('✅ [SUPABASE CLIENT] Client created successfully')
+    return supabaseServiceClient
+  } catch (error) {
+    console.error('❌ [SUPABASE CLIENT] Failed to create client:', error)
+    throw error
+  }
 }
 
 
