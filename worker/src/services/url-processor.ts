@@ -37,6 +37,13 @@ const extractUrlsFromResults = (results: any[]): string[] => {
         if (citation.url) urlSet.add(citation.url)
       })
     }
+    
+    // Extract from ChatGPT citations (stored as array of URL strings)
+    if (result.chatgpt_citations && Array.isArray(result.chatgpt_citations)) {
+      result.chatgpt_citations.forEach((citation: string) => {
+        if (citation) urlSet.add(citation)
+      })
+    }
   })
   
   return Array.from(urlSet)

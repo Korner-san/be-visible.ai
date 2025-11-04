@@ -510,4 +510,325 @@ export async function saveChatGPTResults(
   logger.log('✅ All results saved', 'SUCCESS');
 }
 
+// ============================================================================
+// HTTP API VERSION (FOR RENDER - NO WEBSOCKET)
+// ============================================================================
+
+/**
+ * Process ChatGPT batch using Browserless HTTP API
+ * This version sends Playwright code as a string to Browserless
+ * Works on Render (no WebSocket required)
+ */
+export async function processChatGPTBatchHTTP(
+  brandId: string,
+  prompts: Array<{ id: string; text: string }>,
+  reportDate: string
+): Promise<ChatGPTBatchResult> {
+  logger.log('═'.repeat(60));
+  logger.log('🚀 CHATGPT BATCH PROCESSING (HTTP MODE)');
+  logger.log('═'.repeat(60));
+  logger.startTimer('total_batch');
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const batchResult: ChatGPTBatchResult = {
+    brandId,
+    reportDate,
+    totalPrompts: prompts.length,
+    successfulPrompts: 0,
+    totalCitations: 0,
+    results: [],
+    totalTimeMs: 0,
+  };
+
+  try {
+    // Load ChatGPT account from Supabase
+    logger.log('📊 Loading ChatGPT account from Supabase...');
+    const { data: account, error: accountError } = await supabase
+      .from('chatgpt_accounts')
+      .select('*')
+      .eq('status', 'active')
+      .limit(1)
+      .single();
+
+    if (accountError || !account) {
+      throw new Error(`No active ChatGPT account found: ${accountError?.message}`);
+    }
+
+    logger.log(`✅ Loaded: ${account.display_name || account.email} (${account.email})`, 'SUCCESS');
+
+    // Prepare cookies from account
+    const cookies = [
+      {
+        name: '__Secure-next-auth.session-token',
+        value: account.session_token,
+        domain: '.chatgpt.com',
+        path: '/',
+        secure: true,
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ];
+
+    if (account.csrf_token) {
+      cookies.push({
+        name: '__Host-next-auth.csrf-token',
+        value: account.csrf_token,
+        domain: 'chatgpt.com',
+        path: '/',
+        secure: true,
+        httpOnly: true,
+        sameSite: 'Lax',
+      });
+    }
+
+    if (account.auth_info) {
+      cookies.push({
+        name: 'oai-client-auth-info',
+        value: account.auth_info,
+        domain: '.chatgpt.com',
+        path: '/',
+        secure: true,
+        httpOnly: false,
+        sameSite: 'Lax',
+      });
+    }
+
+    if (account.cloudflare_clearance) {
+      cookies.push({
+        name: 'cf_clearance',
+        value: account.cloudflare_clearance,
+        domain: '.chatgpt.com',
+        path: '/',
+        secure: true,
+        httpOnly: true,
+        sameSite: 'Lax',
+      });
+    }
+
+    logger.log(`🍪 Prepared ${cookies.length} cookies for authentication`);
+
+    // Create Playwright script for Browserless HTTP API
+    const playwrightCode = `
+      const { chromium } = require('playwright');
+      
+      module.exports = async () => {
+        const browser = await chromium.launch({ headless: true });
+        const context = await browser.newContext();
+        
+        // Add cookies
+        const cookies = ${JSON.stringify(cookies)};
+        await context.addCookies(cookies);
+        
+        const page = await context.newPage();
+        
+        // Navigate to ChatGPT
+        await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(2000);
+        
+        const results = [];
+        const prompts = ${JSON.stringify(prompts)};
+        
+        // Process each prompt
+        for (let i = 0; i < prompts.length; i++) {
+          const prompt = prompts[i];
+          const result = {
+            promptId: prompt.id,
+            promptText: prompt.text,
+            responseText: '',
+            citations: [],
+            success: false,
+            error: null
+          };
+          
+          try {
+            // Type prompt
+            const textarea = page.locator('#prompt-textarea').first();
+            await textarea.waitFor({ state: 'visible', timeout: 5000 });
+            await textarea.fill(prompt.text);
+            
+            // Send
+            await page.locator('button[data-testid="send-button"]').click();
+            
+            // Wait for response to complete
+            await page.waitForTimeout(5000);
+            
+            let stable = 0;
+            let lastLength = 0;
+            
+            for (let j = 0; j < 30; j++) {
+              await page.waitForTimeout(1000);
+              const messages = await page.locator('[data-message-author-role="assistant"]').all();
+              
+              if (messages.length === 0) continue;
+              
+              const currentLength = (await messages[messages.length - 1]?.textContent() || '').length;
+              
+              if (currentLength === lastLength && currentLength > 0) {
+                stable++;
+                if (stable >= 3) break;
+              } else {
+                stable = 0;
+              }
+              lastLength = currentLength;
+            }
+            
+            // Extract response text
+            const messages = await page.locator('[data-message-author-role="assistant"]').all();
+            const lastMessage = messages[messages.length - 1];
+            result.responseText = await lastMessage?.textContent() || '';
+            
+            // Extract citations
+            const sourcesButton = page.locator('button').filter({ hasText: /sources/i }).first();
+            const hasSourcesButton = await sourcesButton.count() > 0;
+            
+            if (hasSourcesButton) {
+              await sourcesButton.click();
+              await page.waitForTimeout(2000);
+              
+              const citationLinks = await page.locator('[role="dialog"] a[href^="http"]').all();
+              
+              for (const link of citationLinks) {
+                try {
+                  let href = await link.getAttribute('href');
+                  const text = (await link.textContent() || '').trim();
+                  
+                  // Extract actual URL from ChatGPT redirect
+                  if (href && href.includes('chatgpt.com/link')) {
+                    const url = new URL(href);
+                    const actualUrl = url.searchParams.get('url');
+                    if (actualUrl) href = actualUrl;
+                  }
+                  
+                  if (href) {
+                    const urlObj = new URL(href);
+                    const domain = urlObj.hostname;
+                    
+                    if (!domain.includes('chatgpt.com') && text.length > 0) {
+                      result.citations.push({ url: href, title: text });
+                    }
+                  }
+                } catch (e) {
+                  // Skip invalid links
+                }
+              }
+              
+              // Close the Links panel
+              const closeButton = page.locator('[role="dialog"] button[aria-label="Close"]').first();
+              if (await closeButton.count() > 0) {
+                await closeButton.click();
+                await page.waitForTimeout(500);
+              }
+            }
+            
+            result.success = true;
+            
+            // Start new conversation for next prompt (Ctrl+Shift+O)
+            await page.keyboard.press('Control+Shift+KeyO');
+            await page.waitForTimeout(2000);
+            
+          } catch (error) {
+            result.error = error.message;
+          }
+          
+          results.push(result);
+        }
+        
+        await browser.close();
+        return results;
+      };
+    `;
+
+    // Call Browserless HTTP API
+    logger.log('🌐 Sending function to Browserless HTTP API...');
+    const browserlessUrl = `https://production-sfo.browserless.io/function?token=${CONFIG.browserless.token}`;
+    
+    const response = await fetch(browserlessUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code: playwrightCode,
+        context: {
+          timeout: 300000, // 5 minutes
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Browserless HTTP API error (${response.status}): ${errorText}`);
+    }
+
+    logger.log('✅ Browserless HTTP API call successful');
+    
+    const httpResults = await response.json() as any[];
+    logger.log(`📦 Received ${httpResults.length} results from Browserless`);
+
+    // Parse results
+    for (const httpResult of httpResults) {
+      const result: ChatGPTPromptResult = {
+        promptId: httpResult.promptId,
+        promptText: httpResult.promptText,
+        responseText: httpResult.responseText,
+        citations: httpResult.citations,
+        timeMs: 0,
+        success: httpResult.success,
+        error: httpResult.error,
+      };
+
+      batchResult.results.push(result);
+      if (result.success) {
+        batchResult.successfulPrompts++;
+        batchResult.totalCitations += result.citations.length;
+      }
+    }
+
+    batchResult.totalTimeMs = logger.endTimer('total_batch');
+
+    logger.log('');
+    logger.log('═'.repeat(60), 'SUCCESS');
+    logger.log('✅ HTTP BATCH PROCESSING COMPLETED', 'SUCCESS');
+    logger.log('═'.repeat(60), 'SUCCESS');
+    logger.log(`📊 Prompts Processed: ${batchResult.successfulPrompts}/${batchResult.totalPrompts}`, 'SUCCESS');
+    logger.log(`📚 Total Citations: ${batchResult.totalCitations}`, 'SUCCESS');
+    logger.log(`⏱️  Total Time: ${batchResult.totalTimeMs}ms`, 'SUCCESS');
+
+    return batchResult;
+  } catch (error) {
+    logger.log(`❌ HTTP BATCH PROCESSING FAILED: ${(error as Error).message}`, 'ERROR');
+    throw error;
+  }
+}
+
+// ============================================================================
+// MODE SWITCHING WRAPPER
+// ============================================================================
+
+/**
+ * Main export - switches between WebSocket and HTTP based on env var
+ * Default: HTTP (for Render compatibility)
+ */
+export async function processChatGPTBatchAuto(
+  brandId: string,
+  prompts: Array<{ id: string; text: string }>,
+  reportDate: string
+): Promise<ChatGPTBatchResult> {
+  const mode = process.env.BROWSERLESS_MODE || 'http';
+  
+  logger.log(`🔧 Browserless mode: ${mode.toUpperCase()}`);
+  
+  if (mode === 'websocket') {
+    logger.log('📡 Using WebSocket connection (for Fly.io / local dev)');
+    return processChatGPTBatch(brandId, prompts, reportDate);
+  } else {
+    logger.log('🌐 Using HTTP API (for Render)');
+    return processChatGPTBatchHTTP(brandId, prompts, reportDate);
+  }
+}
+
 
