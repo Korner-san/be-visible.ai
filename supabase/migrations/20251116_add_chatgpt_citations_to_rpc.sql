@@ -76,29 +76,20 @@ BEGIN
     UNION ALL
     
     -- Extract citations from ChatGPT (NEW)
+    -- Note: chatgpt_citations is stored as text[] array, not jsonb
     SELECT 
       pr.id as result_id,
       pr.brand_prompt_id,
       pr.provider,
       pr.created_at,
-      -- ChatGPT citations are stored as plain URL strings or objects with 'url' field
-      CASE 
-        WHEN jsonb_typeof(citation) = 'string' THEN normalize_url(citation#>>'{}')
-        ELSE normalize_url(citation->>'url')
-      END as normalized_url,
-      CASE 
-        WHEN jsonb_typeof(citation) = 'string' THEN citation#>>'{}'
-        ELSE citation->>'url'
-      END as original_url,
-      CASE 
-        WHEN jsonb_typeof(citation) = 'object' THEN citation->>'title'
-        ELSE NULL
-      END as title
+      normalize_url(citation_url) as normalized_url,
+      citation_url as original_url,
+      NULL::text as title
     FROM prompt_results pr
-    CROSS JOIN jsonb_array_elements(pr.chatgpt_citations) AS citation
+    CROSS JOIN unnest(pr.chatgpt_citations) AS citation_url
     WHERE pr.provider = 'chatgpt'
       AND pr.chatgpt_citations IS NOT NULL
-      AND jsonb_array_length(pr.chatgpt_citations) > 0
+      AND array_length(pr.chatgpt_citations, 1) > 0
       AND pr.daily_report_id IN (
         SELECT dr.id 
         FROM daily_reports dr
