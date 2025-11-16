@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit
     
     // Parse model filter - default to all active providers if not specified
-    const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
+    const selectedModels = modelsParam ? modelsParam.split(',') : [...ACTIVE_PROVIDERS]
     
     if (!brandId) {
       return NextResponse.json({

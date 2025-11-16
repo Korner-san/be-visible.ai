@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 /**
  * GET /api/reports/citations/urls
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     console.log('🚨 [URLs API] Request params:', { brandId, domain, fromDate, toDate, modelsParam })
     
     // Parse model filter
-    const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
+    const selectedModels = modelsParam ? modelsParam.split(',') : [...ACTIVE_PROVIDERS]
     
     console.log('🔍 [Citations URLs API] Request:', { 
       brandId, 

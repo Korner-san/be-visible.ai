@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 /**
  * GET /api/reports/visibility/brand-citations
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const modelsParam = searchParams.get('models')
     
     // Parse model filter
-    const selectedModels = modelsParam ? modelsParam.split(',') : ['perplexity', 'google_ai_overview']
+    const selectedModels = modelsParam ? modelsParam.split(',') : [...ACTIVE_PROVIDERS]
     
     console.log('🔍 [Brand Citations API] Request:', { 
       brandId, 
