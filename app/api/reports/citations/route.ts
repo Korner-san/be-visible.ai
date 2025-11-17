@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
         citations,
         claude_citations,
         google_ai_overview_citations,
+        chatgpt_citations,
         brand_mentioned,
         created_at,
         daily_reports!inner(
@@ -111,54 +112,73 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Flatten all citations from all prompt results
+    // Flatten all citations from all prompt results (provider-aware)
     const allCitations: any[] = []
     const domainStats = new Map()
 
     promptResults?.forEach(result => {
-      if (result.citations && Array.isArray(result.citations)) {
-        result.citations.forEach((citation: any) => {
-          // Extract domain from URL
-          let domain = 'unknown'
-          try {
-            const url = new URL(citation.url)
-            domain = url.hostname.replace('www.', '')
-          } catch (e) {
-            // If URL parsing fails, try to extract domain manually
-            const match = citation.url.match(/https?:\/\/(?:www\.)?([^\/]+)/)
-            if (match) domain = match[1]
-          }
-
-          // Add citation with metadata
-          allCitations.push({
-            url: citation.url,
-            title: citation.title || 'Untitled',
-            domain: domain,
-            date: citation.date,
-            last_updated: citation.last_updated,
-            snippet: citation.snippet || '',
-            prompt_text: result.prompt_text,
-            brand_mentioned: result.brand_mentioned,
-            report_date: result.daily_reports.report_date,
-            created_at: result.created_at
-          })
-
-          // Update domain statistics
-          if (domainStats.has(domain)) {
-            const stats = domainStats.get(domain)
-            stats.urls += 1
-            if (result.brand_mentioned) stats.brandMentions += 1
-          } else {
-            domainStats.set(domain, {
-              domain: domain,
-              urls: 1,
-              brandMentions: result.brand_mentioned ? 1 : 0,
-              category: categorizeWebsite(domain),
-              lastSeen: result.daily_reports.report_date
-            })
-          }
-        })
+      let citationUrls: string[] = []
+      
+      // Extract citations based on provider
+      if (result.provider === 'perplexity' && result.citations && Array.isArray(result.citations)) {
+        citationUrls = result.citations.map((c: any) => c.url).filter(Boolean)
+      } else if (result.provider === 'google_ai_overview' && result.google_ai_overview_citations && Array.isArray(result.google_ai_overview_citations)) {
+        citationUrls = result.google_ai_overview_citations.map((c: any) => c.url).filter(Boolean)
+      } else if (result.provider === 'chatgpt') {
+        // ChatGPT citations are stored as plain URL strings or objects
+        const chatgptCitations = (result as any).chatgpt_citations || []
+        if (Array.isArray(chatgptCitations)) {
+          citationUrls = chatgptCitations.map((c: any) => {
+            if (typeof c === 'string') return c
+            if (c && typeof c === 'object' && c.url) return c.url
+            return null
+          }).filter(Boolean)
+        }
       }
+      
+      // Process each citation URL
+      citationUrls.forEach((url: string) => {
+        // Extract domain from URL
+        let domain = 'unknown'
+        try {
+          const urlObj = new URL(url)
+          domain = urlObj.hostname.replace('www.', '')
+        } catch (e) {
+          // If URL parsing fails, try to extract domain manually
+          const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/)
+          if (match) domain = match[1]
+        }
+
+        // Add citation with metadata
+        allCitations.push({
+          url: url,
+          title: 'Untitled', // ChatGPT doesn't provide titles in citations
+          domain: domain,
+          date: result.daily_reports.report_date,
+          last_updated: result.created_at,
+          snippet: '',
+          prompt_text: result.prompt_text,
+          brand_mentioned: result.brand_mentioned,
+          report_date: result.daily_reports.report_date,
+          created_at: result.created_at,
+          provider: result.provider
+        })
+
+        // Update domain statistics
+        if (domainStats.has(domain)) {
+          const stats = domainStats.get(domain)
+          stats.urls += 1
+          if (result.brand_mentioned) stats.brandMentions += 1
+        } else {
+          domainStats.set(domain, {
+            domain: domain,
+            urls: 1,
+            brandMentions: result.brand_mentioned ? 1 : 0,
+            category: categorizeWebsite(domain),
+            lastSeen: result.daily_reports.report_date
+          })
+        }
+      })
     })
 
     // Sort citations by date (most recent first)
