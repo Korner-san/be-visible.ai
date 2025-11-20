@@ -19,11 +19,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    if (selectedPromptIds.length === 0 || selectedPromptIds.length > 15) {
+    if (selectedPromptIds.length === 0 || selectedPromptIds.length > 10) {
       console.error('❌ [SELECT PROMPTS] Invalid prompt count:', selectedPromptIds.length)
       return NextResponse.json({
         success: false,
-        error: 'Between 1 and 15 prompts must be selected'
+        error: 'Between 1 and 10 prompts must be selected'
       }, { status: 400 })
     }
 
@@ -135,16 +135,16 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Verify exactly 15 prompts were updated
-    if (!updatedPrompts || updatedPrompts.length !== 15) {
-      console.error('Unexpected number of prompts updated:', updatedPrompts?.length)
+    // Verify all selected prompts were updated
+    if (!updatedPrompts || updatedPrompts.length !== selectedPromptIds.length) {
+      console.error('Unexpected number of prompts updated. Expected:', selectedPromptIds.length, 'Got:', updatedPrompts?.length)
       return NextResponse.json({
         success: false,
         error: 'Failed to update all selected prompts'
       }, { status: 500 })
     }
 
-    console.log('✅ [SELECT PROMPTS] Successfully selected 15 prompts for brand:', brand.name)
+    console.log(`✅ [SELECT PROMPTS] Successfully selected ${updatedPrompts.length} prompts for brand:`, brand.name)
     console.log('📊 [SELECT PROMPTS] Selected prompts:', updatedPrompts.map(p => p.source_template_code).sort())
 
     return NextResponse.json({
