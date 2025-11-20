@@ -5,7 +5,14 @@ export async function POST(request: NextRequest) {
   try {
     const { brandId, selectedPromptIds } = await request.json()
 
+    console.log('🔄 [SELECT PROMPTS] Received request')
+    console.log('🔄 [SELECT PROMPTS] brandId:', brandId)
+    console.log('🔄 [SELECT PROMPTS] selectedPromptIds:', selectedPromptIds)
+    console.log('🔄 [SELECT PROMPTS] selectedPromptIds type:', typeof selectedPromptIds)
+    console.log('🔄 [SELECT PROMPTS] selectedPromptIds length:', selectedPromptIds?.length)
+
     if (!brandId || !selectedPromptIds || !Array.isArray(selectedPromptIds)) {
+      console.error('❌ [SELECT PROMPTS] Invalid request data')
       return NextResponse.json({
         success: false,
         error: 'Brand ID and selected prompt IDs are required'
@@ -13,6 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (selectedPromptIds.length === 0 || selectedPromptIds.length > 15) {
+      console.error('❌ [SELECT PROMPTS] Invalid prompt count:', selectedPromptIds.length)
       return NextResponse.json({
         success: false,
         error: 'Between 1 and 15 prompts must be selected'
@@ -24,6 +32,7 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError || !user) {
+      console.error('❌ [SELECT PROMPTS] Auth error:', authError)
       return NextResponse.json({
         success: false,
         error: 'Unauthorized'
@@ -55,25 +64,38 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Verify all selected prompts belong to this brand and are in improved status
+    // Verify all selected prompts belong to this brand
+    console.log('🔄 [SELECT PROMPTS] Verifying prompts exist in database...')
+    console.log('🔄 [SELECT PROMPTS] Querying for brand_id:', brandId)
+    console.log('🔄 [SELECT PROMPTS] Looking for prompt IDs:', selectedPromptIds)
+    
     const { data: existingPrompts, error: promptsError } = await supabase
       .from('brand_prompts')
       .select('id, status')
       .eq('brand_id', brandId)
       .in('id', selectedPromptIds)
 
+    console.log('🔄 [SELECT PROMPTS] Query result - error:', promptsError)
+    console.log('🔄 [SELECT PROMPTS] Query result - data:', existingPrompts)
+    console.log('🔄 [SELECT PROMPTS] Found prompts count:', existingPrompts?.length)
+
     if (promptsError) {
-      console.error('Error verifying prompts:', promptsError)
+      console.error('❌ [SELECT PROMPTS] Database error verifying prompts:', promptsError)
+      console.error('❌ [SELECT PROMPTS] Error details:', JSON.stringify(promptsError, null, 2))
       return NextResponse.json({
         success: false,
-        error: 'Failed to verify selected prompts'
+        error: 'Failed to verify selected prompts: ' + (promptsError.message || 'Unknown error')
       }, { status: 500 })
     }
 
     if (!existingPrompts || existingPrompts.length !== selectedPromptIds.length) {
+      console.error('❌ [SELECT PROMPTS] Prompt count mismatch')
+      console.error('❌ [SELECT PROMPTS] Expected:', selectedPromptIds.length)
+      console.error('❌ [SELECT PROMPTS] Found:', existingPrompts?.length)
+      console.error('❌ [SELECT PROMPTS] Missing prompts:', selectedPromptIds.filter(id => !existingPrompts?.find(p => p.id === id)))
       return NextResponse.json({
         success: false,
-        error: 'Some selected prompts are invalid or do not belong to this brand'
+        error: `Some selected prompts are invalid or do not belong to this brand (found ${existingPrompts?.length || 0} of ${selectedPromptIds.length})`
       }, { status: 400 })
     }
 
