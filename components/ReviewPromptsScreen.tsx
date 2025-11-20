@@ -54,9 +54,9 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
           // Set system prompts (generated from onboarding answers)
           setSystemPrompts(data.systemPrompts || [])
           
-          // Pre-select recommended prompts (first 15 by ID)
+          // Pre-select recommended prompts (first 10 by ID)
           const recommendedPromptIds = (data.systemPrompts || [])
-            .slice(0, 15)
+            .slice(0, 10)
             .map((p: PromptOption) => p.id)
             .filter(Boolean)
           setSelectedPrompts(new Set(recommendedPromptIds))
