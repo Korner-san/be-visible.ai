@@ -31,7 +31,7 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [brandId, setBrandId] = useState<string>('')
-  const maxSelections = 15
+  const maxSelections = 10
   const router = useRouter()
 
   // Load prompts from the server

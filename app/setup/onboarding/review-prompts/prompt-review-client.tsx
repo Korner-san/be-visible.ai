@@ -273,11 +273,11 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
     console.log('🔄 [CLIENT] Complete button clicked')
     console.log('🔄 [CLIENT] Timestamp:', new Date().toISOString())
     
-    if (selectedPrompts.size < 15) {
+    if (selectedPrompts.size < 10) {
       console.log('❌ [CLIENT] Not enough prompts selected:', selectedPrompts.size)
       toast({
         title: "Selection Required",
-        description: "Please select at least 15 prompts to continue",
+        description: "Please select at least 10 prompts to continue",
         variant: "destructive"
       })
       return
@@ -422,9 +422,9 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
             </CardTitle>
             <CardDescription>
               {selectedPrompts.size} of {prompts.length} prompts selected 
-              {selectedPrompts.size < 15 && (
+              {selectedPrompts.size < 10 && (
                 <span className="text-red-600 ml-2">
-                  (minimum 15 required)
+                  (minimum 10 required)
                 </span>
               )}
             </CardDescription>
@@ -542,7 +542,7 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
         <div className="flex justify-end">
           <Button
             onClick={completeOnboarding}
-            disabled={completing || selectedPrompts.size < 15}
+            disabled={completing || selectedPrompts.size < 10}
             size="lg"
             className="bg-primary hover:bg-primary/90"
           >
