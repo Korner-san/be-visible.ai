@@ -43,17 +43,25 @@ export async function GET(request: NextRequest) {
       .select('*')
       .order('created_at', { ascending: true })
 
-    let systemPrompts: string[] = []
+    let systemPrompts: Array<{ id: string; text: string; improved?: string }> = []
     
     if (prompts && prompts.length > 0) {
-      // Use generated prompts
-      systemPrompts = prompts.map(p => p.raw_prompt).filter(Boolean)
+      // Use generated prompts with IDs
+      systemPrompts = prompts.map(p => ({
+        id: p.id,
+        text: p.improved_prompt || p.raw_prompt,
+        improved: p.improved_prompt
+      })).filter(p => p.text)
     } else if (templates && templates.length > 0) {
-      // Use template prompts as fallback
-      systemPrompts = templates.map(t => t.template).filter(Boolean)
+      // Use template prompts as fallback (no IDs available, will need to be created)
+      systemPrompts = templates.map(t => ({
+        id: t.id || '',
+        text: t.template || '',
+        improved: t.template
+      })).filter(p => p.text)
     } else {
-      // Fallback to some default prompts
-      systemPrompts = [
+      // Fallback to some default prompts (no IDs, will be created)
+      const defaultPrompts = [
         "What are the best {brandName} alternatives?",
         "How does {brandName} compare to competitors?",
         "What are the main features of {brandName}?",
@@ -70,10 +78,16 @@ export async function GET(request: NextRequest) {
         "How to get started with {brandName}?",
         "What makes {brandName} different?"
       ]
+      systemPrompts = defaultPrompts.map(text => ({
+        id: '',
+        text,
+        improved: text
+      }))
     }
 
     return NextResponse.json({
       success: true,
+      brandId: brand.id,
       customPrompts: [], // User can add custom prompts
       systemPrompts: systemPrompts
     })

@@ -16,14 +16,21 @@ interface ReviewPromptsScreenProps {
   progress: number
 }
 
+interface PromptOption {
+  id: string
+  text: string
+  improved?: string
+}
+
 export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalSteps, progress }: ReviewPromptsScreenProps) {
   const [customPrompts, setCustomPrompts] = useState<string[]>([])
-  const [systemPrompts, setSystemPrompts] = useState<string[]>([])
+  const [systemPrompts, setSystemPrompts] = useState<PromptOption[]>([])
   const [newPrompt, setNewPrompt] = useState("")
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [brandId, setBrandId] = useState<string>('')
   const maxSelections = 15
   const router = useRouter()
 
@@ -38,15 +45,21 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
         const data = await response.json()
         
         if (data.success) {
+          // Store brandId
+          setBrandId(data.brandId)
+          
           // Set custom prompts (user can add more)
           setCustomPrompts(data.customPrompts || [])
           
           // Set system prompts (generated from onboarding answers)
           setSystemPrompts(data.systemPrompts || [])
           
-          // Pre-select recommended prompts (first 15)
-          const recommendedPrompts = (data.systemPrompts || []).slice(0, 15)
-          setSelectedPrompts(new Set(recommendedPrompts))
+          // Pre-select recommended prompts (first 15 by ID)
+          const recommendedPromptIds = (data.systemPrompts || [])
+            .slice(0, 15)
+            .map((p: PromptOption) => p.id)
+            .filter(Boolean)
+          setSelectedPrompts(new Set(recommendedPromptIds))
         }
       } catch (error) {
         console.error('Error loading prompts:', error)
@@ -71,12 +84,12 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
     }
   }
 
-  const togglePrompt = (prompt: string) => {
+  const togglePrompt = (promptId: string) => {
     const newSelected = new Set(selectedPrompts)
-    if (newSelected.has(prompt)) {
-      newSelected.delete(prompt)
+    if (newSelected.has(promptId)) {
+      newSelected.delete(promptId)
     } else if (newSelected.size < maxSelections) {
-      newSelected.add(prompt)
+      newSelected.add(promptId)
     }
     setSelectedPrompts(newSelected)
   }
@@ -84,31 +97,57 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
   const handleComplete = async () => {
     try {
       setIsSubmitting(true)
+      setError(null)
       
-      // Step 1: Save selected prompts and complete onboarding
-      const response = await fetch('/api/onboarding/save-prompts', {
+      console.log('🔄 [ReviewPromptsScreen] Starting completion...')
+      console.log('🔄 [ReviewPromptsScreen] BrandId:', brandId)
+      console.log('🔄 [ReviewPromptsScreen] Selected prompt IDs:', Array.from(selectedPrompts))
+      
+      // Step 1: Save selected prompt IDs by activating them
+      const selectResponse = await fetch('/api/onboarding/prompts/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selectedPrompts: Array.from(selectedPrompts) })
+        body: JSON.stringify({ 
+          brandId: brandId,
+          selectedPromptIds: Array.from(selectedPrompts)
+        })
       })
       
-      const data = await response.json()
+      const selectData = await selectResponse.json()
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save prompts')
+      if (!selectResponse.ok) {
+        console.error('❌ [ReviewPromptsScreen] Select failed:', selectData)
+        throw new Error(selectData.error || 'Failed to save prompt selections')
       }
       
-      // Step 2: Navigate to loading page which will determine the final destination
-      router.push('/loading')
+      console.log('✅ [ReviewPromptsScreen] Prompts selected successfully:', selectData)
+      
+      // Step 2: Complete onboarding
+      const completeResponse = await fetch('/api/onboarding/complete-final', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      const completeData = await completeResponse.json()
+      
+      if (!completeResponse.ok) {
+        console.error('❌ [ReviewPromptsScreen] Complete failed:', completeData)
+        throw new Error(completeData.error || 'Failed to complete onboarding')
+      }
+      
+      console.log('✅ [ReviewPromptsScreen] Onboarding completed successfully')
+      
+      // Step 3: Navigate to loading/finishing page
+      router.push('/finishing')
       
     } catch (error) {
-      console.error('Error completing onboarding:', error)
+      console.error('❌ [ReviewPromptsScreen] Error:', error)
       setError(error instanceof Error ? error.message : 'Failed to complete onboarding. Please try again.')
       setIsSubmitting(false)
     }
   }
 
-  const isSelected = (prompt: string) => selectedPrompts.has(prompt)
+  const isSelected = (promptId: string) => selectedPrompts.has(promptId)
   const canSelect = selectedPrompts.size < maxSelections
 
   if (isLoading) {
@@ -206,19 +245,19 @@ export function ReviewPromptsScreen({ onComplete, onBack, currentStep, totalStep
             </div>
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
               {systemPrompts.map((prompt, index) => (
-                <div key={`system-${index}`} className="relative pl-8">
+                <div key={`system-${prompt.id || index}`} className="relative pl-8">
                   {index < 15 && (
                     <div className="absolute left-2 top-4 w-3 h-3 bg-yellow-400 rounded-full animate-pulse shadow-lg"></div>
                   )}
                   <Card
                     className={`p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                      isSelected(prompt)
+                      isSelected(prompt.id)
                         ? "border-primary bg-primary/5 shadow-sm"
                         : "border-border hover:border-primary/50"
-                    } ${!canSelect && !isSelected(prompt) ? "opacity-50 cursor-not-allowed" : ""}`}
-                    onClick={() => togglePrompt(prompt)}
+                    } ${!canSelect && !isSelected(prompt.id) ? "opacity-50 cursor-not-allowed" : ""}`}
+                    onClick={() => togglePrompt(prompt.id)}
                   >
-                    <p className="text-sm text-foreground leading-relaxed">{prompt}</p>
+                    <p className="text-sm text-foreground leading-relaxed">{prompt.text}</p>
                   </Card>
                 </div>
               ))}
