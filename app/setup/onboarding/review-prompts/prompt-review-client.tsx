@@ -42,6 +42,7 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
   const [improvingPrompts, setImprovingPrompts] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
   const [brandName, setBrandName] = useState('')
+  const [brandId, setBrandId] = useState<string>('')
 
   // Load prompts on component mount
   useEffect(() => {
@@ -57,6 +58,7 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
       if (data.success) {
         setPrompts(data.prompts)
         setBrandName(data.brandName)
+        setBrandId(data.brandId)
         
         // Auto-select improved prompts by default
         const improvedPromptIds = data.prompts
@@ -227,6 +229,7 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          brandId,
           selectedPromptIds: Array.from(selectedPrompts)
         })
       })
