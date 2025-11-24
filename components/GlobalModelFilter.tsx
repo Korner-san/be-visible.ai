@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { ChevronDown, MessageSquare, Search, Globe, Lock } from 'lucide-react'
+import Image from 'next/image'
+import { ChevronDown, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,12 +15,23 @@ import {
 import { useModelFilter } from '@/store/modelFilter'
 import { PROVIDER_DISPLAY_NAMES, ACTIVE_PROVIDERS, LOCKED_PROVIDERS, Provider } from '@/types/domain/provider'
 
-// Icon mapping for each provider
-const PROVIDER_ICONS: Record<Provider, React.ReactNode> = {
-  chatgpt: <MessageSquare className="h-4 w-4" />,
-  perplexity: <Search className="h-4 w-4" />,
-  google_ai_overview: <Globe className="h-4 w-4" />
+// Logo paths for each provider
+const PROVIDER_LOGOS: Record<Provider, string> = {
+  chatgpt: '/logos/chatgpt.png',
+  perplexity: '/logos/perplexity.png',
+  google_ai_overview: '/logos/google-ai.png'
 }
+
+// Provider logo component
+const ProviderLogo: React.FC<{ provider: Provider; size?: number }> = ({ provider, size = 16 }) => (
+  <Image
+    src={PROVIDER_LOGOS[provider]}
+    alt={PROVIDER_DISPLAY_NAMES[provider]}
+    width={size}
+    height={size}
+    className="object-contain"
+  />
+)
 
 export const GlobalModelFilter: React.FC = () => {
   const {
@@ -47,10 +59,10 @@ export const GlobalModelFilter: React.FC = () => {
           className="w-full sm:w-[180px] justify-between"
         >
           <span className="flex items-center gap-1.5">
-            {/* Show icons for selected models */}
+            {/* Show logos for selected models */}
             {selectedModels.slice(0, 3).map((provider) => (
               <span key={provider} title={PROVIDER_DISPLAY_NAMES[provider]}>
-                {PROVIDER_ICONS[provider]}
+                <ProviderLogo provider={provider} />
               </span>
             ))}
             {/* Show +X if more than displayed */}
@@ -93,7 +105,7 @@ export const GlobalModelFilter: React.FC = () => {
               className={isLastSelected ? 'opacity-50 cursor-not-allowed' : ''}
             >
               <span className="flex items-center gap-2">
-                {PROVIDER_ICONS[provider]}
+                <ProviderLogo provider={provider} />
                 {PROVIDER_DISPLAY_NAMES[provider]}
               </span>
             </DropdownMenuCheckboxItem>
@@ -115,7 +127,7 @@ export const GlobalModelFilter: React.FC = () => {
                 className="opacity-50 cursor-not-allowed"
               >
                 <span className="flex items-center gap-2">
-                  {PROVIDER_ICONS[provider]}
+                  <ProviderLogo provider={provider} />
                   {PROVIDER_DISPLAY_NAMES[provider]}
                   <Lock className="ml-auto h-3 w-3" />
                 </span>
