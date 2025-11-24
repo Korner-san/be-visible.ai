@@ -87,7 +87,23 @@ export const useModelFilterStore = create<ModelFilterState>()(
     {
       name: 'model-filter-storage', // localStorage key
       // Only persist selectedModels
-      partialize: (state) => ({ selectedModels: state.selectedModels })
+      partialize: (state) => ({ selectedModels: state.selectedModels }),
+      // Filter out locked providers when loading from storage
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as { selectedModels?: Provider[] }
+        if (persisted?.selectedModels) {
+          // Only keep providers that are currently active
+          const validModels = persisted.selectedModels.filter(m =>
+            ACTIVE_PROVIDERS.includes(m)
+          )
+          // Ensure at least one model is selected
+          return {
+            ...currentState,
+            selectedModels: validModels.length > 0 ? validModels : [...ACTIVE_PROVIDERS]
+          }
+        }
+        return currentState
+      }
     }
   )
 )
