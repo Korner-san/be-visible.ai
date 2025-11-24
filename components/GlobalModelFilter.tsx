@@ -26,6 +26,7 @@ export const GlobalModelFilter: React.FC = () => {
   } = useModelFilter()
 
   const selectedCount = getSelectedCount()
+  const totalProviders = ACTIVE_PROVIDERS.length + LOCKED_PROVIDERS.length
   const allSelected = selectedCount === ACTIVE_PROVIDERS.length
 
   const handleSelectAll = () => {
@@ -53,7 +54,7 @@ export const GlobalModelFilter: React.FC = () => {
             <span className="text-sm font-medium">{getButtonLabel()}</span>
             {!allSelected && (
               <span className="text-xs text-muted-foreground">
-                ({selectedCount}/{ACTIVE_PROVIDERS.length})
+                ({selectedCount}/{totalProviders})
               </span>
             )}
           </span>
