@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -69,7 +69,6 @@ export const GlobalModelFilter: React.FC = () => {
           onCheckedChange={handleSelectAll}
           className="font-medium"
         >
-          <Check className={`mr-2 h-4 w-4 ${allSelected ? 'opacity-100' : 'opacity-0'}`} />
           Select All
         </DropdownMenuCheckboxItem>
         
@@ -88,7 +87,6 @@ export const GlobalModelFilter: React.FC = () => {
               disabled={isLastSelected}
               className={isLastSelected ? 'opacity-50 cursor-not-allowed' : ''}
             >
-              <Check className={`mr-2 h-4 w-4 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
               {PROVIDER_DISPLAY_NAMES[provider]}
             </DropdownMenuCheckboxItem>
           )
