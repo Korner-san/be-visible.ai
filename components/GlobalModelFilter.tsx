@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, MessageSquare, Search, Globe, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,7 +13,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useModelFilter } from '@/store/modelFilter'
 import { PROVIDER_DISPLAY_NAMES, ACTIVE_PROVIDERS, LOCKED_PROVIDERS, Provider } from '@/types/domain/provider'
-import { Lock } from 'lucide-react'
+
+// Icon mapping for each provider
+const PROVIDER_ICONS: Record<Provider, React.ReactNode> = {
+  chatgpt: <MessageSquare className="h-4 w-4" />,
+  perplexity: <Search className="h-4 w-4" />,
+  google_ai_overview: <Globe className="h-4 w-4" />
+}
 
 export const GlobalModelFilter: React.FC = () => {
   const {
@@ -33,30 +39,28 @@ export const GlobalModelFilter: React.FC = () => {
     selectAllModels()
   }
 
-  const getButtonLabel = () => {
-    if (allSelected) {
-      return 'All Models'
-    } else if (selectedCount === 1) {
-      return PROVIDER_DISPLAY_NAMES[selectedModels[0]]
-    } else {
-      return `${selectedCount} Models`
-    }
-  }
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="w-full sm:w-[200px] justify-between"
+          className="w-full sm:w-[180px] justify-between"
         >
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-medium">{getButtonLabel()}</span>
-            {!allSelected && (
-              <span className="text-xs text-muted-foreground">
-                ({selectedCount}/{totalProviders})
+          <span className="flex items-center gap-1.5">
+            {/* Show icons for selected models */}
+            {selectedModels.slice(0, 3).map((provider) => (
+              <span key={provider} title={PROVIDER_DISPLAY_NAMES[provider]}>
+                {PROVIDER_ICONS[provider]}
               </span>
+            ))}
+            {/* Show +X if more than displayed */}
+            {selectedCount > 3 && (
+              <span className="text-xs text-muted-foreground">+{selectedCount - 3}</span>
             )}
+            {/* Show count */}
+            <span className="text-xs text-muted-foreground ml-1">
+              ({selectedCount}/{totalProviders})
+            </span>
           </span>
           <ChevronDown className="h-4 w-4 opacity-50" />
         </Button>
@@ -79,7 +83,7 @@ export const GlobalModelFilter: React.FC = () => {
         {ACTIVE_PROVIDERS.map((provider) => {
           const isSelected = isModelSelected(provider)
           const isLastSelected = selectedCount === 1 && isSelected
-          
+
           return (
             <DropdownMenuCheckboxItem
               key={provider}
@@ -88,7 +92,10 @@ export const GlobalModelFilter: React.FC = () => {
               disabled={isLastSelected}
               className={isLastSelected ? 'opacity-50 cursor-not-allowed' : ''}
             >
-              {PROVIDER_DISPLAY_NAMES[provider]}
+              <span className="flex items-center gap-2">
+                {PROVIDER_ICONS[provider]}
+                {PROVIDER_DISPLAY_NAMES[provider]}
+              </span>
             </DropdownMenuCheckboxItem>
           )
         })}
@@ -107,8 +114,11 @@ export const GlobalModelFilter: React.FC = () => {
                 disabled={true}
                 className="opacity-50 cursor-not-allowed"
               >
-                <Lock className="mr-2 h-3 w-3" />
-                {PROVIDER_DISPLAY_NAMES[provider]}
+                <span className="flex items-center gap-2">
+                  {PROVIDER_ICONS[provider]}
+                  {PROVIDER_DISPLAY_NAMES[provider]}
+                  <Lock className="ml-auto h-3 w-3" />
+                </span>
               </DropdownMenuCheckboxItem>
             ))}
           </>
