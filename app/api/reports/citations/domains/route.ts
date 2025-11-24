@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
 import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 /**
@@ -74,62 +73,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Enrich domains with homepage category from url_content_facts
-    // Use service client to bypass RLS for reading homepage categorizations
-    const serviceSupabase = createServiceClient()
-    
-    const enrichedDomains = await Promise.all((domains || []).map(async (domain: any) => {
-      console.log(`🔍 [Domains API] Enriching domain: ${domain.domain}`)
-      
-      // Get the homepage's content_structure_category specifically
-      // Homepage URLs are in format: https://domain.com/ or http://domain.com/
-      // Try multiple variations to match the exact URL format stored
-      const homepageUrlVariations = [
-        `https://${domain.domain}/`,
-        `http://${domain.domain}/`,
-        `https://${domain.domain}`,
-        `http://${domain.domain}`,
-        `https://www.${domain.domain}/`,
-        `http://www.${domain.domain}/`,
-        `https://www.${domain.domain}`,
-        `http://www.${domain.domain}`
-      ]
-      
-      const { data: homepageData, error: homepageError } = await serviceSupabase
-        .from('url_inventory')
-        .select(`
-          url,
-          url_content_facts!inner(
-            content_structure_category
-          )
-        `)
-        .eq('domain', domain.domain)
-        .in('url', homepageUrlVariations)
-        .limit(1)
-      
-      if (homepageError) {
-        console.error(`❌ [Domains API] Error fetching homepage for ${domain.domain}:`, homepageError)
-      }
-      
-      // Get the homepage's content_structure_category
-      const homepageCategory = homepageData?.[0]?.url_content_facts?.content_structure_category
-      
-      if (homepageCategory) {
-        console.log(`✅ [Domains API] Found homepage category for ${domain.domain}: ${homepageCategory}`)
-        return {
-          ...domain,
-          content_structure_category: homepageCategory
-        }
-      }
-      
-      console.log(`⚠️ [Domains API] No homepage categorization found for domain: ${domain.domain}`)
-      return {
-        ...domain,
-        content_structure_category: null
-      }
-    }))
-
-    const totalDomains = enrichedDomains?.length || 0
+    const totalDomains = domains?.length || 0
 
     console.log('✅ [Citations Domains API] Success:', {
       totalDomains,
@@ -139,7 +83,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        domains: enrichedDomains || [],
+        domains: domains || [],
         totalDomains
       }
     })

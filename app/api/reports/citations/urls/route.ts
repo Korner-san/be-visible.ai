@@ -76,30 +76,10 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Filter out homepage URLs (they should only appear at domain level, not in URL list)
-    const homepagePatterns = [
-      `https://${domain}/`,
-      `http://${domain}/`,
-      `https://${domain}`,
-      `http://${domain}`,
-      `https://www.${domain}/`,
-      `http://www.${domain}/`,
-      `https://www.${domain}`,
-      `http://www.${domain}`
-    ]
-    
-    const filteredUrls = (urls || []).filter((urlData: any) => {
-      const isHomepage = homepagePatterns.some(pattern => urlData.url === pattern)
-      if (isHomepage) {
-        console.log(`🏠 [URLs API] Filtering out homepage: ${urlData.url}`)
-      }
-      return !isHomepage
-    })
-    
-    console.log(`📊 [URLs API] Filtered ${urls?.length || 0} URLs → ${filteredUrls.length} URLs (removed ${(urls?.length || 0) - filteredUrls.length} homepages)`)
+    console.log(`📊 [URLs API] Retrieved ${urls?.length || 0} URLs for domain ${domain}`)
 
     // Enrich URLs with category data from url_content_facts
-    const enrichedUrls = await Promise.all(filteredUrls.map(async (urlData: any) => {
+    const enrichedUrls = await Promise.all((urls || []).map(async (urlData: any) => {
       console.log(`🔍 [URLs API] Enriching URL: ${urlData.url}`)
       
       // Generate URL variations - prioritize www. version since that's what's stored in DB

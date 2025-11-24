@@ -153,7 +153,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   
   // Export function for CSV download
   const handleExportCSV = () => {
-    const headers = ['Domain', 'Unique URLs', 'Mentions', 'Prompt Coverage', 'Model Coverage', 'Content Type', 'Last Seen']
+    const headers = ['Domain', 'Unique URLs', 'Mentions', 'Prompt Coverage', 'Model Coverage', 'Last Seen']
     const csvContent = [
       headers.join(','),
       ...domains.map(domain => [
@@ -162,7 +162,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
         domain.mentions_count,
         domain.prompt_coverage,
         domain.model_coverage,
-        domain.content_structure_category ? formatContentType(domain.content_structure_category) : 'Not categorized yet',
         new Date(domain.last_seen_at).toLocaleDateString()
       ].join(','))
     ].join('\n')
@@ -322,16 +321,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </TableHead>
-              <TableHead>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger className="cursor-help">Content Type</TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p className="text-xs">Classification of the domain's homepage.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </TableHead>
               <TableHead>Last Seen</TableHead>
             </TableRow>
           </TableHeader>
@@ -383,24 +372,6 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                       {domain.model_coverage}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    {domain.content_structure_category ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="outline" className="text-xs cursor-help">
-                              {formatContentType(domain.content_structure_category)}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p className="text-xs">{getContentTypeDescription(domain.content_structure_category)}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : (
-                      <span className="text-slate-400 italic">Not categorized yet</span>
-                    )}
-                  </TableCell>
                   <TableCell className="text-sm text-slate-500">
                     {new Date(domain.last_seen_at).toLocaleDateString()}
                   </TableCell>
@@ -409,7 +380,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={8} className="bg-slate-50 p-0">
+                    <TableCell colSpan={7} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">
