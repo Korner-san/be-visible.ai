@@ -132,7 +132,13 @@ export async function GET(request: NextRequest) {
           google_ai_overview_portrayal_confidence,
           google_ai_overview_classifier_stage,
           google_ai_overview_classifier_version,
-          google_ai_overview_snippet_hash
+          google_ai_overview_snippet_hash,
+          chatgpt_response,
+          chatgpt_portrayal_type,
+          chatgpt_portrayal_confidence,
+          chatgpt_classifier_stage,
+          chatgpt_classifier_version,
+          chatgpt_snippet_hash
         )
       `)
       .eq('brand_id', brandId)
@@ -179,14 +185,16 @@ export async function GET(request: NextRequest) {
         // Count mentions from filtered providers only
         if (result.brand_mentioned) {
           // Count textual occurrences in the response
-          const responseText = result.provider === 'perplexity' 
-            ? result.perplexity_response 
+          const responseText = result.provider === 'perplexity'
+            ? result.perplexity_response
             : result.provider === 'google_ai_overview'
             ? result.google_ai_overview_response
             : result.provider === 'claude'
             ? result.claude_response
+            : result.provider === 'chatgpt'
+            ? result.chatgpt_response
             : ''
-          
+
           if (responseText) {
             const lowerText = responseText.toLowerCase()
             const lowerBrand = brand.name.toLowerCase()
@@ -261,12 +269,14 @@ export async function GET(request: NextRequest) {
         if (!result.brand_mentioned || !result.competitor_mentions || result.competitor_mentions.length === 0) return
 
         // Get response text to find actual mentions
-        const responseText = result.provider === 'perplexity' 
-          ? result.perplexity_response 
+        const responseText = result.provider === 'perplexity'
+          ? result.perplexity_response
           : result.provider === 'google_ai_overview'
           ? result.google_ai_overview_response
           : result.provider === 'claude'
           ? result.claude_response
+          : result.provider === 'chatgpt'
+          ? result.chatgpt_response
           : ''
 
         if (!responseText) return
@@ -546,15 +556,20 @@ export async function GET(request: NextRequest) {
         if (result.provider === 'perplexity' || !result.provider) {
           processPortrayalData(result.perplexity_response, result.portrayal_type, result.classifier_stage, 'perplexity')
         }
-        
+
         // Process Claude data
         if (result.provider === 'claude') {
           processPortrayalData(result.claude_response, result.claude_portrayal_type, result.claude_classifier_stage, 'claude')
         }
-        
+
         // Process Google AI Overview data
         if (result.provider === 'google_ai_overview') {
           processPortrayalData(result.google_ai_overview_response, result.google_ai_overview_portrayal_type, result.google_ai_overview_classifier_stage, 'google_ai_overview')
+        }
+
+        // Process ChatGPT data
+        if (result.provider === 'chatgpt') {
+          processPortrayalData(result.chatgpt_response, result.chatgpt_portrayal_type, result.chatgpt_classifier_stage, 'chatgpt')
         }
       })
     })
