@@ -5,7 +5,7 @@ import { createPendingBrand } from '@/lib/supabase/user-state'
 export async function POST(request: NextRequest) {
   try {
     // Get user from server-side auth (more secure than trusting client userId)
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError || !user) {

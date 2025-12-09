@@ -10,7 +10,7 @@ export default async function ReviewPromptsPage() {
   console.log('🔍 [REVIEW PROMPTS PAGE] Timestamp:', new Date().toISOString())
   
   // Get user from server-side auth
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
   if (authError || !user) {

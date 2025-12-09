@@ -22,7 +22,7 @@ export default function LoadingPage() {
         // Small delay to show loading state
         await new Promise(resolve => setTimeout(resolve, 500))
         
-        const supabase = createClient()
+        const supabase = await createClient()
         const { data: { user }, error: authError } = await supabase.auth.getUser()
         
         if (authError || !user) {

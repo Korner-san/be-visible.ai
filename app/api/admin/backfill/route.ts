@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
     console.log('🔄 [BACKFILL] Starting backfill for dates:', dates)
 
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Get test user
     const { data: testUser, error: userError } = await supabase

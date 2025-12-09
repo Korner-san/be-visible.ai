@@ -13,7 +13,7 @@ export default async function PromptDetail({ params, searchParams }: {
   const { promptId } = await params
   const { from, to } = await searchParams
   
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) {

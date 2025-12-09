@@ -16,7 +16,7 @@ export default async function SetupCompetitors() {
     redirect(targetRoute)
   }
   
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) {

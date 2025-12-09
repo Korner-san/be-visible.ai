@@ -16,7 +16,7 @@ export default function ConfirmPage() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
+  const supabase = await createClient()
 
   useEffect(() => {
     const confirmEmail = async () => {

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Get brand details
     const { data: brand, error: brandError } = await supabase

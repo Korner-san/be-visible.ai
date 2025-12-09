@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export default async function FinishingPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
   
   console.log('🎯 [FINISHING PAGE] Starting handoff page render - ENHANCED DIAGNOSTICS')
   console.log('🎯 [FINISHING PAGE] Timestamp:', new Date().toISOString())

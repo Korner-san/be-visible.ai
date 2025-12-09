@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
   
   try {
     // Get user from server-side auth
-    const supabase = createClient()
+    const supabase = await createClient()
     console.log('🔍 [GENERATE PROMPTS API] Getting user from server auth...')
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     

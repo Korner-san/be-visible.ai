@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
     console.log('🔄 [COMPLETE-FINAL API] Timestamp:', new Date().toISOString())
     
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser()

@@ -17,7 +17,7 @@ export default async function PromptsManagementPage() {
   }
   
   // Get user's brands and their prompts
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) {

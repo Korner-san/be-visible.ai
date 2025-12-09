@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     
     console.log('🚨 [EMERGENCY COMPLETE] Form data received:', Object.keys(formData || {}))
     
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Get current user - try multiple methods
     let user = null

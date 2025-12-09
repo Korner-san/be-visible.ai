@@ -27,7 +27,7 @@ export default async function OnboardingPage({ searchParams }: {
   // Additional check: If user has any completed brands, redirect to dashboard
   // This prevents the loop after onboarding completion
   if (!forceOnboarding) {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import CombinedPromptsClient from './combined-prompts-client'
 
 export default async function CombinedPromptsPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) {

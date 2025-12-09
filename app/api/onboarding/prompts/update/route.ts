@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user from server-side auth
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError || !user) {

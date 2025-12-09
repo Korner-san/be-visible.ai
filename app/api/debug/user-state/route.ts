@@ -8,7 +8,7 @@ export async function GET() {
   }
 
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
     if (!user) {

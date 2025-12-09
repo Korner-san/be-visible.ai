@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Get user from server-side auth (no client-provided brandId needed)
     console.log('🔍 [SAVE API] Getting user from server auth...')

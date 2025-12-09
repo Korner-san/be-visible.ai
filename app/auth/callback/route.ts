@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') // Supabase adds this for email confirmations
 
   if (code) {
-    const supabase = createClient()
+    const supabase = await createClient()
     
     try {
       const { error } = await supabase.auth.exchangeCodeForSession(code)
