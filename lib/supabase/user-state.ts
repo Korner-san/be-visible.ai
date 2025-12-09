@@ -24,8 +24,8 @@ export interface UserStateResult {
  * This is the single source of truth for routing decisions
  */
 export async function getUserState(): Promise<UserStateResult> {
-  const supabase = createClient()
-  
+  const supabase = await createClient()
+
   console.log('🔍 [getUserState] Starting user state check')
   console.log('🔍 [getUserState] Timestamp:', new Date().toISOString())
   
@@ -264,8 +264,8 @@ export function getRouteForState(state: UserState): string {
  * Create or get a pending brand for onboarding
  */
 export async function createPendingBrand(userId: string): Promise<{ id: string; name: string; domain: string } | null> {
-  const supabase = createClient()
-  
+  const supabase = await createClient()
+
   try {
     // Verify auth session first
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -349,8 +349,8 @@ export async function updateOnboardingAnswers(
   brandId: string, 
   answers: Record<string, any>
 ): Promise<boolean> {
-  const supabase = createClient()
-  
+  const supabase = await createClient()
+
   try {
     // Prepare update data - include brand name and website if provided
     const updateData: any = {
