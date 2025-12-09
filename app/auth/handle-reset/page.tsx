@@ -8,7 +8,7 @@ import { Loader2 } from 'lucide-react'
 export default function HandleResetPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = await createClient()
+  const supabase = createClient()
 
   useEffect(() => {
     const handleAuthCallback = async () => {
