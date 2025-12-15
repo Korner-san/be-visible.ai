@@ -6,7 +6,7 @@ import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 function extractExampleSnippet(text: string, brandName: string, maxLength: number = 200): string {
   const lowerText = text.toLowerCase()
   const lowerBrand = brandName.toLowerCase()
-  
+
   // Find brand mentions
   const mentions = []
   let index = lowerText.indexOf(lowerBrand)
@@ -14,23 +14,23 @@ function extractExampleSnippet(text: string, brandName: string, maxLength: numbe
     mentions.push(index)
     index = lowerText.indexOf(lowerBrand, index + 1)
   }
-  
+
   if (mentions.length === 0) return text.slice(0, maxLength)
-  
+
   // Use the first mention as reference point
   const mentionIndex = mentions[0]
-  
+
   // Extract context around the mention (smaller window for examples)
   const start = Math.max(0, mentionIndex - 100)
   const end = Math.min(text.length, start + maxLength)
-  
+
   let snippet = text.slice(start, end).trim()
-  
+
   // Clean up the snippet
   snippet = snippet.replace(/\s+/g, ' ') // Normalize whitespace
   snippet = snippet.replace(/^\W+/, '') // Remove leading punctuation
   snippet = snippet.replace(/\W+$/, '') // Remove trailing punctuation
-  
+
   // Add quotes if not present
   if (!snippet.startsWith('"') && !snippet.startsWith('"')) {
     snippet = `"${snippet}`
@@ -38,7 +38,7 @@ function extractExampleSnippet(text: string, brandName: string, maxLength: numbe
   if (!snippet.endsWith('"') && !snippet.endsWith('"')) {
     snippet = `${snippet}"`
   }
-  
+
   return snippet
 }
 
@@ -49,10 +49,10 @@ export async function GET(request: NextRequest) {
     const fromDate = searchParams.get('from')
     const toDate = searchParams.get('to')
     const modelsParam = searchParams.get('models')
-    
+
     // Parse model filter - default to all active providers if not specified
     const selectedModels = modelsParam ? modelsParam.split(',') : [...ACTIVE_PROVIDERS]
-    
+
     console.log('🔍 [Visibility API] Request params:', {
       brandId,
       fromDate,
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       modelsParam,
       selectedModels
     })
-    
+
     if (!brandId) {
       return NextResponse.json({
         success: false,
@@ -69,10 +69,10 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = await createClient()
-    
+
     // Get the current user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
+
     if (authError || !user) {
       return NextResponse.json({
         success: false,
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('brand_id', brandId)
-      .eq('status', 'completed')
+      // .eq('status', 'completed') // Allow incomplete reports to reflect partial data (e.g. running)
       .order('report_date', { ascending: true })
 
     // Apply date filters if provided (inclusive range)
@@ -157,6 +157,11 @@ export async function GET(request: NextRequest) {
 
     const { data: dailyReports, error: reportsError } = await dateFilterQuery
 
+    if (dailyReports) {
+      console.log(`📊 [Visibility API] Found ${dailyReports.length} reports for brand ${brandId}. Statuses:`,
+        dailyReports.map(r => `${r.report_date}: ${r.status} (${r.prompt_results?.length} prompts)`))
+    }
+
     if (reportsError) {
       console.error('Error fetching daily reports:', reportsError)
       return NextResponse.json({
@@ -168,61 +173,62 @@ export async function GET(request: NextRequest) {
     // Get competitors list for rank analysis
     const competitors = (brand.onboarding_answers as any)?.competitors || []
     const allEntities = [brand.name, ...competitors]
-    
-    
+
+
     // Process mentions over time with rank-based average position per day
     const mentionsOverTime = dailyReports?.map(report => {
       // Calculate rank-based position for this specific day/report
       const dailyRankPositions: number[] = []
       let dailyMentions = 0
-      
+
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         // Count mentions from filtered providers only
-        if (result.brand_mentioned) {
-          // Count textual occurrences in the response
-          const responseText = result.provider === 'perplexity'
-            ? result.perplexity_response
-            : result.provider === 'google_ai_overview'
+        // Note: We check text directly instead of relying solely on brand_mentioned flag
+        // if (result.brand_mentioned) {
+        // Count textual occurrences in the response
+        const responseText = result.provider === 'perplexity'
+          ? result.perplexity_response
+          : result.provider === 'google_ai_overview'
             ? result.google_ai_overview_response
             : result.provider === 'claude'
-            ? result.claude_response
-            : result.provider === 'chatgpt'
-            ? result.chatgpt_response
-            : ''
+              ? result.claude_response
+              : result.provider === 'chatgpt'
+                ? result.chatgpt_response
+                : ''
 
-          if (responseText) {
-            const lowerText = responseText.toLowerCase()
-            const lowerBrand = brand.name.toLowerCase()
-            let count = 0
-            let index = lowerText.indexOf(lowerBrand)
-            while (index !== -1) {
-              count++
-              index = lowerText.indexOf(lowerBrand, index + 1)
-            }
-            dailyMentions += count
+        if (responseText) {
+          const lowerText = responseText.toLowerCase()
+          const lowerBrand = brand.name.toLowerCase()
+          let count = 0
+          let index = lowerText.indexOf(lowerBrand)
+          while (index !== -1) {
+            count++
+            index = lowerText.indexOf(lowerBrand, index + 1)
           }
+          dailyMentions += count
         }
-        
+        // }
+
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
           // Calculate rank for this response
           const entities: { name: string, position: number }[] = []
-          
+
           if (result.brand_position !== null) {
             entities.push({ name: brand.name, position: result.brand_position })
           }
-          
+
           result.competitor_mentions.forEach((comp: any, index: number) => {
             if (comp && comp.name) {
               const estimatedPosition = result.brand_position + 200 + (index * 100)
               entities.push({ name: comp.name, position: estimatedPosition })
             }
           })
-          
+
           entities.sort((a, b) => a.position - b.position)
           const brandIndex = entities.findIndex(e => e.name === brand.name)
           if (brandIndex !== -1) {
@@ -230,11 +236,11 @@ export async function GET(request: NextRequest) {
           }
         }
       })
-      
-      const dailyAverageRank = dailyRankPositions.length > 0 
+
+      const dailyAverageRank = dailyRankPositions.length > 0
         ? dailyRankPositions.reduce((sum, rank) => sum + rank, 0) / dailyRankPositions.length
         : null
-      
+
       return {
         date: report.report_date,
         mentions: dailyMentions,
@@ -244,17 +250,17 @@ export async function GET(request: NextRequest) {
 
     // Sort by date
     mentionsOverTime.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    
+
     // Calculate total mentions from filtered data
     const totalMentions = mentionsOverTime.reduce((sum, day) => sum + day.mentions, 0)
-    
+
     console.log('📊 [Visibility API] Filtered mentions calculation:', {
       selectedModels,
       totalMentions,
       daysProcessed: mentionsOverTime.length,
       mentionsByDay: mentionsOverTime.map(d => ({ date: d.date, mentions: d.mentions }))
     })
-    
+
     // NEW: Calculate Competitive Position Score Over Time (Weighted)
     const positionScoreOverTime = dailyReports?.map(report => {
       let totalWeightedScore = 0
@@ -272,12 +278,12 @@ export async function GET(request: NextRequest) {
         const responseText = result.provider === 'perplexity'
           ? result.perplexity_response
           : result.provider === 'google_ai_overview'
-          ? result.google_ai_overview_response
-          : result.provider === 'claude'
-          ? result.claude_response
-          : result.provider === 'chatgpt'
-          ? result.chatgpt_response
-          : ''
+            ? result.google_ai_overview_response
+            : result.provider === 'claude'
+              ? result.claude_response
+              : result.provider === 'chatgpt'
+                ? result.chatgpt_response
+                : ''
 
         if (!responseText) return
 
@@ -378,31 +384,31 @@ export async function GET(request: NextRequest) {
         competitors: competitorsArray
       }
     }) || []
-    
+
     // Calculate average rank position by analyzing mention order in each response
     const allRankPositions: number[] = []
     const brandRankCounts: { [rank: number]: number } = { 1: 0, 2: 0, 3: 0 }
     const competitorFirstCounts: { [competitor: string]: number } = {}
     let totalResponsesAnalyzed = 0
-    
+
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
           totalResponsesAnalyzed++
-          
+
           // This response has both brand and competitors - calculate rank based on character positions
           const entities: { name: string, position: number }[] = []
-          
+
           // Add brand position
           if (result.brand_position !== null) {
             entities.push({ name: brand.name, position: result.brand_position })
           }
-          
+
           // We need to estimate competitor positions since we don't store them
           // Based on the analysis, competitors typically appear after the brand mention
           // Use the brand position as baseline and add reasonable offsets
@@ -413,16 +419,16 @@ export async function GET(request: NextRequest) {
               entities.push({ name: comp.name, position: estimatedPosition })
             }
           })
-          
+
           // Sort by position to determine rank order
           entities.sort((a, b) => a.position - b.position)
-          
+
           // Find brand's rank (1-based) and track competitor first positions
           const brandIndex = entities.findIndex(e => e.name === brand.name)
           if (brandIndex !== -1) {
             const brandRank = brandIndex + 1
             allRankPositions.push(brandRank)
-            
+
             // Track rank counts for debug
             if (brandRank <= 3) {
               brandRankCounts[brandRank]++
@@ -430,7 +436,7 @@ export async function GET(request: NextRequest) {
               brandRankCounts[3]++ // 3+ category
             }
           }
-          
+
           // Track competitors that ranked first
           if (entities.length > 0 && entities[0].name !== brand.name) {
             const firstEntity = entities[0].name
@@ -439,28 +445,28 @@ export async function GET(request: NextRequest) {
         }
       })
     })
-    
+
     // Calculate average rank position
-    const averagePosition = allRankPositions.length > 0 
-      ? allRankPositions.reduce((sum, rank) => sum + rank, 0) / allRankPositions.length 
+    const averagePosition = allRankPositions.length > 0
+      ? allRankPositions.reduce((sum, rank) => sum + rank, 0) / allRankPositions.length
       : null
-      
-    
+
+
 
     // Aggregate sentiment data from individual responses (not daily aggregates)
     const sentimentCounts = { positive: 0, neutral: 0, negative: 0 }
     let totalSentimentResponses = 0
-    
+
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         if (result.brand_mentioned && result.sentiment_score !== null && result.sentiment_score !== undefined) {
           totalSentimentResponses++
-          
+
           // Classify sentiment based on score (-1 to 1)
           if (result.sentiment_score > 0.1) {
             sentimentCounts.positive++
@@ -472,18 +478,18 @@ export async function GET(request: NextRequest) {
         }
       })
     })
-    
+
     // Calculate sentiment percentages
     const overallSentiment = totalSentimentResponses > 0 ? {
       positive: Math.round((sentimentCounts.positive / totalSentimentResponses) * 100),
       neutral: Math.round((sentimentCounts.neutral / totalSentimentResponses) * 100),
       negative: Math.round((sentimentCounts.negative / totalSentimentResponses) * 100)
     } : { positive: 0, neutral: 0, negative: 0 }
-    
+
 
     // Count competitor mentions (handle actual data structure)
     const competitorMentions: { [key: string]: number } = {}
-    
+
     // Initialize counts
     competitors.forEach((comp: string) => {
       competitorMentions[comp] = 0
@@ -497,7 +503,7 @@ export async function GET(request: NextRequest) {
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
           result.competitor_mentions.forEach((comp: any) => {
             // Handle the actual data structure: {name: "Netlify", count: 3, portrayalType: "neutral"}
@@ -509,7 +515,7 @@ export async function GET(request: NextRequest) {
         }
       })
     })
-    
+
 
     // Create mentions vs competitors data
     const mentionsVsCompetitors = Object.entries(competitorMentions).map(([name, mentions], index) => ({
@@ -518,30 +524,30 @@ export async function GET(request: NextRequest) {
       x: index + 1,
       color: name === brand.name ? '#3b82f6' : `hsl(${index * 60}, 70%, 50%)`
     }))
-    
+
 
     // Portrayal types analysis - BRAND ONLY (using LLM classification from ALL providers)
-    const portrayalTypes: Array<{brand: string, type: string, count: number, percentage: number, example?: string}> = []
-    
+    const portrayalTypes: Array<{ brand: string, type: string, count: number, percentage: number, example?: string }> = []
+
     // Track portrayal counts for brand only (prioritize LLM classification over keyword-based)
     const brandPortrayalCounts: { [key: string]: number } = {}
     const portrayalExamples: { [key: string]: string } = {}
-    
+
     let totalBrandPortrayals = 0
-    
+
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         // Helper function to process portrayal data from any provider
         const processPortrayalData = (response: string, portrayalType: string, classifierStage: string, modelSource: string) => {
           if (result.brand_mentioned && portrayalType && classifierStage === 'llm') {
             brandPortrayalCounts[portrayalType] = (brandPortrayalCounts[portrayalType] || 0) + 1
             totalBrandPortrayals++
-            
+
             // Store example snippet for this portrayal type (LLM classified only)
             if (response && !portrayalExamples[portrayalType]) {
               const snippet = extractExampleSnippet(response, brand.name)
@@ -573,7 +579,7 @@ export async function GET(request: NextRequest) {
         }
       })
     })
-    
+
     // Add brand portrayal types only
     Object.entries(brandPortrayalCounts).forEach(([type, count]) => {
       portrayalTypes.push({
@@ -584,7 +590,7 @@ export async function GET(request: NextRequest) {
         example: portrayalExamples[type] || `"${brand.name} is mentioned as ${type.replace('_', ' ')}..."`
       })
     })
-    
+
     // Sort by count descending for better display
     portrayalTypes.sort((a, b) => b.count - a.count)
 
@@ -592,18 +598,18 @@ export async function GET(request: NextRequest) {
     const shareOfVoiceData: { [entity: string]: Set<string> } = {}
     let totalResponsesForSoV = 0
     const responseIds = new Set<string>()
-    
+
     dailyReports?.forEach(report => {
       report.prompt_results?.forEach((result: any) => {
         // Filter by selected models
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
+
         // Track unique response IDs
         const responseId = result.id
         responseIds.add(responseId)
-        
+
         // Count brand mentions
         if (result.brand_mentioned) {
           if (!shareOfVoiceData[brand.name]) {
@@ -611,7 +617,7 @@ export async function GET(request: NextRequest) {
           }
           shareOfVoiceData[brand.name].add(responseId)
         }
-        
+
         // Count competitor mentions
         if (result.competitor_mentions && Array.isArray(result.competitor_mentions)) {
           result.competitor_mentions.forEach((comp: any) => {
@@ -625,21 +631,21 @@ export async function GET(request: NextRequest) {
         }
       })
     })
-    
+
     totalResponsesForSoV = responseIds.size
-    
+
     // Calculate total entity response counts (brand + all competitors)
     const totalEntityResponseCounts = Object.values(shareOfVoiceData).reduce(
-      (sum, responseSet) => sum + responseSet.size, 
+      (sum, responseSet) => sum + responseSet.size,
       0
     )
-    
+
     // Convert to array format with competitive percentages
     const shareOfVoice = Object.entries(shareOfVoiceData).map(([entity, responseSet]) => {
       const count = responseSet.size
       // Competitive SoV: brand's count / total entity counts (brand + competitors)
-      const percentage = totalEntityResponseCounts > 0 
-        ? Math.round((count / totalEntityResponseCounts) * 100) 
+      const percentage = totalEntityResponseCounts > 0
+        ? Math.round((count / totalEntityResponseCounts) * 100)
         : 0
       return {
         entity,
@@ -673,7 +679,7 @@ export async function GET(request: NextRequest) {
         competitorFirstCounts
       }
     }
-    
+
 
     return NextResponse.json({
       success: true,
