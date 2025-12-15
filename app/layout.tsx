@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { ClientLayout } from '@/components/ClientLayout'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { DateFilterProvider } from '@/contexts/DateFilterContext'
+import { ThemeProvider } from "@/components/theme-provider"
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -21,14 +22,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        <AuthProvider>
-          <DateFilterProvider>
-            <ClientLayout>
-              {children}
-            </ClientLayout>
-          </DateFilterProvider>
-        </AuthProvider>
-        <Analytics />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthProvider>
+            <DateFilterProvider>
+              <ClientLayout>
+                {children}
+              </ClientLayout>
+            </DateFilterProvider>
+          </AuthProvider>
+          <Analytics />
+        </ThemeProvider>
       </body>
     </html>
   )

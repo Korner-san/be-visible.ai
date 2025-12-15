@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 // Helper function to extract clean example snippets
@@ -94,8 +95,12 @@ export async function GET(request: NextRequest) {
       }, { status: 404 })
     }
 
+    // Initialize Service Role Client to bypass RLS for data fetching
+    // This is safe because we have already strictly verified that the brand belongs to the authenticated user above.
+    const adminSupabase = createServiceClient()
+
     // Build date filter query - include ALL provider fields
-    let dateFilterQuery = supabase
+    let dateFilterQuery = adminSupabase
       .from('daily_reports')
       .select(`
         id,
