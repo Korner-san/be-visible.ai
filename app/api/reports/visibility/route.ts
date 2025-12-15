@@ -97,6 +97,11 @@ export async function GET(request: NextRequest) {
 
     // Initialize Service Role Client to bypass RLS for data fetching
     // This is safe because we have already strictly verified that the brand belongs to the authenticated user above.
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('🚨 [Visibility API] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing in environment variables! Data fetch will likely fail due to RLS.')
+    } else {
+      console.log('✅ [Visibility API] Service Role Key is present.')
+    }
     const adminSupabase = createServiceClient()
 
     // Build date filter query - include ALL provider fields
