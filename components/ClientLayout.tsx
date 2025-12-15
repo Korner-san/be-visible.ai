@@ -9,13 +9,15 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDateFilter } from '@/contexts/DateFilterContext'
 import GlobalDateFilter from '@/components/GlobalDateFilter'
 import { GlobalModelFilter } from '@/components/GlobalModelFilter'
-Settings,
+import {
+  Settings,
   Users,
   CreditCard,
   Headphones,
   LogOut
 } from 'lucide-react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import OnboardingLoader from '@/components/OnboardingLoader'
 
 export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const { user, signOut } = useAuth()
