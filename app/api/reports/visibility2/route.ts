@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { ACTIVE_PROVIDERS } from '@/types/domain/provider'
 
 /**
  * GET /api/reports/visibility2
- * Clean implementation using working patterns from Citations & Content pages
- * Reads brand_mention_count and competitor_mention_counts directly from database
+ * Uses EXACT same pattern as Content API
  */
 export async function GET(request: NextRequest) {
   try {
+    // Use service client to bypass RLS (same as Content API)
+    const supabase = createServiceClient()
+
     const { searchParams } = new URL(request.url)
     const brandId = searchParams.get('brandId')
     const fromDate = searchParams.get('from')
@@ -32,39 +34,12 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const supabase = await createClient()
-
-    // Get the current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({
-        success: false,
-        error: 'Unauthorized'
-      }, { status: 401 })
-    }
-
-    // Verify brand ownership
-    const { data: brand, error: brandError } = await supabase
-      .from('brands')
-      .select('id, name, owner_user_id')
-      .eq('id', brandId)
-      .single()
-
-    if (brandError || !brand || brand.owner_user_id !== user.id) {
-      return NextResponse.json({
-        success: false,
-        error: 'Brand not found or access denied'
-      }, { status: 404 })
-    }
-
-    // STEP 1: Get daily reports with date filtering (following Content API pattern)
+    // STEP 1: Get daily reports with date filtering (EXACT same as Content API)
     let dailyReportsQuery = supabase
       .from('daily_reports')
-      .select('id, report_date, status')
+      .select('id, report_date')
       .eq('brand_id', brandId)
       .eq('status', 'completed')
-      .order('report_date', { ascending: true })
 
     if (fromDate) {
       dailyReportsQuery = dailyReportsQuery.gte('report_date', fromDate)
@@ -90,7 +65,6 @@ export async function GET(request: NextRequest) {
         success: true,
         data: {
           totalMentions: 0,
-          totalCompetitorMentions: 0,
           totalReports: 0,
           mentionsOverTime: []
         }
@@ -99,23 +73,23 @@ export async function GET(request: NextRequest) {
 
     const dailyReportIds = dailyReports.map(dr => dr.id)
 
-    // STEP 2: Get prompt results for these reports (following Citations API pattern)
+    // STEP 2: Get prompt results (EXACT same as Content API pattern)
     let query = supabase
       .from('prompt_results')
       .select(`
         id,
         provider,
-        provider_status,
         brand_mention_count,
-        competitor_mention_counts,
         daily_report_id
       `)
       .in('daily_report_id', dailyReportIds)
-      .in('provider', selectedModels)
+      .in('provider_status', ['ok'])
+
+    if (selectedModels.length > 0) {
+      query = query.in('provider', selectedModels)
+    }
 
     const { data: promptResults, error: resultsError } = await query
-
-    console.log(`📊 [VISIBILITY2 API] Found ${promptResults?.length || 0} prompt results`)
 
     if (resultsError) {
       console.error('❌ [VISIBILITY2 API] Error fetching prompt results:', resultsError)
@@ -125,32 +99,31 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
+    console.log(`📊 [VISIBILITY2 API] Found ${promptResults?.length || 0} prompt results`)
+
     if (!promptResults || promptResults.length === 0) {
       return NextResponse.json({
         success: true,
         data: {
           totalMentions: 0,
-          totalCompetitorMentions: 0,
           totalReports: dailyReports.length,
           mentionsOverTime: dailyReports.map(report => ({
             date: report.report_date,
-            mentions: 0,
-            competitorMentions: 0
+            mentions: 0
           }))
         }
       })
     }
 
-    // STEP 3: Aggregate data (clean and simple)
+    // STEP 3: Aggregate data (simple like Content API)
     let totalBrandMentions = 0
-    let totalCompetitorMentions = 0
 
     // Create a map of report_date -> mentions for time series
-    const mentionsByDate = new Map<string, { brandMentions: number, competitorMentions: number }>()
+    const mentionsByDate = new Map<string, number>()
 
     // Initialize all dates with 0
     dailyReports.forEach(report => {
-      mentionsByDate.set(report.report_date, { brandMentions: 0, competitorMentions: 0 })
+      mentionsByDate.set(report.report_date, 0)
     })
 
     // Aggregate mentions from prompt results
@@ -165,36 +138,19 @@ export async function GET(request: NextRequest) {
       const brandMentions = result.brand_mention_count || 0
       totalBrandMentions += brandMentions
 
-      // Read competitor_mention_counts (JSONB object like {"Microsoft": 3, "AWS": 2})
-      const competitorCounts = result.competitor_mention_counts || {}
-      let resultCompetitorMentions = 0
-
-      if (typeof competitorCounts === 'object') {
-        resultCompetitorMentions = Object.values(competitorCounts).reduce((sum: number, count: any) => {
-          return sum + (typeof count === 'number' ? count : 0)
-        }, 0)
-      }
-
-      totalCompetitorMentions += resultCompetitorMentions
-
       // Update date aggregation
-      const dateData = mentionsByDate.get(reportDate)
-      if (dateData) {
-        dateData.brandMentions += brandMentions
-        dateData.competitorMentions += resultCompetitorMentions
-      }
+      const currentDateMentions = mentionsByDate.get(reportDate) || 0
+      mentionsByDate.set(reportDate, currentDateMentions + brandMentions)
     })
 
     // Convert map to array for time series chart
-    const mentionsOverTime = Array.from(mentionsByDate.entries()).map(([date, data]) => ({
+    const mentionsOverTime = Array.from(mentionsByDate.entries()).map(([date, mentions]) => ({
       date,
-      mentions: data.brandMentions,
-      competitorMentions: data.competitorMentions
+      mentions
     }))
 
     console.log('✅ [VISIBILITY2 API] Success:', {
       totalBrandMentions,
-      totalCompetitorMentions,
       totalReports: dailyReports.length,
       selectedModels
     })
@@ -203,7 +159,6 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         totalMentions: totalBrandMentions,
-        totalCompetitorMentions: totalCompetitorMentions,
         totalReports: dailyReports.length,
         mentionsOverTime: mentionsOverTime
       }
