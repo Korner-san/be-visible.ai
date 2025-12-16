@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
           provider_status,
           brand_mentioned,
           brand_position,
+          brand_mention_count,
           competitor_mentions,
           sentiment_score,
           portrayal_type,
@@ -177,35 +178,15 @@ export async function GET(request: NextRequest) {
       let dailyMentions = 0
       
       report.prompt_results?.forEach((result: any) => {
-        // Filter by selected models
+        // Filter by selected models (chatgpt, perplexity, google_ai_overview, claude)
         if (!selectedModels.includes(result.provider)) {
           return
         }
-        
-        // Count mentions from filtered providers only
-        if (result.brand_mentioned) {
-          // Count textual occurrences in the response
-          const responseText = result.provider === 'perplexity'
-            ? result.perplexity_response
-            : result.provider === 'google_ai_overview'
-            ? result.google_ai_overview_response
-            : result.provider === 'claude'
-            ? result.claude_response
-            : result.provider === 'chatgpt'
-            ? result.chatgpt_response
-            : ''
 
-          if (responseText) {
-            const lowerText = responseText.toLowerCase()
-            const lowerBrand = brand.name.toLowerCase()
-            let count = 0
-            let index = lowerText.indexOf(lowerBrand)
-            while (index !== -1) {
-              count++
-              index = lowerText.indexOf(lowerBrand, index + 1)
-            }
-            dailyMentions += count
-          }
+        // Use pre-calculated brand_mention_count from database
+        // This field is populated automatically for all providers via database trigger
+        if (result.brand_mention_count) {
+          dailyMentions += result.brand_mention_count
         }
         
         if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
