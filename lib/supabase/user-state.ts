@@ -379,6 +379,48 @@ export async function updateOnboardingAnswers(
       return false
     }
 
+    // DUAL-WRITE: Also write competitors to brand_competitors table
+    if (answers.competitors && Array.isArray(answers.competitors)) {
+      // Filter out empty strings and trim whitespace
+      const validCompetitors = answers.competitors
+        .filter((c: any) => c && typeof c === 'string' && c.trim())
+        .map((c: string) => c.trim())
+
+      if (validCompetitors.length > 0) {
+        console.log('🏢 [UPDATE ANSWERS] Syncing', validCompetitors.length, 'competitors to brand_competitors table')
+
+        // Delete existing competitors for this brand (to handle updates)
+        const { error: deleteError } = await supabase
+          .from('brand_competitors')
+          .delete()
+          .eq('brand_id', brandId)
+
+        if (deleteError) {
+          console.error('⚠️ [UPDATE ANSWERS] Error deleting old competitors:', deleteError)
+          // Don't fail the whole operation - JSONB is still updated
+        }
+
+        // Insert new competitors
+        const competitorRecords = validCompetitors.map((name: string, index: number) => ({
+          brand_id: brandId,
+          competitor_name: name,
+          display_order: index + 1,
+          is_active: true
+        }))
+
+        const { error: insertError } = await supabase
+          .from('brand_competitors')
+          .insert(competitorRecords)
+
+        if (insertError) {
+          console.error('⚠️ [UPDATE ANSWERS] Error inserting competitors:', insertError)
+          // Don't fail the whole operation - JSONB is still updated
+        } else {
+          console.log('✅ [UPDATE ANSWERS] Successfully synced competitors to brand_competitors table')
+        }
+      }
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('🔄 Updated onboarding answers for brand:', brandId, 'with data:', Object.keys(updateData))
     }

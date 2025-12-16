@@ -45,8 +45,8 @@ export default function PromptDetailClient({ prompt, initialResults, initialCita
     }
     
     // Add competitor mentions
-    if (result.competitor_mentions) {
-      result.competitor_mentions.forEach((comp: any) => {
+    if (result.competitor_mention_details) {
+      result.competitor_mention_details.forEach((comp: any) => {
         const existing = acc.find(item => item.brand === comp.name)
         if (existing) {
           existing.mentions += comp.count
@@ -180,10 +180,10 @@ export default function PromptDetailClient({ prompt, initialResults, initialCita
                             <span className="text-gray-500">No response available</span>
                           )}
                         </div>
-                        {result.competitor_mentions && result.competitor_mentions.length > 0 && (
+                        {result.competitor_mention_details && result.competitor_mention_details.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             <span className="text-xs text-gray-600">Competitors mentioned:</span>
-                            {result.competitor_mentions.map((comp: any, i: number) => (
+                            {result.competitor_mention_details.map((comp: any, i: number) => (
                               <Badge key={i} variant="secondary" className="text-xs">
                                 {comp.name} ({comp.count})
                               </Badge>
@@ -435,7 +435,7 @@ export default function PromptDetailClient({ prompt, initialResults, initialCita
                         <span className="text-sm font-medium">
                           {Array.from(new Set(
                             filteredResults.flatMap(r => 
-                              (r.competitor_mentions || []).map((c: any) => c.name)
+                              (r.competitor_mention_details || []).map((c: any) => c.name)
                             )
                           )).length}
                         </span>

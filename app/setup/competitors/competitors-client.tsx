@@ -22,14 +22,15 @@ interface Brand {
 
 interface CompetitorsClientProps {
   brands: Brand[]
+  competitorsByBrand: Record<string, any[]>
 }
 
-export default function CompetitorsClient({ brands }: CompetitorsClientProps) {
+export default function CompetitorsClient({ brands, competitorsByBrand }: CompetitorsClientProps) {
   const { activeBrandId } = useBrandsStore()
   const activeBrand = brands.find(brand => brand.id === activeBrandId)
   const isDemoMode = activeBrand?.is_demo || false
 
-  // Get competitors from onboarding answers or use demo data
+  // Get competitors from brand_competitors table with fallback to onboarding answers
   const getCompetitors = () => {
     if (isDemoMode) {
       // Demo brand competitors
@@ -40,6 +41,22 @@ export default function CompetitorsClient({ brands }: CompetitorsClientProps) {
       ]
     }
 
+    if (!activeBrandId) {
+      return []
+    }
+
+    // PRIORITY 1: Try to get from brand_competitors table (new structure)
+    const competitorsFromTable = competitorsByBrand[activeBrandId]
+    if (competitorsFromTable && competitorsFromTable.length > 0) {
+      return competitorsFromTable.map((comp) => ({
+        id: comp.id,
+        name: comp.competitor_name,
+        domain: comp.competitor_domain || `${comp.competitor_name.toLowerCase().replace(/\s+/g, '')}.com`,
+        status: comp.is_active ? 'Active' : 'Inactive'
+      }))
+    }
+
+    // FALLBACK: Get from onboarding_answers JSONB (for backwards compatibility)
     if (!activeBrand?.onboarding_answers?.competitors) {
       return []
     }
@@ -48,7 +65,7 @@ export default function CompetitorsClient({ brands }: CompetitorsClientProps) {
     return activeBrand.onboarding_answers.competitors.map((competitor: string, index: number) => ({
       id: index + 1,
       name: competitor,
-      domain: `${competitor.toLowerCase().replace(/\s+/g, '')}.com`, // Generate domain from name
+      domain: `${competitor.toLowerCase().replace(/\s+/g, '')}.com`,
       status: 'Active'
     }))
   }

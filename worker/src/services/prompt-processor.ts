@@ -170,7 +170,7 @@ const processProviderPrompts = async (
           provider_status: 'ok',
           brand_mentioned: analysis.mentioned,
           brand_position: analysis.mentioned ? analysis.position : null,
-          competitor_mentions: analysis.competitorMentions,
+          competitor_mention_details: analysis.competitorMentions,
           sentiment_score: analysis.sentiment,
           portrayal_type: null,
           classifier_stage: null,
@@ -221,7 +221,7 @@ const processProviderPrompts = async (
             provider_status: 'no_result',
             provider_error_message: providerError,
             brand_mentioned: false,
-            competitor_mentions: [],
+            competitor_mention_details: [],
             sentiment_score: 0,
             portrayal_type: null,
             classifier_stage: null,
@@ -251,7 +251,7 @@ const processProviderPrompts = async (
             provider_status: 'error',
             provider_error_message: (error as Error).message,
             brand_mentioned: false,
-            competitor_mentions: [],
+            competitor_mention_details: [],
             sentiment_score: 0,
             portrayal_type: null,
             classifier_stage: null,
@@ -403,7 +403,7 @@ export const processPromptsForBrand = async (
             provider_status: 'ok',
             brand_mentioned: analysis.mentioned,
             brand_position: analysis.mentioned ? analysis.position : null,
-            competitor_mentions: analysis.competitorMentions,
+            competitor_mention_details: analysis.competitorMentions,
             sentiment_score: analysis.sentiment,
             chatgpt_response: result.responseText,
             chatgpt_response_time_ms: result.timeMs,
@@ -470,7 +470,7 @@ export const processPromptsForBrand = async (
   
   const { data: allResults, error: allResultsError } = await supabase
     .from('prompt_results')
-    .select('brand_mentioned, brand_position, sentiment_score, competitor_mentions')
+    .select('brand_mentioned, brand_position, sentiment_score, competitor_mention_details')
     .eq('daily_report_id', dailyReport.id)
 
   let totalMentions = 0
@@ -482,14 +482,14 @@ export const processPromptsForBrand = async (
     // Calculate rank-based average position
     const rankPositions: number[] = []
     allResults.forEach(result => {
-      if (result.brand_mentioned && result.competitor_mentions && Array.isArray(result.competitor_mentions) && result.competitor_mentions.length > 0) {
+      if (result.brand_mentioned && result.competitor_mention_details && Array.isArray(result.competitor_mention_details) && result.competitor_mention_details.length > 0) {
         const entities: { name: string; position: number }[] = []
-        
+
         if (result.brand_position !== null) {
           entities.push({ name: brand.name, position: result.brand_position })
         }
-        
-        result.competitor_mentions.forEach((comp: any) => {
+
+        result.competitor_mention_details.forEach((comp: any) => {
           if (comp && comp.name && comp.position !== undefined && comp.position !== null && comp.position !== -1) {
             entities.push({ name: comp.name, position: comp.position })
           }

@@ -30,10 +30,29 @@ export default async function SetupCompetitors() {
     .or(`and(owner_user_id.eq.${user.id},is_demo.eq.false),is_demo.eq.true`)
     .eq('onboarding_completed', true)
     .order('created_at', { ascending: false })
-  
+
   if (!brands || brands.length === 0) {
     redirect('/setup/onboarding')
   }
-  
-  return <CompetitorsClient brands={brands} />
+
+  // Fetch competitors from brand_competitors table for all brands
+  const { data: competitorsData } = await supabase
+    .from('brand_competitors')
+    .select('*')
+    .in('brand_id', brands.map(b => b.id))
+    .eq('is_active', true)
+    .order('display_order', { ascending: true })
+
+  // Group competitors by brand_id for easy lookup
+  const competitorsByBrand: Record<string, any[]> = {}
+  if (competitorsData) {
+    competitorsData.forEach(comp => {
+      if (!competitorsByBrand[comp.brand_id]) {
+        competitorsByBrand[comp.brand_id] = []
+      }
+      competitorsByBrand[comp.brand_id].push(comp)
+    })
+  }
+
+  return <CompetitorsClient brands={brands} competitorsByBrand={competitorsByBrand} />
 }
