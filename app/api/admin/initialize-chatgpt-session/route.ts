@@ -23,6 +23,9 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
  * 5. Stores session data and expiration dates in database
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  const initStartTimestamp = new Date().toISOString()
+
   try {
     const { email } = await request.json()
 
@@ -48,12 +51,33 @@ export async function POST(request: NextRequest) {
 
     if (accountError || !account) {
       console.error('❌ [INIT SESSION] Account not found:', accountError)
+
+      // FORENSIC: Log initialization failure
+      await supabase
+        .from('automation_forensics')
+        .insert({
+          chatgpt_account_email: email,
+          connection_status: 'Error',
+          connection_error_raw: accountError?.message || 'Account not found in database',
+          visual_state: 'Unknown',
+          operation_type: 'initialization',
+          response_time_ms: Date.now() - startTime
+        })
+
       return NextResponse.json({
         success: false,
         error: 'ChatGPT account not found',
         message: accountError?.message || 'Account does not exist in database'
       }, { status: 404 })
     }
+
+    // FORENSIC: Update last_initialization_attempt
+    await supabase
+      .from('chatgpt_accounts')
+      .update({
+        last_initialization_attempt: initStartTimestamp
+      })
+      .eq('id', account.id)
 
     console.log(`✅ [INIT SESSION] Account loaded: ${account.email}`)
     console.log(`   Account type: ${account.account_type}`)
@@ -88,6 +112,25 @@ export async function POST(request: NextRequest) {
     if (!sessionResponse.ok) {
       const errorText = await sessionResponse.text()
       console.error('❌ [INIT SESSION] Failed to create Browserless session:', errorText)
+
+      // FORENSIC: Log Browserless session creation failure
+      await supabase
+        .from('automation_forensics')
+        .insert({
+          chatgpt_account_id: account.id,
+          chatgpt_account_email: account.email,
+          connection_status: 'Error',
+          connection_error_raw: `Browserless session creation failed: ${errorText}`,
+          visual_state: 'Unknown',
+          operation_type: 'initialization',
+          response_time_ms: Date.now() - startTime
+        })
+
+      await supabase
+        .from('chatgpt_accounts')
+        .update({ last_initialization_result: 'failed' })
+        .eq('id', account.id)
+
       return NextResponse.json({
         success: false,
         error: 'Failed to create Browserless session',
@@ -129,7 +172,10 @@ export async function POST(request: NextRequest) {
 
     // 5. Update database with session information
     console.log('\n💾 [INIT SESSION] Storing session data in database...')
-    
+
+    // FORENSIC: Set cookies_created_at if not already set
+    const cookiesCreatedAt = account.cookies_created_at || new Date().toISOString()
+
     const { error: updateError } = await supabase
       .from('chatgpt_accounts')
       .update({
@@ -146,6 +192,11 @@ export async function POST(request: NextRequest) {
         status: 'active',
         last_validated_at: new Date().toISOString(),
         error_message: null,
+        // FORENSIC: Update forensic columns
+        cookies_created_at: cookiesCreatedAt,
+        last_visual_state: 'Logged_In',
+        last_visual_state_at: new Date().toISOString(),
+        last_initialization_result: 'success',
         updated_at: new Date().toISOString()
       })
       .eq('email', email)
@@ -168,6 +219,27 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ [INIT SESSION] Session data stored successfully!')
+
+    // FORENSIC: Log successful initialization
+    await supabase
+      .from('automation_forensics')
+      .insert({
+        chatgpt_account_id: account.id,
+        chatgpt_account_email: account.email,
+        browserless_session_id: session.id,
+        connection_status: 'Connected',
+        visual_state: 'Logged_In',
+        visual_state_details: {
+          hasTextarea: true,
+          hasLoginButton: false,
+          hasUserMenu: true,
+          url: 'https://chatgpt.com',
+          pageTitle: 'ChatGPT'
+        },
+        operation_type: 'initialization',
+        playwright_cdp_url: session.connect,
+        response_time_ms: Date.now() - startTime
+      })
 
     // 6. Verify the update
     const { data: updatedAccount } = await supabase
@@ -199,6 +271,23 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ [INIT SESSION] Unexpected error:', error)
+
+    // FORENSIC: Log unexpected error
+    try {
+      await supabase
+        .from('automation_forensics')
+        .insert({
+          chatgpt_account_email: email || 'unknown',
+          connection_status: 'Error',
+          connection_error_raw: error instanceof Error ? error.message : 'Unknown error',
+          visual_state: 'Unknown',
+          operation_type: 'initialization',
+          response_time_ms: Date.now() - startTime
+        })
+    } catch (forensicError) {
+      console.error('⚠️  [FORENSIC] Failed to log error:', forensicError)
+    }
+
     return NextResponse.json({
       success: false,
       error: 'Internal server error',
