@@ -110,11 +110,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Table C: Scheduling Queue - Today's and tomorrow's batches
+    // Table C: Scheduling Queue - Today's and tomorrow's batches with prompt details
+    let enrichedQueue: any[] = []
+
     if (!table || table === 'schedule' || table === 'all') {
+      // First get the schedule queue
       const { data: schedulingQueue, error: scheduleError } = await supabase
-        .from('v_forensic_schedule_queue')
-        .select('*')
+        .from('daily_schedules')
+        .select(`
+          id,
+          schedule_date,
+          batch_number,
+          execution_time,
+          status,
+          batch_size,
+          prompt_ids,
+          chatgpt_accounts!inner(
+            email,
+            proxy_host,
+            proxy_port,
+            last_visual_state,
+            browserless_session_id
+          )
+        `)
+        .gte('schedule_date', new Date().toISOString().split('T')[0])
+        .lte('schedule_date', new Date(Date.now() + 86400000).toISOString().split('T')[0])
         .order('execution_time', { ascending: true })
 
       if (scheduleError && table === 'schedule') {
@@ -125,18 +145,59 @@ export async function GET(request: NextRequest) {
         }, { status: 500 })
       }
 
+      // Enrich with prompt details
+      enrichedQueue = await Promise.all(
+        (schedulingQueue || []).map(async (schedule: any) => {
+          // Fetch all prompts in this batch
+          const { data: prompts } = await supabase
+            .from('brand_prompts')
+            .select(`
+              id,
+              prompt,
+              brands!inner(
+                id,
+                name
+              ),
+              users!inner(
+                email
+              )
+            `)
+            .in('id', schedule.prompt_ids || [])
+
+          return {
+            id: schedule.id,
+            schedule_date: schedule.schedule_date,
+            batch_number: schedule.batch_number,
+            execution_time: schedule.execution_time,
+            status: schedule.status,
+            batch_size: schedule.batch_size,
+            account_assigned: schedule.chatgpt_accounts?.email,
+            proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
+            account_last_visual_state: schedule.chatgpt_accounts?.last_visual_state,
+            session_id_assigned: schedule.chatgpt_accounts?.browserless_session_id,
+            prompts: prompts?.map((p: any) => ({
+              id: p.id,
+              prompt_text: p.prompt,
+              brand_name: p.brands?.name,
+              brand_id: p.brands?.id,
+              user_email: p.users?.email
+            })) || []
+          }
+        })
+      )
+
       if (table === 'schedule') {
         return NextResponse.json({
           success: true,
-          data: schedulingQueue || []
+          data: enrichedQueue
         })
       }
     }
 
     // Return all tables if 'all' or no specific table requested
     if (!table || table === 'all') {
-      // Fetch all three datasets in parallel
-      const [sessionsResult, citationsResult, scheduleResult] = await Promise.all([
+      // Fetch sessions and citations in parallel (schedule already fetched above)
+      const [sessionsResult, citationsResult] = await Promise.all([
         supabase
           .from('v_forensic_session_attempts_24h')
           .select('*')
@@ -171,12 +232,7 @@ export async function GET(request: NextRequest) {
             )
           `)
           .order('created_at', { ascending: false })
-          .limit(100),
-
-        supabase
-          .from('v_forensic_schedule_queue')
-          .select('*')
-          .order('execution_time', { ascending: true })
+          .limit(100)
       ])
 
       // Transform citation data
@@ -201,7 +257,7 @@ export async function GET(request: NextRequest) {
         data: {
           sessionMatrix: sessionsResult.data || [],
           citationTrace: transformedCitations,
-          schedulingQueue: scheduleResult.data || []
+          schedulingQueue: enrichedQueue || []
         }
       })
     }

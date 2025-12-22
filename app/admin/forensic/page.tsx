@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Loader2, AlertCircle, CheckCircle, Clock } from 'lucide-react'
+import { RefreshCw, Loader2, AlertCircle, CheckCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface SessionAttempt {
@@ -34,6 +34,14 @@ interface CitationTrace {
   batchNumber: number | null
 }
 
+interface PromptDetail {
+  id: string
+  prompt_text: string
+  brand_name: string
+  brand_id: string
+  user_email: string
+}
+
 interface ScheduleItem {
   id: string
   schedule_date: string
@@ -45,8 +53,7 @@ interface ScheduleItem {
   proxy_assigned: string | null
   account_last_visual_state: string | null
   session_id_assigned: string | null
-  brand_name: string | null
-  user_email: string | null
+  prompts: PromptDetail[]
 }
 
 interface ForensicData {
@@ -94,6 +101,19 @@ export default function ForensicPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set())
+
+  const toggleBatch = (batchId: string) => {
+    setExpandedBatches(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(batchId)) {
+        newSet.delete(batchId)
+      } else {
+        newSet.add(batchId)
+      }
+      return newSet
+    })
+  }
 
   const fetchData = async () => {
     try {
@@ -316,8 +336,7 @@ export default function ForensicPage() {
             <CardHeader>
               <CardTitle>Table C: Scheduling Queue</CardTitle>
               <CardDescription>
-                Upcoming scheduled batches (today and tomorrow). Each batch executes prompts from ONE brand only.
-                Batch numbers are global across all brands.
+                Upcoming scheduled batches (today and tomorrow). Click to expand and see all prompts with their brands.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -325,72 +344,108 @@ export default function ForensicPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
+                      <th className="w-8"></th>
                       <th className="text-left p-2 font-semibold">Execution Time</th>
-                      <th className="text-left p-2 font-semibold">Batch / Brand</th>
+                      <th className="text-left p-2 font-semibold">Batch #</th>
                       <th className="text-left p-2 font-semibold">Prompts</th>
                       <th className="text-left p-2 font-semibold">Status</th>
-                      <th className="text-left p-2 font-semibold">User</th>
                       <th className="text-left p-2 font-semibold">Account</th>
                       <th className="text-left p-2 font-semibold">Proxy</th>
-                      <th className="text-left p-2 font-semibold">Account State</th>
-                      <th className="text-left p-2 font-semibold">Session ID</th>
+                      <th className="text-left p-2 font-semibold">State</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.schedulingQueue.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="text-center p-4 text-muted-foreground">
+                        <td colSpan={8} className="text-center p-4 text-muted-foreground">
                           No upcoming batches scheduled
                         </td>
                       </tr>
                     ) : (
-                      data.schedulingQueue.map((schedule) => (
-                        <tr key={schedule.id} className="border-b hover:bg-muted/50">
-                          <td className="p-2 font-mono text-xs">
-                            {new Date(schedule.execution_time).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </td>
-                          <td className="p-2">
-                            <div className="flex flex-col gap-1">
-                              <Badge variant="outline" className="w-fit">
-                                Batch #{schedule.batch_number}
-                              </Badge>
-                              <span className="text-xs font-semibold text-slate-900">
-                                {schedule.brand_name || 'N/A'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            <Badge className="bg-blue-500">
-                              {schedule.batch_size} {schedule.batch_size === 1 ? 'prompt' : 'prompts'}
-                            </Badge>
-                          </td>
-                          <td className="p-2">
-                            {schedule.status === 'pending' ? (
-                              <Badge variant="outline">Pending</Badge>
-                            ) : schedule.status === 'running' ? (
-                              <Badge className="bg-blue-500">Running</Badge>
-                            ) : schedule.status === 'completed' ? (
-                              <Badge className="bg-green-500">Completed</Badge>
-                            ) : schedule.status === 'failed' ? (
-                              <Badge variant="destructive">Failed</Badge>
-                            ) : (
-                              <Badge variant="secondary">{schedule.status}</Badge>
-                            )}
-                          </td>
-                          <td className="p-2 text-xs">{schedule.user_email || 'N/A'}</td>
-                          <td className="p-2 text-xs">{schedule.account_assigned || 'N/A'}</td>
-                          <td className="p-2 text-xs font-mono">{schedule.proxy_assigned || 'N/A'}</td>
-                          <td className="p-2">{getVisualStateBadge(schedule.account_last_visual_state)}</td>
-                          <td className="p-2 font-mono text-xs truncate max-w-[100px]" title={schedule.session_id_assigned || ''}>
-                            {schedule.session_id_assigned ? schedule.session_id_assigned.substring(0, 10) + '...' : 'N/A'}
-                          </td>
-                        </tr>
-                      ))
+                      data.schedulingQueue.map((schedule) => {
+                        const isExpanded = expandedBatches.has(schedule.id)
+                        const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name))
+
+                        return (
+                          <>
+                            {/* Main batch row */}
+                            <tr key={schedule.id} className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleBatch(schedule.id)}>
+                              <td className="p-2">
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4 text-slate-600" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-slate-600" />
+                                )}
+                              </td>
+                              <td className="p-2 font-mono text-xs">
+                                {new Date(schedule.execution_time).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </td>
+                              <td className="p-2">
+                                <Badge variant="outline">
+                                  Batch #{schedule.batch_number}
+                                </Badge>
+                              </td>
+                              <td className="p-2">
+                                <div className="flex flex-col gap-1">
+                                  <Badge className="bg-blue-500 w-fit">
+                                    {schedule.batch_size} {schedule.batch_size === 1 ? 'prompt' : 'prompts'}
+                                  </Badge>
+                                  <span className="text-xs text-slate-600">
+                                    {uniqueBrands.size} {uniqueBrands.size === 1 ? 'brand' : 'brands'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-2">
+                                {schedule.status === 'pending' ? (
+                                  <Badge variant="outline">Pending</Badge>
+                                ) : schedule.status === 'running' ? (
+                                  <Badge className="bg-blue-500">Running</Badge>
+                                ) : schedule.status === 'completed' ? (
+                                  <Badge className="bg-green-500">Completed</Badge>
+                                ) : schedule.status === 'failed' ? (
+                                  <Badge variant="destructive">Failed</Badge>
+                                ) : (
+                                  <Badge variant="secondary">{schedule.status}</Badge>
+                                )}
+                              </td>
+                              <td className="p-2 text-xs">{schedule.account_assigned || 'N/A'}</td>
+                              <td className="p-2 text-xs font-mono">{schedule.proxy_assigned || 'N/A'}</td>
+                              <td className="p-2">{getVisualStateBadge(schedule.account_last_visual_state)}</td>
+                            </tr>
+
+                            {/* Expanded prompt rows */}
+                            {isExpanded && schedule.prompts.map((prompt, index) => (
+                              <tr key={`${schedule.id}-prompt-${prompt.id}`} className="bg-slate-50 border-b border-slate-100">
+                                <td className="p-2"></td>
+                                <td className="p-2 pl-8" colSpan={2}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500">#{index + 1}</span>
+                                    <Badge variant="outline" className="text-xs">
+                                      {prompt.brand_name}
+                                    </Badge>
+                                  </div>
+                                </td>
+                                <td className="p-2" colSpan={4}>
+                                  <div className="text-xs text-slate-700 max-w-2xl">
+                                    {prompt.prompt_text.length > 150
+                                      ? prompt.prompt_text.substring(0, 150) + '...'
+                                      : prompt.prompt_text
+                                    }
+                                  </div>
+                                </td>
+                                <td className="p-2">
+                                  <span className="text-xs text-slate-500">{prompt.user_email}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
