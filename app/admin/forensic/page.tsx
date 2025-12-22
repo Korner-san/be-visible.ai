@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -367,9 +367,9 @@ export default function ForensicPage() {
                         const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name))
 
                         return (
-                          <>
+                          <Fragment key={schedule.id}>
                             {/* Main batch row */}
-                            <tr key={schedule.id} className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleBatch(schedule.id)}>
+                            <tr className="border-b hover:bg-muted/50 cursor-pointer" onClick={() => toggleBatch(schedule.id)}>
                               <td className="p-2">
                                 {isExpanded ? (
                                   <ChevronDown className="w-4 h-4 text-slate-600" />
@@ -443,7 +443,7 @@ export default function ForensicPage() {
                                 </td>
                               </tr>
                             ))}
-                          </>
+                          </Fragment>
                         )
                       })
                     )}

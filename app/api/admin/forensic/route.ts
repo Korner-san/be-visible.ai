@@ -149,20 +149,35 @@ export async function GET(request: NextRequest) {
       enrichedQueue = await Promise.all(
         (schedulingQueue || []).map(async (schedule: any) => {
           // Fetch all prompts in this batch
-          const { data: prompts } = await supabase
+          const { data: prompts, error: promptError } = await supabase
             .from('brand_prompts')
             .select(`
               id,
               prompt,
-              brands!inner(
+              brand_id,
+              user_id,
+              brands!brand_prompts_brand_id_fkey(
                 id,
                 name
               ),
-              users!inner(
+              users!brand_prompts_user_id_fkey(
+                id,
                 email
               )
             `)
             .in('id', schedule.prompt_ids || [])
+
+          if (promptError) {
+            console.error('Error fetching prompts for batch', schedule.id, promptError)
+          }
+
+          const enrichedPrompts = (prompts || []).map((p: any) => ({
+            id: p.id,
+            prompt_text: p.prompt,
+            brand_name: p.brands?.name || 'Unknown',
+            brand_id: p.brands?.id || p.brand_id,
+            user_email: p.users?.email || 'Unknown'
+          }))
 
           return {
             id: schedule.id,
@@ -171,17 +186,12 @@ export async function GET(request: NextRequest) {
             execution_time: schedule.execution_time,
             status: schedule.status,
             batch_size: schedule.batch_size,
+            prompt_ids: schedule.prompt_ids,
             account_assigned: schedule.chatgpt_accounts?.email,
             proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
             account_last_visual_state: schedule.chatgpt_accounts?.last_visual_state,
             session_id_assigned: schedule.chatgpt_accounts?.browserless_session_id,
-            prompts: prompts?.map((p: any) => ({
-              id: p.id,
-              prompt_text: p.prompt,
-              brand_name: p.brands?.name,
-              brand_id: p.brands?.id,
-              user_email: p.users?.email
-            })) || []
+            prompts: enrichedPrompts
           }
         })
       )
