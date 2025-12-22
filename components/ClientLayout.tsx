@@ -11,19 +11,20 @@ import GlobalDateFilter from '@/components/GlobalDateFilter'
 import { GlobalModelFilter } from '@/components/GlobalModelFilter'
 import { Button } from '@/components/ui/button'
 import OnboardingLoader from '@/components/OnboardingLoader'
-import { 
-  BarChart3, 
-  MessageSquare, 
-  Globe, 
-  Zap, 
-  FileText, 
-  HelpCircle, 
+import {
+  BarChart3,
+  MessageSquare,
+  Globe,
+  Zap,
+  FileText,
+  HelpCircle,
   User,
   Settings,
   Users,
   CreditCard,
   Headphones,
-  LogOut
+  LogOut,
+  Activity
 } from 'lucide-react'
 
 export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
@@ -209,6 +210,26 @@ export const ClientLayout = ({ children }: { children: React.ReactNode }) => {
               >
                 <Globe className="w-4 h-4" />
                 Brands
+              </NavLink>
+            </li>
+          </ul>
+
+          {/* Separator */}
+          <div className="my-4 border-t border-slate-200"></div>
+
+          {/* Admin/Forensic Tools */}
+          <div className="mb-3">
+            <h3 className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">System</h3>
+          </div>
+          <ul className="space-y-1">
+            <li>
+              <NavLink
+                href="/admin/forensic"
+                className="flex items-center gap-3 px-3 py-2.5 text-sm text-slate-600 hover:bg-white hover:text-slate-900 rounded-lg transition-all"
+                activeClassName="flex items-center gap-3 px-3 py-2.5 text-sm text-slate-900 bg-white rounded-lg transition-all"
+              >
+                <Activity className="w-4 h-4" />
+                Forensic Panel
               </NavLink>
             </li>
           </ul>
