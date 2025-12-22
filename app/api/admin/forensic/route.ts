@@ -45,8 +45,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Table B: Citation Trace - Recent prompt results with forensic data
+    // Table B: Citation Extraction Tracking - Last 50 prompt runs
     if (!table || table === 'citations' || table === 'all') {
+      // Get last 50 prompt executions
       const { data: citationTrace, error: citationsError } = await supabase
         .from('prompt_results')
         .select(`
@@ -54,68 +55,56 @@ export async function GET(request: NextRequest) {
           created_at,
           brand_prompt_id,
           prompt_text,
-          chatgpt_response,
           chatgpt_citations,
-          browserless_session_id_used,
-          execution_visual_state,
-          provider_status,
-          provider_error_message,
           brand_prompts!inner(
             id,
-            brand_id,
             brands!inner(
               id,
-              name,
-              owner_user_id
+              name
             )
-          ),
-          daily_schedules(
-            id,
-            batch_number
           )
         `)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(50)
 
       if (citationsError && table === 'citations') {
         return NextResponse.json({
           success: false,
-          error: 'Failed to fetch citation trace',
+          error: 'Failed to fetch citation data',
           message: citationsError.message
         }, { status: 500 })
       }
 
-      // Get unique user IDs from brands
-      const userIds = [...new Set((citationTrace || []).map((r: any) => r.brand_prompts?.brands?.owner_user_id).filter(Boolean))]
+      // Get unique prompt IDs to calculate citation rates
+      const uniquePromptIds = [...new Set((citationTrace || []).map((r: any) => r.brand_prompt_id))]
 
-      // Fetch user emails
-      let userMap: Record<string, string> = {}
-      if (userIds.length > 0) {
-        const { data: users } = await supabase
-          .from('users')
-          .select('id, email')
-          .in('id', userIds)
+      // For each prompt, get last 5 executions to calculate citation rate
+      const citationRates: Record<string, number> = {}
 
-        users?.forEach((u: any) => {
-          userMap[u.id] = u.email
-        })
+      for (const promptId of uniquePromptIds) {
+        const { data: last5 } = await supabase
+          .from('prompt_results')
+          .select('chatgpt_citations')
+          .eq('brand_prompt_id', promptId)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (last5 && last5.length > 0) {
+          const withCitations = last5.filter(r => r.chatgpt_citations && r.chatgpt_citations.length > 0).length
+          citationRates[promptId] = Math.round((withCitations / last5.length) * 100)
+        } else {
+          citationRates[promptId] = 0
+        }
       }
 
-      // Transform the data for easier frontend consumption
+      // Transform the data
       const transformedCitations = citationTrace?.map((row: any) => ({
         id: row.id,
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
-        userEmail: userMap[row.brand_prompts?.brands?.owner_user_id] || 'Unknown',
-        promptSnippet: row.prompt_text?.substring(0, 100) + '...',
-        responseLength: row.chatgpt_response?.length || 0,
-        citationsCount: row.chatgpt_citations?.length || 0,
-        sessionId: row.browserless_session_id_used,
-        visualState: row.execution_visual_state,
-        status: row.provider_status,
-        errorMessage: row.provider_error_message,
-        batchId: row.daily_schedules?.id,
-        batchNumber: row.daily_schedules?.batch_number
+        promptText: row.prompt_text || '',
+        citationsExtracted: row.chatgpt_citations?.length || 0,
+        citationRate: citationRates[row.brand_prompt_id] || 0
       })) || []
 
       if (table === 'citations') {
@@ -249,44 +238,37 @@ export async function GET(request: NextRequest) {
             created_at,
             brand_prompt_id,
             prompt_text,
-            chatgpt_response,
             chatgpt_citations,
-            browserless_session_id_used,
-            execution_visual_state,
-            provider_status,
-            provider_error_message,
             brand_prompts!inner(
               id,
-              brand_id,
               brands!inner(
                 id,
-                name,
-                owner_user_id
+                name
               )
-            ),
-            daily_schedules(
-              id,
-              batch_number
             )
           `)
           .order('created_at', { ascending: false })
-          .limit(100)
+          .limit(50)
       ])
 
-      // Get unique user IDs from brands for citations
-      const citationUserIds = [...new Set((citationsResult.data || []).map((r: any) => r.brand_prompts?.brands?.owner_user_id).filter(Boolean))]
+      // Calculate citation rates for all table view
+      const uniquePromptIds = [...new Set((citationsResult.data || []).map((r: any) => r.brand_prompt_id))]
+      const citationRatesAll: Record<string, number> = {}
 
-      // Fetch user emails for citations
-      let citationUserMap: Record<string, string> = {}
-      if (citationUserIds.length > 0) {
-        const { data: citationUsers } = await supabase
-          .from('users')
-          .select('id, email')
-          .in('id', citationUserIds)
+      for (const promptId of uniquePromptIds) {
+        const { data: last5 } = await supabase
+          .from('prompt_results')
+          .select('chatgpt_citations')
+          .eq('brand_prompt_id', promptId)
+          .order('created_at', { ascending: false })
+          .limit(5)
 
-        citationUsers?.forEach((u: any) => {
-          citationUserMap[u.id] = u.email
-        })
+        if (last5 && last5.length > 0) {
+          const withCitations = last5.filter(r => r.chatgpt_citations && r.chatgpt_citations.length > 0).length
+          citationRatesAll[promptId] = Math.round((withCitations / last5.length) * 100)
+        } else {
+          citationRatesAll[promptId] = 0
+        }
       }
 
       // Transform citation data
@@ -294,16 +276,9 @@ export async function GET(request: NextRequest) {
         id: row.id,
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
-        userEmail: citationUserMap[row.brand_prompts?.brands?.owner_user_id] || 'Unknown',
-        promptSnippet: row.prompt_text?.substring(0, 100) + '...',
-        responseLength: row.chatgpt_response?.length || 0,
-        citationsCount: row.chatgpt_citations?.length || 0,
-        sessionId: row.browserless_session_id_used,
-        visualState: row.execution_visual_state,
-        status: row.provider_status,
-        errorMessage: row.provider_error_message,
-        batchId: row.daily_schedules?.id,
-        batchNumber: row.daily_schedules?.batch_number
+        promptText: row.prompt_text || '',
+        citationsExtracted: row.chatgpt_citations?.length || 0,
+        citationRate: citationRatesAll[row.brand_prompt_id] || 0
       })) || []
 
       return NextResponse.json({
