@@ -62,11 +62,11 @@ export async function GET(request: NextRequest) {
           provider_error_message,
           brand_prompts!inner(
             id,
+            brand_id,
             brands!inner(
-              name
-            ),
-            users!inner(
-              email
+              id,
+              name,
+              owner_user_id
             )
           ),
           daily_schedules(
@@ -85,12 +85,28 @@ export async function GET(request: NextRequest) {
         }, { status: 500 })
       }
 
+      // Get unique user IDs from brands
+      const userIds = [...new Set((citationTrace || []).map((r: any) => r.brand_prompts?.brands?.owner_user_id).filter(Boolean))]
+
+      // Fetch user emails
+      let userMap: Record<string, string> = {}
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, email')
+          .in('id', userIds)
+
+        users?.forEach((u: any) => {
+          userMap[u.id] = u.email
+        })
+      }
+
       // Transform the data for easier frontend consumption
       const transformedCitations = citationTrace?.map((row: any) => ({
         id: row.id,
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
-        userEmail: row.brand_prompts?.users?.email || 'Unknown',
+        userEmail: userMap[row.brand_prompts?.brands?.owner_user_id] || 'Unknown',
         promptSnippet: row.prompt_text?.substring(0, 100) + '...',
         responseLength: row.chatgpt_response?.length || 0,
         citationsCount: row.chatgpt_citations?.length || 0,
@@ -241,11 +257,11 @@ export async function GET(request: NextRequest) {
             provider_error_message,
             brand_prompts!inner(
               id,
+              brand_id,
               brands!inner(
-                name
-              ),
-              users!inner(
-                email
+                id,
+                name,
+                owner_user_id
               )
             ),
             daily_schedules(
@@ -257,12 +273,28 @@ export async function GET(request: NextRequest) {
           .limit(100)
       ])
 
+      // Get unique user IDs from brands for citations
+      const citationUserIds = [...new Set((citationsResult.data || []).map((r: any) => r.brand_prompts?.brands?.owner_user_id).filter(Boolean))]
+
+      // Fetch user emails for citations
+      let citationUserMap: Record<string, string> = {}
+      if (citationUserIds.length > 0) {
+        const { data: citationUsers } = await supabase
+          .from('users')
+          .select('id, email')
+          .in('id', citationUserIds)
+
+        citationUsers?.forEach((u: any) => {
+          citationUserMap[u.id] = u.email
+        })
+      }
+
       // Transform citation data
       const transformedCitations = citationsResult.data?.map((row: any) => ({
         id: row.id,
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
-        userEmail: row.brand_prompts?.users?.email || 'Unknown',
+        userEmail: citationUserMap[row.brand_prompts?.brands?.owner_user_id] || 'Unknown',
         promptSnippet: row.prompt_text?.substring(0, 100) + '...',
         responseLength: row.chatgpt_response?.length || 0,
         citationsCount: row.chatgpt_citations?.length || 0,
