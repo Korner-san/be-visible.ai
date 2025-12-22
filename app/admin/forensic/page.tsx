@@ -244,12 +244,12 @@ export default function ForensicPage() {
             </CardContent>
           </Card>
 
-          {/* Table B: Citation Trace */}
+          {/* Table B: Citation Extraction Tracker */}
           <Card>
             <CardHeader>
-              <CardTitle>Table B: Batch & Citation Forensic Trace</CardTitle>
+              <CardTitle>Table B: Citation Extraction Tracker</CardTitle>
               <CardDescription>
-                Recent prompt executions with citation extraction data (last 100 results)
+                Last 50 prompt runs showing citation performance. Citation Rate = % of last 5 runs that extracted citations.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -257,23 +257,18 @@ export default function ForensicPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-2 font-semibold">Timestamp</th>
-                      <th className="text-left p-2 font-semibold">Batch</th>
-                      <th className="text-left p-2 font-semibold">Brand</th>
-                      <th className="text-left p-2 font-semibold">User</th>
-                      <th className="text-left p-2 font-semibold">Prompt Snippet</th>
-                      <th className="text-left p-2 font-semibold">Response</th>
-                      <th className="text-left p-2 font-semibold">Citations</th>
-                      <th className="text-left p-2 font-semibold">Session ID</th>
-                      <th className="text-left p-2 font-semibold">Visual State</th>
-                      <th className="text-left p-2 font-semibold">Status</th>
+                      <th className="text-left p-2 font-semibold w-32">Date</th>
+                      <th className="text-left p-2 font-semibold w-24">Brand</th>
+                      <th className="text-left p-2 font-semibold">Prompt</th>
+                      <th className="text-left p-2 font-semibold w-24 text-center">Citations</th>
+                      <th className="text-left p-2 font-semibold w-24 text-center">Rate</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.citationTrace.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="text-center p-4 text-muted-foreground">
-                          No prompt results found
+                        <td colSpan={5} className="text-center p-4 text-muted-foreground">
+                          No citation data found
                         </td>
                       </tr>
                     ) : (
@@ -287,40 +282,31 @@ export default function ForensicPage() {
                               minute: '2-digit'
                             })}
                           </td>
-                          <td className="p-2 text-xs">
-                            {trace.batchNumber ? `#${trace.batchNumber}` : 'N/A'}
+                          <td className="p-2">
+                            <Badge variant="outline" className="text-xs">
+                              {trace.brandName}
+                            </Badge>
                           </td>
-                          <td className="p-2 text-xs">{trace.brandName}</td>
-                          <td className="p-2 text-xs">{trace.userEmail}</td>
-                          <td className="p-2 text-xs max-w-[200px] truncate" title={trace.promptSnippet}>
-                            {trace.promptSnippet}
+                          <td className="p-2 text-xs max-w-[400px]" title={trace.promptText}>
+                            <div className="line-clamp-2">{trace.promptText}</div>
                           </td>
-                          <td className="p-2 text-xs">
-                            {trace.responseLength > 0 ? (
-                              <span className="text-green-600 font-semibold">{trace.responseLength} chars</span>
-                            ) : (
-                              <span className="text-red-600">0 chars</span>
-                            )}
-                          </td>
-                          <td className="p-2 text-xs">
-                            {trace.citationsCount > 0 ? (
-                              <Badge className="bg-blue-500">{trace.citationsCount}</Badge>
+                          <td className="p-2 text-center">
+                            {trace.citationsExtracted > 0 ? (
+                              <Badge className="bg-blue-500">{trace.citationsExtracted}</Badge>
                             ) : (
                               <Badge variant="secondary">0</Badge>
                             )}
                           </td>
-                          <td className="p-2 font-mono text-xs truncate max-w-[100px]" title={trace.sessionId || ''}>
-                            {trace.sessionId ? trace.sessionId.substring(0, 10) + '...' : 'N/A'}
-                          </td>
-                          <td className="p-2">{getVisualStateBadge(trace.visualState)}</td>
-                          <td className="p-2">
-                            {trace.status === 'ok' ? (
-                              <Badge className="bg-green-500">OK</Badge>
-                            ) : trace.status === 'error' ? (
-                              <Badge variant="destructive" title={trace.errorMessage || ''}>Error</Badge>
-                            ) : (
-                              <Badge variant="outline">{trace.status}</Badge>
-                            )}
+                          <td className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className={`font-semibold ${
+                                trace.citationRate >= 60 ? 'text-green-600' :
+                                trace.citationRate >= 20 ? 'text-yellow-600' :
+                                'text-red-600'
+                              }`}>
+                                {trace.citationRate}%
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       ))
