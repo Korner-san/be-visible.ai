@@ -96,7 +96,7 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
       chatgpt_account_email: CHATGPT_ACCOUNT_EMAIL,
       browserless_session_id: currentSessionId,
       proxy_used: currentProxyUsed,
-      connection_status: loginResult.isLoggedIn ? 'Ready' : 'Login_Required',
+      connection_status: 'Connected', // Connection succeeded (visual_state shows if usable)
       visual_state: loginResult.visualState,
       visual_state_details: loginResult.visualStateDetails,
       operation_type: 'batch_execution',
