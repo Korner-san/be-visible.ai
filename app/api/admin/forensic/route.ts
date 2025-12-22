@@ -148,21 +148,17 @@ export async function GET(request: NextRequest) {
       // Enrich with prompt details
       enrichedQueue = await Promise.all(
         (schedulingQueue || []).map(async (schedule: any) => {
-          // Fetch all prompts in this batch
+          // Fetch all prompts in this batch with brand info
           const { data: prompts, error: promptError } = await supabase
             .from('brand_prompts')
             .select(`
               id,
-              prompt,
+              improved_prompt,
               brand_id,
-              user_id,
-              brands!brand_prompts_brand_id_fkey(
+              brands!inner(
                 id,
-                name
-              ),
-              users!brand_prompts_user_id_fkey(
-                id,
-                email
+                name,
+                owner_user_id
               )
             `)
             .in('id', schedule.prompt_ids || [])
@@ -171,12 +167,28 @@ export async function GET(request: NextRequest) {
             console.error('Error fetching prompts for batch', schedule.id, promptError)
           }
 
+          // Get unique user IDs from brands
+          const userIds = [...new Set((prompts || []).map((p: any) => p.brands?.owner_user_id).filter(Boolean))]
+
+          // Fetch user emails
+          let userMap: Record<string, string> = {}
+          if (userIds.length > 0) {
+            const { data: users } = await supabase
+              .from('users')
+              .select('id, email')
+              .in('id', userIds)
+
+            users?.forEach((u: any) => {
+              userMap[u.id] = u.email
+            })
+          }
+
           const enrichedPrompts = (prompts || []).map((p: any) => ({
             id: p.id,
-            prompt_text: p.prompt,
+            prompt_text: p.improved_prompt,
             brand_name: p.brands?.name || 'Unknown',
             brand_id: p.brands?.id || p.brand_id,
-            user_email: p.users?.email || 'Unknown'
+            user_email: userMap[p.brands?.owner_user_id] || 'Unknown'
           }))
 
           return {
