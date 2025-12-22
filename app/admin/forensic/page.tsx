@@ -316,7 +316,8 @@ export default function ForensicPage() {
             <CardHeader>
               <CardTitle>Table C: Scheduling Queue</CardTitle>
               <CardDescription>
-                Upcoming scheduled batches (today and tomorrow)
+                Upcoming scheduled batches (today and tomorrow). Each batch executes prompts from ONE brand only.
+                Batch numbers are global across all brands.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -325,21 +326,20 @@ export default function ForensicPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left p-2 font-semibold">Execution Time</th>
-                      <th className="text-left p-2 font-semibold">Batch</th>
+                      <th className="text-left p-2 font-semibold">Batch / Brand</th>
+                      <th className="text-left p-2 font-semibold">Prompts</th>
                       <th className="text-left p-2 font-semibold">Status</th>
-                      <th className="text-left p-2 font-semibold">Size</th>
-                      <th className="text-left p-2 font-semibold">Brand</th>
                       <th className="text-left p-2 font-semibold">User</th>
                       <th className="text-left p-2 font-semibold">Account</th>
                       <th className="text-left p-2 font-semibold">Proxy</th>
-                      <th className="text-left p-2 font-semibold">Account Visual State</th>
+                      <th className="text-left p-2 font-semibold">Account State</th>
                       <th className="text-left p-2 font-semibold">Session ID</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.schedulingQueue.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="text-center p-4 text-muted-foreground">
+                        <td colSpan={9} className="text-center p-4 text-muted-foreground">
                           No upcoming batches scheduled
                         </td>
                       </tr>
@@ -354,7 +354,21 @@ export default function ForensicPage() {
                               minute: '2-digit'
                             })}
                           </td>
-                          <td className="p-2 text-xs">#{schedule.batch_number}</td>
+                          <td className="p-2">
+                            <div className="flex flex-col gap-1">
+                              <Badge variant="outline" className="w-fit">
+                                Batch #{schedule.batch_number}
+                              </Badge>
+                              <span className="text-xs font-semibold text-slate-900">
+                                {schedule.brand_name || 'N/A'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-2">
+                            <Badge className="bg-blue-500">
+                              {schedule.batch_size} {schedule.batch_size === 1 ? 'prompt' : 'prompts'}
+                            </Badge>
+                          </td>
                           <td className="p-2">
                             {schedule.status === 'pending' ? (
                               <Badge variant="outline">Pending</Badge>
@@ -368,8 +382,6 @@ export default function ForensicPage() {
                               <Badge variant="secondary">{schedule.status}</Badge>
                             )}
                           </td>
-                          <td className="p-2 text-xs">{schedule.batch_size} prompts</td>
-                          <td className="p-2 text-xs">{schedule.brand_name || 'N/A'}</td>
                           <td className="p-2 text-xs">{schedule.user_email || 'N/A'}</td>
                           <td className="p-2 text-xs">{schedule.account_assigned || 'N/A'}</td>
                           <td className="p-2 text-xs font-mono">{schedule.proxy_assigned || 'N/A'}</td>
