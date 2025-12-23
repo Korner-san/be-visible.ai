@@ -260,6 +260,7 @@ export default function ForensicPage() {
                       <th className="text-left p-2 font-semibold w-32">Date</th>
                       <th className="text-left p-2 font-semibold w-24">Brand</th>
                       <th className="text-left p-2 font-semibold">Prompt</th>
+                      <th className="text-left p-2 font-semibold w-24 text-center">Response</th>
                       <th className="text-left p-2 font-semibold w-24 text-center">Citations</th>
                       <th className="text-left p-2 font-semibold w-24 text-center">Rate</th>
                     </tr>
@@ -267,7 +268,7 @@ export default function ForensicPage() {
                   <tbody>
                     {data.citationTrace.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center p-4 text-muted-foreground">
+                        <td colSpan={6} className="text-center p-4 text-muted-foreground">
                           No citation data found
                         </td>
                       </tr>
@@ -289,6 +290,9 @@ export default function ForensicPage() {
                           </td>
                           <td className="p-2 text-xs max-w-[400px]" title={trace.promptText}>
                             <div className="line-clamp-2">{trace.promptText}</div>
+                          </td>
+                          <td className="p-2 text-center text-xs font-mono text-muted-foreground">
+                            {trace.responseLength?.toLocaleString() || 0} chars
                           </td>
                           <td className="p-2 text-center">
                             {trace.citationsExtracted > 0 ? (

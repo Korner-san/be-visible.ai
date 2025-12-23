@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
           created_at,
           brand_prompt_id,
           prompt_text,
+          chatgpt_response,
           chatgpt_citations,
           brand_prompts!inner(
             id,
@@ -103,6 +104,7 @@ export async function GET(request: NextRequest) {
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
         promptText: row.prompt_text || '',
+        responseLength: (row.chatgpt_response || '').length,
         citationsExtracted: row.chatgpt_citations?.length || 0,
         citationRate: citationRates[row.brand_prompt_id] || 0
       })) || []
@@ -238,6 +240,7 @@ export async function GET(request: NextRequest) {
             created_at,
             brand_prompt_id,
             prompt_text,
+            chatgpt_response,
             chatgpt_citations,
             brand_prompts!inner(
               id,
@@ -277,6 +280,7 @@ export async function GET(request: NextRequest) {
         timestamp: row.created_at,
         brandName: row.brand_prompts?.brands?.name || 'Unknown',
         promptText: row.prompt_text || '',
+        responseLength: (row.chatgpt_response || '').length,
         citationsExtracted: row.chatgpt_citations?.length || 0,
         citationRate: citationRatesAll[row.brand_prompt_id] || 0
       })) || []
