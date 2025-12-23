@@ -4,7 +4,8 @@ import { useState, useEffect, Fragment } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Loader2, AlertCircle, CheckCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { RefreshCw, Loader2, AlertCircle, CheckCircle, Clock, ChevronDown, ChevronRight, Lock } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface SessionAttempt {
@@ -97,6 +98,9 @@ const getVisualStateBadge = (state: string | null) => {
 }
 
 export default function ForensicPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState(false)
   const [data, setData] = useState<ForensicData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -113,6 +117,26 @@ export default function ForensicPage() {
       }
       return newSet
     })
+  }
+
+  // Check authentication from localStorage on mount
+  useEffect(() => {
+    const authenticated = localStorage.getItem('forensic_authenticated')
+    if (authenticated === 'true') {
+      setIsAuthenticated(true)
+    }
+  }, [])
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (password === 'Korneret') {
+      setIsAuthenticated(true)
+      setPasswordError(false)
+      localStorage.setItem('forensic_authenticated', 'true')
+    } else {
+      setPasswordError(true)
+      setPassword('')
+    }
   }
 
   const fetchData = async () => {
@@ -137,8 +161,52 @@ export default function ForensicPage() {
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (isAuthenticated) {
+      fetchData()
+    }
+  }, [isAuthenticated])
+
+  // Show password form if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="max-w-md mx-auto mt-20">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-center mb-4">
+                <Lock className="w-12 h-12 text-muted-foreground" />
+              </div>
+              <CardTitle className="text-center">Forensic Visibility Panel</CardTitle>
+              <CardDescription className="text-center">
+                This page is password protected. Please enter the password to continue.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={passwordError ? 'border-red-500' : ''}
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <p className="text-sm text-red-500 mt-2">Incorrect password. Please try again.</p>
+                  )}
+                </div>
+                <Button type="submit" className="w-full">
+                  <Lock className="w-4 h-4 mr-2" />
+                  Unlock
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto py-8 px-4">
