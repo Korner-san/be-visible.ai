@@ -57,7 +57,20 @@ interface ScheduleItem {
   prompts: PromptDetail[]
 }
 
+interface StorageStateHealth {
+  extractionPc: string
+  pcAccess: string
+  chatgptAccount: string
+  proxy: string
+  age: number | null
+  status: string
+  lastSuccess: string | null
+  visualStateTrend: string
+  actionNeeded: string
+}
+
 interface ForensicData {
+  storageStateHealth: StorageStateHealth[]
   sessionMatrix: SessionAttempt[]
   citationTrace: CitationTrace[]
   schedulingQueue: ScheduleItem[]
@@ -250,10 +263,101 @@ export default function ForensicPage() {
       {data && (
         <div className="space-y-8">
 
-          {/* Table A: Session Matrix */}
+          {/* Table A: Storage State Health Monitor */}
           <Card>
             <CardHeader>
-              <CardTitle>Table A: Active/Recent Session Matrix</CardTitle>
+              <CardTitle>Table A: Storage State Health Monitor</CardTitle>
+              <CardDescription>
+                Current health and lifecycle status of cookie storage states for each ChatGPT account
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2 font-semibold">Extraction PC</th>
+                      <th className="text-left p-2 font-semibold">PC Access</th>
+                      <th className="text-left p-2 font-semibold">ChatGPT Account</th>
+                      <th className="text-left p-2 font-semibold">Proxy</th>
+                      <th className="text-left p-2 font-semibold">Age (Days)</th>
+                      <th className="text-left p-2 font-semibold">Status</th>
+                      <th className="text-left p-2 font-semibold">Last Success</th>
+                      <th className="text-left p-2 font-semibold">Visual State Trend</th>
+                      <th className="text-left p-2 font-semibold">Action Needed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.storageStateHealth.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="text-center p-4 text-muted-foreground">
+                          No storage state data found
+                        </td>
+                      </tr>
+                    ) : (
+                      data.storageStateHealth.map((state, index) => (
+                        <tr key={index} className="border-b hover:bg-muted/50">
+                          <td className="p-2 font-medium">{state.extractionPc}</td>
+                          <td className="p-2 text-muted-foreground">
+                            {state.pcAccess || '-'}
+                          </td>
+                          <td className="p-2 font-mono text-xs">{state.chatgptAccount}</td>
+                          <td className="p-2 font-mono text-xs">{state.proxy}</td>
+                          <td className="p-2 text-center">
+                            {state.age !== null ? (
+                              <Badge
+                                className={
+                                  state.age <= 3 ? 'bg-green-500' :
+                                  state.age <= 5 ? 'bg-yellow-500' :
+                                  'bg-red-500'
+                                }
+                              >
+                                {state.age} days
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <Badge
+                              className={
+                                state.status === 'Active' ? 'bg-green-500' :
+                                state.status === 'Failed' ? 'bg-red-500' :
+                                'bg-gray-500'
+                              }
+                            >
+                              {state.status}
+                            </Badge>
+                          </td>
+                          <td className="p-2 text-xs">
+                            {state.lastSuccess ? (
+                              new Date(state.lastSuccess).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            ) : (
+                              <span className="text-muted-foreground">No success</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-xs">{state.visualStateTrend}</td>
+                          <td className="p-2 text-xs text-muted-foreground">
+                            {state.actionNeeded || '-'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Table B: Session Matrix */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Table B: Active/Recent Session Matrix</CardTitle>
               <CardDescription>
                 Last 24 hours of Browserless session connection attempts (raw data)
               </CardDescription>
@@ -312,10 +416,10 @@ export default function ForensicPage() {
             </CardContent>
           </Card>
 
-          {/* Table B: Citation Extraction Tracker */}
+          {/* Table C: Citation Extraction Tracker */}
           <Card>
             <CardHeader>
-              <CardTitle>Table B: Citation Extraction Tracker</CardTitle>
+              <CardTitle>Table C: Citation Extraction Tracker</CardTitle>
               <CardDescription>
                 Last 50 prompt runs showing citation performance. Citation Rate = % of last 5 runs that extracted citations.
               </CardDescription>
@@ -389,10 +493,10 @@ export default function ForensicPage() {
             </CardContent>
           </Card>
 
-          {/* Table C: Scheduling Queue */}
+          {/* Table D: Scheduling Queue */}
           <Card>
             <CardHeader>
-              <CardTitle>Table C: Scheduling Queue</CardTitle>
+              <CardTitle>Table D: Scheduling Queue</CardTitle>
               <CardDescription>
                 Upcoming scheduled batches (today and tomorrow). Click to expand and see all prompts with their brands.
               </CardDescription>

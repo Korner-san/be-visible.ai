@@ -19,9 +19,97 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const table = searchParams.get('table') // 'sessions', 'citations', 'schedule', or 'all'
+    const table = searchParams.get('table') // 'storage_state', 'sessions', 'citations', 'schedule', or 'all'
 
-    // Table A: Session Matrix - Last 24 hours of session attempts
+    // Table A: Storage State Health Monitor
+    if (!table || table === 'storage_state' || table === 'all') {
+      const { data: accounts, error: accountsError } = await supabase
+        .from('chatgpt_accounts')
+        .select('email, proxy_host, proxy_port, cookies_created_at')
+        .order('email')
+
+      if (accountsError && table === 'storage_state') {
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to fetch storage state data',
+          message: accountsError.message
+        }, { status: 500 })
+      }
+
+      // For each account, calculate health metrics
+      const storageStateHealth = await Promise.all(
+        (accounts || []).map(async (account: any) => {
+          const now = new Date()
+          const cookiesCreated = account.cookies_created_at ? new Date(account.cookies_created_at) : null
+
+          // Calculate age in days
+          const ageInDays = cookiesCreated
+            ? Math.floor((now.getTime() - cookiesCreated.getTime()) / (1000 * 60 * 60 * 24))
+            : null
+
+          // Get last successful connection
+          const { data: lastSuccessData } = await supabase
+            .from('automation_forensics')
+            .select('timestamp')
+            .eq('chatgpt_account_email', account.email)
+            .eq('connection_status', 'Connected')
+            .eq('visual_state', 'Logged_In')
+            .order('timestamp', { ascending: false })
+            .limit(1)
+            .single()
+
+          // Get last 10 visual states for trend
+          const { data: recentStates } = await supabase
+            .from('automation_forensics')
+            .select('visual_state')
+            .eq('chatgpt_account_email', account.email)
+            .order('timestamp', { ascending: false })
+            .limit(10)
+
+          // Calculate visual state trend
+          const visualStates = recentStates?.map((s: any) => s.visual_state).filter(Boolean) || []
+          const loggedInCount = visualStates.filter((s: string) => s === 'Logged_In').length
+          const totalStates = visualStates.length
+
+          let visualStateTrend = 'Unknown'
+          if (totalStates > 0) {
+            const loggedInPercent = Math.round((loggedInCount / totalStates) * 100)
+            const mostCommon = visualStates[0] || 'Unknown'
+            visualStateTrend = `${mostCommon} (${loggedInPercent}%)`
+          }
+
+          // Determine status: Active or Failed
+          let status = 'Active'
+          if (totalStates >= 3) {
+            const recentFailures = visualStates.slice(0, 3).filter((s: string) => s !== 'Logged_In').length
+            if (recentFailures >= 2) {
+              status = 'Failed'
+            }
+          }
+
+          return {
+            extractionPc: 'Koren-laptop', // Hardcoded for now
+            pcAccess: '', // Blank for now
+            chatgptAccount: account.email,
+            proxy: `${account.proxy_host}:${account.proxy_port}`,
+            age: ageInDays,
+            status,
+            lastSuccess: lastSuccessData?.timestamp || null,
+            visualStateTrend,
+            actionNeeded: '' // Blank for now
+          }
+        })
+      )
+
+      if (table === 'storage_state') {
+        return NextResponse.json({
+          success: true,
+          data: storageStateHealth
+        })
+      }
+    }
+
+    // Table B: Session Matrix - Last 24 hours of session attempts
     if (!table || table === 'sessions' || table === 'all') {
       const { data: sessionMatrix, error: sessionsError } = await supabase
         .from('v_forensic_session_attempts_24h')
@@ -225,8 +313,13 @@ export async function GET(request: NextRequest) {
 
     // Return all tables if 'all' or no specific table requested
     if (!table || table === 'all') {
-      // Fetch sessions and citations in parallel (schedule already fetched above)
-      const [sessionsResult, citationsResult] = await Promise.all([
+      // Fetch storage state health, sessions and citations in parallel (schedule already fetched above)
+      const [accountsResult, sessionsResult, citationsResult] = await Promise.all([
+        supabase
+          .from('chatgpt_accounts')
+          .select('email, proxy_host, proxy_port, cookies_created_at')
+          .order('email'),
+
         supabase
           .from('v_forensic_session_attempts_24h')
           .select('*')
@@ -253,6 +346,66 @@ export async function GET(request: NextRequest) {
           .order('created_at', { ascending: false })
           .limit(50)
       ])
+
+      // Calculate storage state health for all accounts
+      const storageStateHealthAll = await Promise.all(
+        (accountsResult.data || []).map(async (account: any) => {
+          const now = new Date()
+          const cookiesCreated = account.cookies_created_at ? new Date(account.cookies_created_at) : null
+
+          const ageInDays = cookiesCreated
+            ? Math.floor((now.getTime() - cookiesCreated.getTime()) / (1000 * 60 * 60 * 24))
+            : null
+
+          const { data: lastSuccessData } = await supabase
+            .from('automation_forensics')
+            .select('timestamp')
+            .eq('chatgpt_account_email', account.email)
+            .eq('connection_status', 'Connected')
+            .eq('visual_state', 'Logged_In')
+            .order('timestamp', { ascending: false })
+            .limit(1)
+            .single()
+
+          const { data: recentStates } = await supabase
+            .from('automation_forensics')
+            .select('visual_state')
+            .eq('chatgpt_account_email', account.email)
+            .order('timestamp', { ascending: false })
+            .limit(10)
+
+          const visualStates = recentStates?.map((s: any) => s.visual_state).filter(Boolean) || []
+          const loggedInCount = visualStates.filter((s: string) => s === 'Logged_In').length
+          const totalStates = visualStates.length
+
+          let visualStateTrend = 'Unknown'
+          if (totalStates > 0) {
+            const loggedInPercent = Math.round((loggedInCount / totalStates) * 100)
+            const mostCommon = visualStates[0] || 'Unknown'
+            visualStateTrend = `${mostCommon} (${loggedInPercent}%)`
+          }
+
+          let status = 'Active'
+          if (totalStates >= 3) {
+            const recentFailures = visualStates.slice(0, 3).filter((s: string) => s !== 'Logged_In').length
+            if (recentFailures >= 2) {
+              status = 'Failed'
+            }
+          }
+
+          return {
+            extractionPc: 'Koren-laptop',
+            pcAccess: '',
+            chatgptAccount: account.email,
+            proxy: `${account.proxy_host}:${account.proxy_port}`,
+            age: ageInDays,
+            status,
+            lastSuccess: lastSuccessData?.timestamp || null,
+            visualStateTrend,
+            actionNeeded: ''
+          }
+        })
+      )
 
       // Calculate citation rates for all table view
       const uniquePromptIds = [...new Set((citationsResult.data || []).map((r: any) => r.brand_prompt_id))]
@@ -288,6 +441,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
+          storageStateHealth: storageStateHealthAll || [],
           sessionMatrix: sessionsResult.data || [],
           citationTrace: transformedCitations,
           schedulingQueue: enrichedQueue || []
@@ -299,7 +453,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: 'Invalid table parameter',
-      message: 'Use ?table=sessions, ?table=citations, ?table=schedule, or ?table=all'
+      message: 'Use ?table=storage_state, ?table=sessions, ?table=citations, ?table=schedule, or ?table=all'
     }, { status: 400 })
 
   } catch (error) {
