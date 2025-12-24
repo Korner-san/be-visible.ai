@@ -119,6 +119,7 @@ export default function ForensicPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set())
+  const [reinitializing, setReinitializing] = useState<string | null>(null) // Track which account is being re-initialized
 
   const toggleBatch = (batchId: string) => {
     setExpandedBatches(prev => {
@@ -170,6 +171,38 @@ export default function ForensicPage() {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleReinitialize = async (accountEmail: string) => {
+    try {
+      setReinitializing(accountEmail)
+      setError(null)
+
+      const response = await fetch('/api/admin/forensic/initialize-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ accountEmail })
+      })
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(result.message || 'Re-initialization failed')
+      }
+
+      // Refresh data after successful re-initialization
+      await fetchData()
+
+      alert(`✅ Session re-initialized successfully for ${accountEmail}`)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Re-initialization failed: ${errorMsg}`)
+      alert(`❌ Re-initialization failed: ${errorMsg}`)
+    } finally {
+      setReinitializing(null)
     }
   }
 
@@ -375,12 +408,13 @@ export default function ForensicPage() {
                       <th className="text-left p-2 font-semibold">Visual State</th>
                       <th className="text-left p-2 font-semibold">Operation</th>
                       <th className="text-left p-2 font-semibold">Error</th>
+                      <th className="text-left p-2 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.sessionMatrix.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center p-4 text-muted-foreground">
+                        <td colSpan={9} className="text-center p-4 text-muted-foreground">
                           No session attempts in last 24 hours
                         </td>
                       </tr>
@@ -406,6 +440,27 @@ export default function ForensicPage() {
                           <td className="p-2 text-xs">{session.operation_type}</td>
                           <td className="p-2 text-xs max-w-[200px] truncate" title={session.connection_error_raw || ''}>
                             {session.connection_error_raw || '-'}
+                          </td>
+                          <td className="p-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleReinitialize(session.chatgpt_account_email)}
+                              disabled={reinitializing === session.chatgpt_account_email}
+                              className="text-xs"
+                            >
+                              {reinitializing === session.chatgpt_account_email ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  Initializing...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3 h-3 mr-1" />
+                                  Re-init
+                                </>
+                              )}
+                            </Button>
                           </td>
                         </tr>
                       ))
