@@ -249,6 +249,7 @@ export async function GET(request: NextRequest) {
             .select(`
               id,
               improved_prompt,
+              raw_prompt,
               brand_id,
               brands!inner(
                 id,
@@ -280,7 +281,7 @@ export async function GET(request: NextRequest) {
 
           const enrichedPrompts = (prompts || []).map((p: any) => ({
             id: p.id,
-            prompt_text: p.improved_prompt,
+            prompt_text: p.improved_prompt || p.raw_prompt || '',
             brand_name: p.brands?.name || 'Unknown',
             brand_id: p.brands?.id || p.brand_id,
             user_email: userMap[p.brands?.owner_user_id] || 'Unknown'
