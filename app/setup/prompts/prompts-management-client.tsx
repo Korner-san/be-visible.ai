@@ -8,7 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Search, Filter, CheckCircle, XCircle, Archive, RefreshCw, Sparkles } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Loader2, Search, Filter, CheckCircle, XCircle, Archive, RefreshCw, Sparkles, Plus } from 'lucide-react'
 import { useBrandsStore } from '@/store/brands'
 import type { BrandPrompt, Brand } from '@/types/database'
 
@@ -61,6 +65,10 @@ export function PromptsManagementClient({ brands }: PromptsManagementClientProps
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedPrompts, setSelectedPrompts] = useState<Set<string>>(new Set())
   const [bulkActionLoading, setBulkActionLoading] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [newPromptText, setNewPromptText] = useState('')
+  const [newPromptActive, setNewPromptActive] = useState(false)
+  const [createLoading, setCreateLoading] = useState(false)
 
   // Load prompts when active brand changes
   useEffect(() => {
@@ -157,6 +165,47 @@ export function PromptsManagementClient({ brands }: PromptsManagementClientProps
     }
   }
 
+  const handleCreatePrompt = async () => {
+    if (!newPromptText.trim()) {
+      setError('Prompt text is required')
+      return
+    }
+
+    setCreateLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/setup/prompts/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brandId: activeBrandId,
+          promptText: newPromptText,
+          status: newPromptActive ? 'active' : 'inactive'
+        })
+      })
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to create prompt')
+      }
+
+      // Reload prompts
+      await loadPrompts(activeBrandId)
+
+      // Reset form and close dialog
+      setNewPromptText('')
+      setNewPromptActive(false)
+      setAddDialogOpen(false)
+    } catch (error) {
+      console.error('Error creating prompt:', error)
+      setError(error instanceof Error ? error.message : 'Failed to create prompt')
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
   const selectedBrandData = brands.find(b => b.id === activeBrandId)
   const isDemoBrand = selectedBrandData?.is_demo === true
   const statusCounts = prompts.reduce((acc, prompt) => {
@@ -181,11 +230,101 @@ export function PromptsManagementClient({ brands }: PromptsManagementClientProps
               Manage and organize your brand's AI visibility prompts.
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-500 mb-1">Active prompts</div>
-            <Badge variant={activeCount >= maxActivePrompts ? "destructive" : "default"} className="text-lg px-3 py-1">
-              {activeCount}/{maxActivePrompts}
-            </Badge>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-sm text-gray-500 mb-1">Active prompts</div>
+              <Badge variant={activeCount >= maxActivePrompts ? "destructive" : "default"} className="text-lg px-3 py-1">
+                {activeCount}/{maxActivePrompts}
+              </Badge>
+            </div>
+            {activeBrandId && selectedBrandData && !isDemoBrand && (
+              <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add New Prompt
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[600px]">
+                  <DialogHeader>
+                    <DialogTitle>Add New Prompt</DialogTitle>
+                    <DialogDescription>
+                      Create a custom prompt for your brand. You can activate it now or keep it inactive and activate it later.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="prompt-text">
+                        Prompt Text
+                      </Label>
+                      <Textarea
+                        id="prompt-text"
+                        placeholder="Enter your prompt here..."
+                        value={newPromptText}
+                        onChange={(e) => setNewPromptText(e.target.value)}
+                        rows={6}
+                        className="resize-none"
+                      />
+                      <p className="text-xs text-gray-500">
+                        Write a clear, specific prompt that will help ChatGPT mention your brand.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="prompt-active">
+                          Activate Immediately
+                        </Label>
+                        <p className="text-xs text-gray-500">
+                          {newPromptActive
+                            ? `This prompt will be active (${activeCount + 1}/${maxActivePrompts})`
+                            : 'This prompt will be inactive. You can activate it later.'}
+                        </p>
+                      </div>
+                      <Switch
+                        id="prompt-active"
+                        checked={newPromptActive}
+                        onCheckedChange={setNewPromptActive}
+                        disabled={!newPromptActive && activeCount >= maxActivePrompts}
+                      />
+                    </div>
+                    {!newPromptActive && activeCount >= maxActivePrompts && (
+                      <Alert>
+                        <AlertDescription className="text-xs">
+                          You've reached the maximum of {maxActivePrompts} active prompts. Deactivate some prompts before activating new ones.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setAddDialogOpen(false)
+                        setNewPromptText('')
+                        setNewPromptActive(false)
+                        setError(null)
+                      }}
+                      disabled={createLoading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCreatePrompt}
+                      disabled={createLoading || !newPromptText.trim()}
+                    >
+                      {createLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create Prompt'
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </div>
       </div>
