@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh:*)",
+      "mcp__supabase__execute_sql"
+    ]
+  }
+}

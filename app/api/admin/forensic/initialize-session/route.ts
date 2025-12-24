@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔄 [FORENSIC API] Calling webhook to re-initialize session for: ${accountEmail}`)
 
-    // Call the webhook server running on the production server
-    const webhookUrl = process.env.WEBHOOK_SERVER_URL || 'http://167.88.163.222:3001/initialize-session'
+    // Call the webhook server running on the Hetzner server
+    const webhookUrl = process.env.WEBHOOK_SERVER_URL || 'http://135.181.203.202:3001/initialize-session'
     const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here'
 
     const webhookResponse = await fetch(webhookUrl, {

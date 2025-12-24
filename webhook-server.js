@@ -1,12 +1,12 @@
 /**
  * Simple Webhook Server for Triggering Session Re-initialization
  *
- * This server runs on your production server (167.88.163.222) and provides
+ * This server runs on your Hetzner server (135.181.203.202) and provides
  * an HTTP endpoint that the Vercel-deployed Next.js app can call to trigger
  * the initialization script.
  *
  * Deploy this file to your server at: /root/be-visible.ai/webhook-server.js
- * Run with: node webhook-server.js
+ * Run with PM2: pm2 start webhook-server.js --name forensic-webhook
  */
 
 const http = require('http');
