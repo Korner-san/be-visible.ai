@@ -445,8 +445,8 @@ function buildClassificationPrompt(batch) {
   prompt += `- Content summary and writing style\n`;
   prompt += `- Intent (educate? persuade? compare? narrate?)\n\n`;
   
-  prompt += `Choose the category with the HIGHEST score.\n`;
-  prompt += `Use OTHER_LOW_CONFIDENCE ONLY if all other categories score below 0.45.\n\n`;
+  prompt += `You MUST choose the SINGLE BEST category from the 10 options. Do NOT use OTHER_LOW_CONFIDENCE.\n`;
+  prompt += `Choose the category that best matches the PRIMARY purpose, even if not 100% confident.\n\n`;
   
   prompt += `URLs to classify:\n\n`;
   
@@ -480,10 +480,15 @@ function parseClassificationResponse(response, expectedCount) {
         const [topCategory, topScore] = maxEntry;
         
         let finalCategory = topCategory;
-        if (topCategory !== 'OTHER_LOW_CONFIDENCE' && topScore < 0.45) {
-          const otherCategories = scoreEntries.filter(([cat]) => cat !== 'OTHER_LOW_CONFIDENCE');
-          const maxOtherScore = Math.max(...otherCategories.map(([, score]) => score));
-          if (maxOtherScore < 0.45) finalCategory = 'OTHER_LOW_CONFIDENCE';
+        // Reject OTHER_LOW_CONFIDENCE and use next best category
+        if (topCategory === "OTHER_LOW_CONFIDENCE") {
+          const nonOtherEntries = scoreEntries.filter(([cat]) => cat !== "OTHER_LOW_CONFIDENCE");
+          if (nonOtherEntries.length > 0) {
+            const bestNonOther = nonOtherEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
+            finalCategory = bestNonOther[0];
+          } else {
+            finalCategory = "COMPARISON_ANALYSIS";
+          }
         }
         
         results.push({
