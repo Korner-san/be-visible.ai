@@ -542,18 +542,26 @@ async function storeClassifications(classifications, inputs) {
 
 // ========== STEP 5: Link Citations to Prompts ==========
 async function linkCitationsToPrompts(citations, urlList) {
-  const { data: urlInventory } = await supabase
-    .from('url_inventory')
-    .select('id, url')
-    .in('url', urlList);
-  
+  // Batch URL lookups to avoid "fetch failed" errors with large arrays (>250 URLs)
+  const BATCH_SIZE = 100;
+  const allUrlInventory = [];
+
+  for (let i = 0; i < urlList.length; i += BATCH_SIZE) {
+    const batch = urlList.slice(i, i + BATCH_SIZE);
+    const { data } = await supabase
+      .from('url_inventory')
+      .select('id, url')
+      .in('url', batch);
+    if (data) allUrlInventory.push(...data);
+  }
+
   const urlMap = new Map();
-  (urlInventory || []).forEach(u => urlMap.set(u.url, u.id));
-  
+  allUrlInventory.forEach(u => urlMap.set(u.url, u.id));
+
   const citationRecords = citations.map(citation => {
     const urlId = urlMap.get(citation.url);
     if (!urlId) return null;
-    
+
     return {
       url_id: urlId,
       prompt_result_id: citation.promptResultId,
@@ -561,18 +569,19 @@ async function linkCitationsToPrompts(citations, urlList) {
       cited_at: new Date().toISOString()
     };
   }).filter(Boolean);
-  
+
   if (citationRecords.length === 0) return 0;
-  
+
   // Use upsert to avoid duplicates
   const { error } = await supabase
     .from('url_citations')
     .upsert(citationRecords, { onConflict: 'url_id,prompt_result_id,provider' });
-  
+
   if (error) {
     console.error(`⚠️  Error linking citations:`, error.message);
+    return 0;
   }
-  
+
   return citationRecords.length;
 }
 
@@ -627,21 +636,23 @@ async function updateReportCompletionStatus(dailyReportId) {
     return false;
   }
   
+  // NOTE: Status and completed_at are now set by end-of-day processor Phase 5
+  // This function only updates url_processing_status and generated flag
   const { error: updateError } = await supabase
     .from('daily_reports')
     .update({
-      status: 'completed',
-      generated: true,
-      completed_at: new Date().toISOString()
+      generated: true
+      // status: 'completed' - removed, handled by end-of-day processor
+      // completed_at - removed, handled by end-of-day processor
     })
     .eq('id', dailyReportId);
-  
+
   if (updateError) {
-    console.error(`⚠️  Failed to update report completion:`, updateError.message);
+    console.error(`⚠️  Failed to update report:`, updateError.message);
     return false;
   }
-  
-  console.log(`✅ [COMPLETION] Report marked as COMPLETED and GENERATED`);
+
+  console.log(`✅ [COMPLETION] URL processing complete and report generated flag set`);
   return true;
 }
 

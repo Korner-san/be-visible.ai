@@ -135,8 +135,8 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
     const { error: updateError } = await supabase
       .from('daily_reports')
       .update({
-        status: 'completed',
-        processed_at: new Date().toISOString()
+        status: 'completed'
+        // processed_at column doesn't exist in schema
       })
       .eq('id', dailyReportId);
 
