@@ -1,6 +1,7 @@
 // Server-first user state machine for onboarding and routing
 import { createClient } from './server'
 import type { User } from '@supabase/supabase-js'
+import { callPerplexityAPI, extractPerplexityContent } from '@/lib/providers/perplexity'
 
 // User states as defined in the requirements
 export type UserState = 
@@ -417,6 +418,11 @@ export async function updateOnboardingAnswers(
           // Don't fail the whole operation - JSONB is still updated
         } else {
           console.log('✅ [UPDATE ANSWERS] Successfully synced competitors to brand_competitors table')
+
+          // Fetch competitor domains using Perplexity API (non-blocking)
+          fetchCompetitorDomains(brandId, validCompetitors).catch(err => {
+            console.error('⚠️ [UPDATE ANSWERS] Failed to fetch competitor domains (non-critical):', err)
+          })
         }
       }
     }
@@ -433,3 +439,84 @@ export async function updateOnboardingAnswers(
 }
 
 // Removed duplicate completeOnboarding function - now handled by server action
+
+/**
+ * Fetch competitor domains using Perplexity API
+ * Called after competitors are saved during onboarding
+ */
+export async function fetchCompetitorDomains(brandId: string, competitorNames: string[]): Promise<void> {
+  if (!competitorNames || competitorNames.length === 0) {
+    console.log('⚠️ [FETCH DOMAINS] No competitors to process')
+    return
+  }
+
+  console.log('🌐 [FETCH DOMAINS] Fetching domains for', competitorNames.length, 'competitors')
+
+  try {
+    // Create prompt for Perplexity
+    const prompt = `Find the official website domain for each of the following companies. Return ONLY a JSON object with the format: {"CompanyName": "domain.com"}. Do not include http://, https://, or www. Just the base domain.
+
+Companies:
+${competitorNames.map(name => `- ${name}`).join('\n')}
+
+Return JSON only, no explanation.`
+
+    // Call Perplexity API
+    const response = await callPerplexityAPI(prompt, {
+      model: 'sonar',
+      maxTokens: 500,
+      temperature: 0.1,
+      returnCitations: false
+    })
+
+    const content = extractPerplexityContent(response)
+    console.log('🌐 [FETCH DOMAINS] Perplexity response:', content.substring(0, 200))
+
+    // Parse JSON response
+    let domainMap: Record<string, string>
+    try {
+      // Try to extract JSON from response (in case there's extra text)
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        domainMap = JSON.parse(jsonMatch[0])
+      } else {
+        domainMap = JSON.parse(content)
+      }
+    } catch (parseError) {
+      console.error('❌ [FETCH DOMAINS] Failed to parse JSON:', parseError)
+      console.log('Raw content:', content)
+      // Fallback: use .com for each competitor
+      domainMap = {}
+      competitorNames.forEach(name => {
+        domainMap[name] = `${name.toLowerCase().replace(/\s+/g, '')}.com`
+      })
+    }
+
+    console.log('🌐 [FETCH DOMAINS] Domain map:', domainMap)
+
+    // Update each competitor with its domain
+    const supabase = await createClient()
+
+    for (const competitorName of competitorNames) {
+      const domain = domainMap[competitorName] || `${competitorName.toLowerCase().replace(/\s+/g, '')}.com`
+
+      const { error } = await supabase
+        .from('brand_competitors')
+        .update({ competitor_domain: domain })
+        .eq('brand_id', brandId)
+        .eq('competitor_name', competitorName)
+
+      if (error) {
+        console.error(`⚠️ [FETCH DOMAINS] Failed to update domain for ${competitorName}:`, error)
+      } else {
+        console.log(`✅ [FETCH DOMAINS] Updated ${competitorName} → ${domain}`)
+      }
+    }
+
+    console.log('✅ [FETCH DOMAINS] Successfully fetched and saved all competitor domains')
+  } catch (error) {
+    console.error('❌ [FETCH DOMAINS] Error fetching domains:', error)
+    // Don't throw - this is a non-critical enhancement
+    // Competitors will just use the fallback .com domain
+  }
+}

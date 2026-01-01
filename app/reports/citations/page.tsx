@@ -12,6 +12,8 @@ import { useBrandsStore } from "@/store/brands"
 import { useDateFilter } from "@/contexts/DateFilterContext"
 import { useModelFilter } from "@/store/modelFilter"
 import { CitationsDomainsTable } from "@/components/CitationsDomainsTable"
+import { CitationShareChart } from "@/components/CitationShareChart"
+import { CitationShareRankings } from "@/components/CitationShareRankings"
 
 export default function ReportsCitations() {
   const { brands, activeBrandId } = useBrandsStore()
@@ -281,7 +283,23 @@ export default function ReportsCitations() {
         {/* Content */}
         {!isLoading && displayData && (
           <>
+            {/* Citation Share Chart */}
+            <div className="mb-6">
+              <CitationShareChart
+                brandId={activeBrandId || ''}
+                fromDate={getDateRangeForAPI().from || undefined}
+                toDate={getDateRangeForAPI().to || undefined}
+                isDemoMode={isDemoMode}
+              />
+            </div>
 
+            {/* Citation Share Rankings */}
+            <div className="mb-6">
+              <CitationShareRankings
+                brandId={activeBrandId || ''}
+                isDemoMode={isDemoMode}
+              />
+            </div>
 
             {/* NEW: Citations by Domain - Model-Aware with Expandable Rows */}
             <Card>

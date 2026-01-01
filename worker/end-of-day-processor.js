@@ -20,6 +20,7 @@ const brandAnalyzer = require('./processors/brand-analyzer');
 const citationProcessor = require('./process-daily-report-citations');
 const reportAggregator = require('./processors/report-aggregator');
 const visibilityScoreCalculator = require('./processors/visibility-score-calculator');
+const citationShareCalculator = require('./processors/citation-share-calculator');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -128,8 +129,30 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
       console.log('   Visibility score will need to be calculated later');
     }
 
-    // PHASE 5: MARK REPORT AS COMPLETE
-    console.log('\n✅ PHASE 5: FINALIZATION');
+    // PHASE 5: CITATION SHARE CALCULATION
+    console.log('\n📊 PHASE 5: CITATION SHARE');
+    console.log('─'.repeat(70));
+    console.log('Calculating citation share rankings...');
+
+    try {
+      const citationShareResult = await citationShareCalculator.calculateCitationShare(dailyReportId);
+
+      console.log('✅ Phase 5 complete:');
+      if (citationShareResult.success) {
+        console.log('   Total Citations: ' + citationShareResult.totalCitations);
+        console.log('   Brand Rank: #' + citationShareResult.brandRank);
+        console.log('   Brand Share: ' + citationShareResult.brandShare + '%');
+        console.log('   Total Domains: ' + citationShareResult.totalDomains);
+      } else {
+        console.log('   ' + (citationShareResult.message || 'No citation share data'));
+      }
+    } catch (citationShareError) {
+      console.error('⚠️  Phase 5 failed (non-blocking):', citationShareError.message);
+      console.log('   Citation share will need to be calculated later');
+    }
+
+    // PHASE 6: MARK REPORT AS COMPLETE
+    console.log('\n✅ PHASE 6: FINALIZATION');
     console.log('─'.repeat(70));
 
     const { error: updateError } = await supabase
