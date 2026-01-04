@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft, Download } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, ChevronLeft, Download, AlertCircle, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ScopeModal } from "./ScopeModal"
 
 // Category label formatters
 
@@ -137,18 +138,29 @@ interface CitationsDomainsTableProps {
   isLoading?: boolean
 }
 
-export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({ 
-  domains, 
+// Gap domains that show the scope feature
+const GAP_DOMAINS = ['reddit.com', 'youtube.com', 'medium.com']
+
+const isGapDomain = (domain: string): boolean => {
+  return GAP_DOMAINS.includes(domain.toLowerCase())
+}
+
+export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
+  domains,
   brandId,
   dateRange,
   selectedModels,
-  isLoading 
+  isLoading
 }) => {
   const [currentPage, setCurrentPage] = useState(1)
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set())
   const [domainUrls, setDomainUrls] = useState<Record<string, URLData[]>>({})
   const [loadingDomains, setLoadingDomains] = useState<Set<string>>(new Set())
-  
+
+  // Scope modal state
+  const [isScopeModalOpen, setIsScopeModalOpen] = useState(false)
+  const [selectedScopeDomain, setSelectedScopeDomain] = useState<string>('')
+
   const ITEMS_PER_PAGE = 10
   
   // Export function for CSV download
@@ -188,6 +200,12 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedDomains = domains.slice(startIndex, endIndex)
+
+  const handleCreateScope = (domain: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent row expansion
+    setSelectedScopeDomain(domain)
+    setIsScopeModalOpen(true)
+  }
 
   const toggleDomain = async (domain: string) => {
     const isExpanded = expandedDomains.has(domain)
@@ -322,6 +340,7 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                 </TooltipProvider>
               </TableHead>
               <TableHead>Last Seen</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -352,7 +371,27 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                     </Button>
                   </TableCell>
                   <TableCell className="font-medium">
-                    {domain.domain}
+                    <div className="flex items-center gap-2">
+                      <span>{domain.domain}</span>
+                      {isGapDomain(domain.domain) && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                Gap
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs max-w-xs">
+                                Opportunity detected: AI models cite this platform but not your content.
+                                Create a scope to close this visibility gap.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge variant="secondary">
@@ -375,12 +414,25 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
                   <TableCell className="text-sm text-slate-500">
                     {new Date(domain.last_seen_at).toLocaleDateString()}
                   </TableCell>
+                  <TableCell>
+                    {isGapDomain(domain.domain) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-blue-600 border-blue-300 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-1"
+                        onClick={(e) => handleCreateScope(domain.domain, e)}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Create Scope
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
 
                 {/* Expanded URLs rows */}
                 {isExpanded && (
                   <TableRow>
-                    <TableCell colSpan={7} className="bg-slate-50 p-0">
+                    <TableCell colSpan={8} className="bg-slate-50 p-0">
                       <div className="px-12 py-4">
                         {isLoadingUrls ? (
                           <div className="flex items-center justify-center py-4">
@@ -541,6 +593,13 @@ export const CitationsDomainsTable: React.FC<CitationsDomainsTableProps> = ({
         </div>
       </div>
     )}
+
+    {/* Scope Modal */}
+    <ScopeModal
+      isOpen={isScopeModalOpen}
+      onClose={() => setIsScopeModalOpen(false)}
+      domain={selectedScopeDomain}
+    />
   </div>
   )
 }
