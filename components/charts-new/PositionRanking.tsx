@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react';
+import React from 'react';
 
 interface CategoryPosition {
   category: string;
@@ -17,7 +17,7 @@ const data: CategoryPosition[] = [
 ];
 
 export const PositionRanking: React.FC = () => {
-  const [averageRank, setAverageRank] = useState(2.4);
+  const averageRank = 2.4;
 
   const stops = [
     { r: 231, g: 179, b: 115 },
@@ -54,21 +54,9 @@ export const PositionRanking: React.FC = () => {
 
   return (
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4">
         <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Prompt performance</h3>
-
-        <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
-           <span className="text-[8px] font-bold text-gray-400">Simulate rank</span>
-           <input
-             type="range"
-             min="1"
-             max="10"
-             step="0.1"
-             value={averageRank}
-             onChange={(e) => setAverageRank(Number(e.target.value))}
-             className="w-16 h-0.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#BC633A]"
-           />
-        </div>
+        <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Category position rankings</p>
       </div>
 
       <div className="flex-1 flex flex-col justify-center space-y-4">
