@@ -9,20 +9,25 @@ interface TrendDataPoint {
   score: number;
 }
 
-interface VisibilityTrendProps {
-  data?: TrendDataPoint[];
-  currentScore?: number;
-  trend?: string;
-}
+const data: TrendDataPoint[] = [
+  { date: 'Dec 10', score: 72 },
+  { date: 'Dec 12', score: 68 },
+  { date: 'Dec 14', score: 70 },
+  { date: 'Dec 16', score: 75 },
+  { date: 'Dec 18', score: 78 },
+  { date: 'Dec 20', score: 76 },
+  { date: 'Dec 22', score: 80 },
+  { date: 'Dec 24', score: 82 },
+  { date: 'Dec 26', score: 85 },
+  { date: 'Dec 28', score: 88 },
+  { date: 'Dec 30', score: 91 },
+  { date: 'Jan 01', score: 92 },
+  { date: 'Jan 03', score: 94 },
+];
 
-export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentScore, trend }) => {
-  const chartData = data && data.length > 0 ? data : [];
-  const displayScore = currentScore ?? (chartData.length > 0 ? chartData[chartData.length - 1].score : 0);
-
-  // Calculate percentage change
-  const percentage = chartData.length >= 2
-    ? ((chartData[chartData.length - 1].score - chartData[0].score) / Math.max(chartData[0].score, 1)) * 100
-    : 0;
+export const VisibilityTrend: React.FC = () => {
+  const percentage = 81.6;
+  const brandBrown = '#2C1308';
 
   const stops = [
     { r: 32,  g: 19,  b: 16  },
@@ -45,7 +50,7 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
     return [...new Set(result)];
   };
 
-  const ticks = getTicks(chartData, 7);
+  const ticks = getTicks(data, 7);
 
   const getDynamicColor = (value: number) => {
     const t = Math.max(0, Math.min(1, value / 100));
@@ -68,37 +73,9 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
     return `rgb(${r}, ${g}, ${b})`;
   };
 
-  const dynamicColor = getDynamicColor(displayScore);
+  const dynamicColor = getDynamicColor(percentage);
   const dynamicBg = dynamicColor.replace('rgb', 'rgba').replace(')', ', 0.15)');
   const dynamicBorder = dynamicColor.replace('rgb', 'rgba').replace(')', ', 0.3)');
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  // Format chart data dates for display
-  const formattedData = chartData.map(d => ({
-    ...d,
-    displayDate: formatDate(d.date),
-  }));
-
-  if (chartData.length === 0) {
-    return (
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
-        <div className="space-y-1 mb-4">
-          <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
-            Visibility score over time
-            <HelpCircle size={14} className="text-gray-300" />
-          </h3>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Total Score based on weighted metrics</p>
-        </div>
-        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-          No visibility score data available yet
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
@@ -113,7 +90,7 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
 
         <div className="text-right">
            <div className="text-2xl font-black transition-colors duration-500" style={{ color: dynamicColor }}>
-             {Math.round(displayScore)}
+             94
            </div>
            <div
              className="text-[8px] font-black px-1.5 py-0.5 rounded-full inline-flex border transition-all duration-500 tracking-tight mt-1"
@@ -123,14 +100,14 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
                borderColor: dynamicBorder
              }}
            >
-             {percentage >= 0 ? '\u2197' : '\u2198'} {percentage >= 0 ? '+' : ''}{percentage.toFixed(1)}%
+             ↗ +{percentage.toFixed(1)}%
            </div>
         </div>
       </div>
 
       <div className="flex-1 w-full min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={formattedData} margin={{ top: 5, right: 5, left: -30, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 5, right: 5, left: -30, bottom: 0 }}>
             <defs>
               <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={dynamicColor} stopOpacity={0.2}/>
@@ -139,14 +116,15 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis
-              dataKey="displayDate"
+              dataKey="date"
               tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }}
               axisLine={false}
               tickLine={false}
               tickMargin={10}
+              ticks={ticks}
             />
             <YAxis
-              domain={[0, 100]}
+              domain={[50, 100]}
               tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }}
               axisLine={false}
               tickLine={false}
@@ -155,8 +133,6 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data, currentS
               contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: '8px', fontSize: '11px' }}
               itemStyle={{ color: dynamicColor, fontWeight: 800 }}
               cursor={{ stroke: dynamicColor, strokeWidth: 1, strokeDasharray: '4 4' }}
-              labelFormatter={(label) => label}
-              formatter={(value: any) => [`${value}/100`, 'Score']}
             />
             <Area
               type="linear"
