@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/reports/overview'
+  const next = searchParams.get('next') ?? '/reports/visibility'
   const type = searchParams.get('type') // Supabase adds this for email confirmations
 
   if (code) {

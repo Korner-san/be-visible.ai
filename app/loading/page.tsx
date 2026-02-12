@@ -85,13 +85,13 @@ export default function LoadingPage() {
             setProgress(100)
             setStatus('Welcome to your dashboard!')
             await new Promise(resolve => setTimeout(resolve, 500))
-            router.push('/reports/overview')
+            router.push('/reports/visibility')
           } else {
             // Onboarding done but no reports yet - show demo
             setProgress(100)
             setStatus('Preparing your dashboard...')
             await new Promise(resolve => setTimeout(resolve, 500))
-            router.push('/reports/overview?demo=true')
+            router.push('/reports/visibility?demo=true')
           }
         } else if (incompleteBrands.length > 0) {
           // User has incomplete onboarding

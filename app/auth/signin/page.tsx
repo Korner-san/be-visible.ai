@@ -4,12 +4,6 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -23,7 +17,6 @@ const signInSchema = z.object({
 
 type SignInFormData = z.infer<typeof signInSchema>
 
-// Helper functions for saving only email (not password) in localStorage
 const saveRememberedEmail = (email: string) => {
   if (typeof window !== 'undefined') {
     localStorage.setItem('be-visible-remembered-email', email)
@@ -49,7 +42,7 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [rememberMe, setRememberMe] = useState(false)
-  
+
   const { signIn, user } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -58,14 +51,12 @@ export default function SignInPage() {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<SignInFormData>({
     resolver: zodResolver(signInSchema),
   })
 
   useEffect(() => {
-    // Check for success message from URL params
     const urlMessage = searchParams.get('message')
     if (urlMessage) {
       setMessage(urlMessage)
@@ -73,7 +64,6 @@ export default function SignInPage() {
   }, [searchParams])
 
   useEffect(() => {
-    // Load saved email on page load (password is never saved for security)
     const savedEmail = getRememberedEmail()
     if (savedEmail) {
       setValue('email', savedEmail)
@@ -82,7 +72,6 @@ export default function SignInPage() {
   }, [setValue])
 
   useEffect(() => {
-    // Redirect if already authenticated - let server-side routing handle onboarding vs dashboard
     if (user) {
       router.push('/setup/onboarding')
     }
@@ -98,14 +87,11 @@ export default function SignInPage() {
       if (error) {
         setError(error.message)
       } else {
-        // Handle remember me functionality - only save email, never password
         if (rememberMe) {
           saveRememberedEmail(data.email)
         } else {
           clearRememberedEmail()
         }
-        
-        // Successful sign in - redirect to onboarding (server will handle routing logic)
         router.push('/setup/onboarding')
       }
     } catch (err) {
@@ -116,123 +102,120 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Welcome</CardTitle>
-          <CardDescription>
-            Sign in to your Be Visible AI account
-          </CardDescription>
-        </CardHeader>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-md animate-fadeIn">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-brand-brown rounded-xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+            <span className="text-white font-bold text-xl">B</span>
+          </div>
+          <h1 className="text-2xl font-bold text-brand-brown">Welcome back</h1>
+          <p className="text-sm text-slate-500 mt-1">Sign in to your Be Visible AI account</p>
+        </div>
 
-        <form onSubmit={handleSubmit(handleSignIn)}>
-          <CardContent className="space-y-4">
-            {message && (
-              <Alert>
-                <AlertDescription>{message}</AlertDescription>
-              </Alert>
-            )}
+        {/* Card */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
+          {message && (
+            <div className="mb-6 p-3 bg-brand-50 border border-brand-100 rounded-xl text-sm text-brand-600">
+              {message}
+            </div>
+          )}
 
+          <form onSubmit={handleSubmit(handleSignIn)} className="space-y-5">
+            {/* Email */}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
+              <label htmlFor="email" className="text-sm font-medium text-slate-700">Email</label>
+              <input
                 id="email"
                 type="email"
-                placeholder="john@example.com"
+                placeholder="you@example.com"
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-brown/20 focus:border-brand-brown transition-all"
                 {...register('email')}
               />
               {errors.email && (
-                <p className="text-sm text-red-600">{errors.email.message}</p>
+                <p className="text-xs text-red-500">{errors.email.message}</p>
               )}
             </div>
 
+            {/* Password */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
+                <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
                 <Link
                   href="/auth/forgot-password"
-                  className="text-sm text-blue-600 hover:underline"
+                  className="text-xs font-medium text-brand-500 hover:text-brand-brown transition-colors"
                 >
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <Input
+                <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-brown/20 focus:border-brand-brown transition-all pr-10"
                   {...register('password')}
                 />
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                   onClick={() => setShowPassword(!showPassword)}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
               {errors.password && (
-                <p className="text-sm text-red-600">{errors.password.message}</p>
+                <p className="text-xs text-red-500">{errors.password.message}</p>
               )}
             </div>
 
-          </CardContent>
-
-          {/* Remember Me Section - Between CardContent and CardFooter */}
-          <div className="px-6">
-            <div className="flex items-center space-x-2">
-              <Checkbox
+            {/* Remember Me */}
+            <div className="flex items-center gap-2">
+              <input
                 id="rememberMe"
+                type="checkbox"
                 checked={rememberMe}
-                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-brand-brown focus:ring-brand-brown/20 accent-brand-brown"
               />
-              <Label
-                htmlFor="rememberMe"
-                className="text-sm font-normal cursor-pointer"
-              >
+              <label htmlFor="rememberMe" className="text-sm text-slate-600 cursor-pointer">
                 Remember me
-              </Label>
+              </label>
             </div>
-          </div>
 
-          <CardFooter className="flex flex-col space-y-6">
-            <Button
+            {/* Error */}
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
               type="submit"
-              className="w-full"
               disabled={isLoading}
+              className="w-full py-2.5 px-4 bg-brand-brown text-white font-medium text-sm rounded-xl hover:bg-brand-900 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Signing In...
                 </>
               ) : (
                 'Sign In'
               )}
-            </Button>
+            </button>
+          </form>
+        </div>
 
-            {error && (
-              <p className="text-sm text-red-600 text-center">{error}</p>
-            )}
-
-            <div className="text-center text-sm">
-              <span className="text-slate-600">Don't have an account? </span>
-              <Link
-                href="/auth/signup"
-                className="text-blue-600 hover:underline font-medium"
-              >
-                Sign up
-              </Link>
-            </div>
-          </CardFooter>
-        </form>
-      </Card>
+        {/* Footer link */}
+        <p className="text-center text-sm text-slate-500 mt-6">
+          Don&apos;t have an account?{' '}
+          <Link href="/auth/signup" className="font-medium text-brand-brown hover:text-brand-600 transition-colors">
+            Sign up
+          </Link>
+        </p>
+      </div>
     </div>
   )
 }
