@@ -7,6 +7,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Button } from "@/components/ui/button"
 import { PieChart, Pie, Cell, ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LineChart, Line, Area, AreaChart } from "recharts"
 import { Info, Play, Loader2, Sparkles, Trash2 } from "lucide-react"
+import { VisibilityTrend } from "@/components/charts-new/VisibilityTrend"
+import { MentionRate } from "@/components/charts-new/MentionRate"
+import { ShareOfVoice } from "@/components/charts-new/ShareOfVoice"
+import { PositionRanking } from "@/components/charts-new/PositionRanking"
 import { useBrandsStore } from "@/store/brands"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
@@ -556,6 +560,22 @@ export default function ReportsVisibility() {
         {/* Content */}
         {!isLoading && (
           <>
+        {/* New Dashboard Charts */}
+        <div className="grid grid-cols-12 gap-6 mb-8 animate-fadeIn">
+          <div className="col-span-12 lg:col-span-8 h-[340px]">
+            <VisibilityTrend />
+          </div>
+          <div className="col-span-12 lg:col-span-4 h-[340px]">
+            <MentionRate />
+          </div>
+          <div className="col-span-12 lg:col-span-5 h-[380px]">
+            <ShareOfVoice />
+          </div>
+          <div className="col-span-12 lg:col-span-7 h-[380px]">
+            <PositionRanking />
+          </div>
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 gap-6 mb-8">
           {/* Brand Mentions */}

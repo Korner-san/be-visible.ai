@@ -1,11 +1,15 @@
 import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
+import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ClientLayout } from '@/components/ClientLayout'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { DateFilterProvider } from '@/contexts/DateFilterContext'
 import './globals.css'
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+})
 
 export const metadata: Metadata = {
   title: 'be-visible.ai',
@@ -20,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className={`font-sans ${inter.variable}`}>
         <AuthProvider>
           <DateFilterProvider>
             <ClientLayout>
