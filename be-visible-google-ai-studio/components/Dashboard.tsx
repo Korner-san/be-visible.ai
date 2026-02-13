@@ -37,6 +37,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId }) => {
   const [isLoadingVis, setIsLoadingVis] = useState(false);
   const [mentionRate, setMentionRate] = useState<number | undefined>();
   const [isLoadingMention, setIsLoadingMention] = useState(false);
+  const [sovData, setSovData] = useState<any>(undefined);
+  const [isLoadingSov, setIsLoadingSov] = useState(false);
 
   useEffect(() => {
     if (!brandId) return;
@@ -141,8 +143,65 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId }) => {
       }
     };
 
+    // Fetch share of voice: aggregate share_of_voice_data across daily reports
+    const fetchShareOfVoice = async () => {
+      setIsLoadingSov(true);
+      try {
+        const { data: reports, error } = await supabase
+          .from('daily_reports')
+          .select('share_of_voice_data')
+          .eq('brand_id', brandId)
+          .eq('status', 'completed')
+          .not('share_of_voice_data', 'is', null)
+          .gte('report_date', from)
+          .lte('report_date', to);
+
+        if (error) {
+          console.error('Error fetching share of voice:', error);
+          return;
+        }
+
+        if (reports && reports.length > 0) {
+          // Aggregate entities across all days
+          const entityMap: Record<string, { name: string; mentions: number; type: string }> = {};
+          let totalMentions = 0;
+
+          for (const report of reports) {
+            const sov = report.share_of_voice_data as any;
+            if (!sov?.entities) continue;
+
+            for (const entity of sov.entities) {
+              const key = entity.name.toLowerCase();
+              if (entityMap[key]) {
+                entityMap[key].mentions += entity.mentions;
+              } else {
+                entityMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type };
+              }
+            }
+            totalMentions += sov.total_mentions || 0;
+          }
+
+          const entities = Object.values(entityMap)
+            .sort((a, b) => b.mentions - a.mentions);
+
+          setSovData({
+            entities,
+            total_mentions: totalMentions,
+            calculated_at: new Date().toISOString(),
+          });
+        } else {
+          setSovData(undefined);
+        }
+      } catch (err) {
+        console.error('Share of voice fetch error:', err);
+      } finally {
+        setIsLoadingSov(false);
+      }
+    };
+
     fetchVisibility();
     fetchMentionRate();
+    fetchShareOfVoice();
   }, [brandId, timeRange]);
 
   return (
@@ -162,7 +221,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId }) => {
 
       {/* Bottom Row: Distribution & Ranking - Balanced height */}
       <div className="col-span-12 lg:col-span-5 h-[380px]">
-        <ShareOfVoice />
+        <ShareOfVoice data={sovData} isLoading={isLoadingSov} />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
         <PositionRanking />

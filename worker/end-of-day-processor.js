@@ -21,6 +21,7 @@ const citationProcessor = require('./process-daily-report-citations');
 const reportAggregator = require('./processors/report-aggregator');
 const visibilityScoreCalculator = require('./processors/visibility-score-calculator');
 const citationShareCalculator = require('./processors/citation-share-calculator');
+const shareOfVoiceCalculator = require('./processors/share-of-voice-calculator');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -129,15 +130,36 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
       console.log('   Visibility score will need to be calculated later');
     }
 
-    // PHASE 5: CITATION SHARE CALCULATION
-    console.log('\n📊 PHASE 5: CITATION SHARE');
+    // PHASE 5: SHARE OF VOICE
+    console.log('\n📊 PHASE 5: SHARE OF VOICE');
+    console.log('─'.repeat(70));
+    console.log('Calculating share of voice from entity mentions...');
+
+    try {
+      const sovResult = await shareOfVoiceCalculator.calculateShareOfVoice(dailyReportId);
+
+      console.log('✅ Phase 5 complete:');
+      if (sovResult.success) {
+        console.log('   Total Entities: ' + (sovResult.totalEntities || 0));
+        console.log('   Total Mentions: ' + (sovResult.totalMentions || 0));
+        console.log('   Brand Share: ' + (sovResult.brandShare || 0) + '%');
+      } else {
+        console.log('   ' + (sovResult.message || 'No share of voice data'));
+      }
+    } catch (sovError) {
+      console.error('⚠️  Phase 5 failed (non-blocking):', sovError.message);
+      console.log('   Share of voice will need to be calculated later');
+    }
+
+    // PHASE 6: CITATION SHARE CALCULATION
+    console.log('\n📊 PHASE 6: CITATION SHARE');
     console.log('─'.repeat(70));
     console.log('Calculating citation share rankings...');
 
     try {
       const citationShareResult = await citationShareCalculator.calculateCitationShare(dailyReportId);
 
-      console.log('✅ Phase 5 complete:');
+      console.log('✅ Phase 6 complete:');
       if (citationShareResult.success) {
         console.log('   Total Citations: ' + citationShareResult.totalCitations);
         console.log('   Brand Rank: #' + citationShareResult.brandRank);
@@ -147,12 +169,12 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
         console.log('   ' + (citationShareResult.message || 'No citation share data'));
       }
     } catch (citationShareError) {
-      console.error('⚠️  Phase 5 failed (non-blocking):', citationShareError.message);
+      console.error('⚠️  Phase 6 failed (non-blocking):', citationShareError.message);
       console.log('   Citation share will need to be calculated later');
     }
 
-    // PHASE 6: MARK REPORT AS COMPLETE
-    console.log('\n✅ PHASE 6: FINALIZATION');
+    // PHASE 7: MARK REPORT AS COMPLETE
+    console.log('\n✅ PHASE 7: FINALIZATION');
     console.log('─'.repeat(70));
 
     const { error: updateError } = await supabase
