@@ -181,7 +181,7 @@ function AppContent() {
       case 'Getting Started':
         return <OverviewPage onNavigate={handleTabChange} />;
       case 'Competitors':
-        return <CompetitorsPage />;
+        return <CompetitorsPage brandId={activeBrandId} timeRange={timeRange} />;
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} />;
       case 'Citations':
