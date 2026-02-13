@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { TrendDataPoint } from '../../types';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Loader2 } from 'lucide-react';
 
-const data: TrendDataPoint[] = [
+const mockData: TrendDataPoint[] = [
   { date: 'Dec 10', score: 72 },
   { date: 'Dec 12', score: 68 },
   { date: 'Dec 14', score: 70 },
@@ -15,14 +15,23 @@ const data: TrendDataPoint[] = [
   { date: 'Dec 24', score: 82 },
   { date: 'Dec 26', score: 85 },
   { date: 'Dec 28', score: 88 },
-  // Fixed error: Removed 'stopColor' property which is not defined in the TrendDataPoint interface
   { date: 'Dec 30', score: 91 },
   { date: 'Jan 01', score: 92 },
   { date: 'Jan 03', score: 94 },
 ];
 
-export const VisibilityTrend: React.FC = () => {
+interface VisibilityTrendProps {
+  data?: TrendDataPoint[];
+  currentScore?: number;
+  trendPercent?: number;
+  isLoading?: boolean;
+}
+
+export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData, currentScore, trendPercent, isLoading }) => {
+  const data = propData && propData.length > 0 ? propData : mockData;
+  const score = currentScore ?? 94;
   const [percentage, setPercentage] = useState(81.6);
+  const displayPercent = trendPercent ?? percentage;
   const brandBrown = '#2C1308';
 
   const stops = [
@@ -69,9 +78,23 @@ export const VisibilityTrend: React.FC = () => {
     return `rgb(${r}, ${g}, ${b})`;
   };
 
-  const dynamicColor = getDynamicColor(percentage);
-  const dynamicBg = dynamicColor.replace('rgb', 'rgba').replace(')', ', 0.15)'); 
+  const dynamicColor = getDynamicColor(displayPercent);
+  const dynamicBg = dynamicColor.replace('rgb', 'rgba').replace(')', ', 0.15)');
   const dynamicBorder = dynamicColor.replace('rgb', 'rgba').replace(')', ', 0.3)');
+
+  // Dynamic Y-axis domain based on actual data
+  const scores = data.map(d => d.score);
+  const minScore = Math.min(...scores);
+  const yMin = Math.max(0, Math.floor((minScore - 10) / 10) * 10);
+
+  if (isLoading) {
+    return (
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
+        <span className="text-xs text-gray-400 mt-2">Loading visibility data...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
@@ -83,20 +106,20 @@ export const VisibilityTrend: React.FC = () => {
           </h3>
           <p className="text-[11px] text-slate-500 font-medium mt-0.5">Total Score based on weighted metrics</p>
         </div>
-        
+
         <div className="text-right">
            <div className="text-2xl font-black transition-colors duration-500" style={{ color: dynamicColor }}>
-             94
+             {Math.round(score)}
            </div>
-           <div 
+           <div
              className="text-[8px] font-black px-1.5 py-0.5 rounded-full inline-flex border transition-all duration-500 tracking-tight mt-1"
-             style={{ 
-               color: dynamicColor, 
+             style={{
+               color: dynamicColor,
                backgroundColor: dynamicBg,
                borderColor: dynamicBorder
              }}
            >
-             ↗ +{percentage.toFixed(1)}%
+             {displayPercent >= 0 ? '↗' : '↘'} {displayPercent >= 0 ? '+' : ''}{displayPercent.toFixed(1)}%
            </div>
         </div>
       </div>
@@ -119,8 +142,8 @@ export const VisibilityTrend: React.FC = () => {
               tickMargin={10}
               ticks={ticks}
             />
-            <YAxis 
-              domain={[50, 100]} 
+            <YAxis
+              domain={[yMin, 100]}
               tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }} 
               axisLine={false}
               tickLine={false}
@@ -144,19 +167,23 @@ export const VisibilityTrend: React.FC = () => {
       </div>
 
       <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between">
-         <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
-           <span className="text-[8px] font-bold text-gray-400">Simulation engine</span>
-           <input 
-             type="range" 
-             min="0" 
-             max="100" 
-             step="0.1"
-             value={percentage} 
-             onChange={(e) => setPercentage(Number(e.target.value))}
-             className="w-12 h-0.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-             style={{ accentColor: dynamicColor }}
-           />
-         </div>
+         {!propData ? (
+           <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
+             <span className="text-[8px] font-bold text-gray-400">Simulation engine</span>
+             <input
+               type="range"
+               min="0"
+               max="100"
+               step="0.1"
+               value={percentage}
+               onChange={(e) => setPercentage(Number(e.target.value))}
+               className="w-12 h-0.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+               style={{ accentColor: dynamicColor }}
+             />
+           </div>
+         ) : (
+           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
+         )}
          <button className="text-[9px] font-bold text-gray-400 tracking-widest hover:text-brand-brown transition-colors">
            Download raw logs
          </button>

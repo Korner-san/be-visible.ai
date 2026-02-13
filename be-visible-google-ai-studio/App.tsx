@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './components/AuthContext';
 import { SignInPage } from './components/SignInPage';
 import { SignUpPage } from './components/SignUpPage';
@@ -21,6 +21,7 @@ import { SupportPage } from './components/SupportPage';
 import { UserSettingsPage } from './components/UserSettingsPage';
 import { ContentPage } from './components/ContentPage';
 import { TimeRange, PromptStats, PromptHistoryPoint, Competitor } from './types';
+import { supabase } from './lib/supabase';
 
 const mockHistory: PromptHistoryPoint[] = [
   { date: 'Jan 08', visibility: 82, avgPosition: 2.1, citationShare: 22.1, mentions: 18 },
@@ -77,6 +78,11 @@ const initialCompetitors: Competitor[] = [
   { id: 'c4', name: 'Jenkins', website: 'jenkins.io', color: '#963D1F' },
 ];
 
+interface UserBrand {
+  id: string;
+  name: string;
+}
+
 function AppContent() {
   const { user, loading, signOut } = useAuth();
   const [authView, setAuthView] = useState<'signin' | 'signup'>('signin');
@@ -86,6 +92,37 @@ function AppContent() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [prompts, setPrompts] = useState<PromptStats[]>(initialPrompts);
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
+  const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
+  const [brands, setBrands] = useState<UserBrand[]>([]);
+
+  // Fetch user's brands after auth
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchBrands = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('brands')
+          .select('id, name')
+          .eq('owner_user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching brands:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          setBrands(data);
+          setActiveBrandId(data[0].id);
+        }
+      } catch (err) {
+        console.error('Brand fetch error:', err);
+      }
+    };
+
+    fetchBrands();
+  }, [user]);
 
   // Show loading spinner while checking auth
   if (loading) {
@@ -168,7 +205,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage />;
       default:
-        return <Dashboard timeRange={timeRange} />;
+        return <Dashboard timeRange={timeRange} brandId={activeBrandId} />;
     }
   };
 
