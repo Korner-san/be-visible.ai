@@ -1,9 +1,6 @@
 {
-  "buildCommand": "npm run build",
-  "crons": [
-    {
-      "path": "/api/cron/daily-reports",
-      "schedule": "0 1 * * *"
-    }
-  ]
+  "framework": null,
+  "buildCommand": "cd be-visible-google-ai-studio && npm install && npm run build",
+  "outputDirectory": "be-visible-google-ai-studio/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
