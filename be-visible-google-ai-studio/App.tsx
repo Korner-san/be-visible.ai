@@ -205,7 +205,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage />;
       default:
-        return <Dashboard timeRange={timeRange} brandId={activeBrandId} />;
+        return <Dashboard timeRange={timeRange} brandId={activeBrandId} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
     }
   };
 

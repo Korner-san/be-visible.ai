@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 interface DashboardProps {
   timeRange: TimeRange;
   brandId?: string | null;
+  onNavigateToPrompts?: () => void;
 }
 
 function getDateRange(timeRange: TimeRange): { from: string; to: string } {
@@ -30,7 +31,7 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavigateToPrompts }) => {
   const [visibilityData, setVisibilityData] = useState<TrendDataPoint[]>([]);
   const [currentScore, setCurrentScore] = useState<number | undefined>();
   const [trendPercent, setTrendPercent] = useState<number | undefined>();
@@ -224,7 +225,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId }) => {
         <ShareOfVoice data={sovData} isLoading={isLoadingSov} />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
-        <PositionRanking />
+        <PositionRanking brandId={brandId} timeRange={timeRange} onNavigateToPrompts={onNavigateToPrompts} />
       </div>
     </div>
   );
