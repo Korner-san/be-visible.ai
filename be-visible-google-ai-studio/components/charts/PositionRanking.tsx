@@ -44,11 +44,11 @@ function getDateRanges(timeRange: TimeRange): { current: { from: string; to: str
 }
 
 const MOCK_DATA: PromptScore[] = [
-  { promptText: '"Best C++ build accelerator"', currentScore: 82, previousScore: 75 },
-  { promptText: '"Fastest CI/CD tools 2024"', currentScore: 68, previousScore: 70 },
-  { promptText: '"Game development compile times"', currentScore: 91, previousScore: 85 },
-  { promptText: '"Enterprise build system comparison"', currentScore: 45, previousScore: 42 },
-  { promptText: '"Distributed compiling solutions"', currentScore: 30, previousScore: null },
+  { promptText: '"What is the best C++ build accelerator for large projects?"', currentScore: 82, previousScore: 75 },
+  { promptText: '"What are the fastest CI/CD tools for enterprise teams in 2024?"', currentScore: 68, previousScore: 70 },
+  { promptText: '"How to reduce game development compile times significantly?"', currentScore: 91, previousScore: 85 },
+  { promptText: '"Compare enterprise build systems for distributed teams"', currentScore: 45, previousScore: 42 },
+  { promptText: '"Best distributed compiling solutions for C++ codebases"', currentScore: 30, previousScore: null },
 ];
 
 // Color gradient based on score 0-100
@@ -136,8 +136,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const key = r.brand_prompt_id;
           if (!promptMap[key]) {
             const text = bp?.improved_prompt || bp?.raw_prompt || 'Unknown prompt';
-            // Truncate and wrap in quotes
-            const short = text.length > 40 ? text.substring(0, 37) + '...' : text;
+            const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
             promptMap[key] = { text: `"${short}"`, mentioned: 0, total: 0 };
           }
           promptMap[key].total++;
@@ -198,7 +197,10 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
   return (
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Prompt performance</h3>
+        <div>
+          <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Prompt performance</h3>
+          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Visibility score per prompt (0–100)</p>
+        </div>
         {isLoading ? (
           <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
         ) : hasRealData ? (
@@ -211,16 +213,18 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
       <div className="flex-1 flex flex-col justify-center space-y-4">
         {data.map((item, index) => {
           const itemColor = getScoreColor(item.currentScore);
-          const diff = item.previousScore !== null ? item.currentScore - item.previousScore : null;
+          const pctChange = item.previousScore !== null && item.previousScore > 0
+            ? Math.round(((item.currentScore - item.previousScore) / item.previousScore) * 100)
+            : null;
 
           return (
             <div key={index} className="space-y-1">
-              <div className="flex justify-between items-end px-1">
-                <span className="text-[11px] font-medium text-slate-700 italic truncate max-w-[65%]">{item.promptText}</span>
-                <div className="flex items-center gap-1.5">
-                  {diff !== null && (
-                    <span className={`text-[9px] font-bold ${diff > 0 ? 'text-emerald-500' : diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                      {diff > 0 ? '+' : ''}{diff}
+              <div className="flex justify-between items-baseline px-1 gap-2">
+                <span className="text-[11px] font-medium text-slate-700 italic leading-tight truncate flex-1 min-w-0">{item.promptText}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {pctChange !== null && (
+                    <span className={`text-[9px] font-bold ${pctChange > 0 ? 'text-emerald-500' : pctChange < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                      {pctChange > 0 ? '+' : ''}{pctChange}%
                     </span>
                   )}
                   <span className="text-xs font-black transition-colors duration-500" style={{ color: itemColor }}>
