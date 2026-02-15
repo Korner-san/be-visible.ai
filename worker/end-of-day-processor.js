@@ -22,6 +22,7 @@ const reportAggregator = require('./processors/report-aggregator');
 const visibilityScoreCalculator = require('./processors/visibility-score-calculator');
 const citationShareCalculator = require('./processors/citation-share-calculator');
 const shareOfVoiceCalculator = require('./processors/share-of-voice-calculator');
+const competitorMetricsCalculator = require('./processors/competitor-metrics-calculator');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -173,8 +174,29 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
       console.log('   Citation share will need to be calculated later');
     }
 
-    // PHASE 7: MARK REPORT AS COMPLETE
-    console.log('\n✅ PHASE 7: FINALIZATION');
+    // PHASE 7: COMPETITOR METRICS
+    console.log('\n📊 PHASE 7: COMPETITOR METRICS');
+    console.log('─'.repeat(70));
+    console.log('Calculating competitor visibility, mention rate, citation share...');
+
+    try {
+      const compResult = await competitorMetricsCalculator.calculateCompetitorMetrics(dailyReportId);
+
+      console.log('✅ Phase 7 complete:');
+      if (compResult.success) {
+        console.log('   Competitors: ' + (compResult.competitorCount || 0));
+        console.log('   Brand Visibility: ' + (compResult.brandVisibilityScore || 0) + '%');
+        console.log('   Total Responses: ' + (compResult.totalResponses || 0));
+      } else {
+        console.log('   ' + (compResult.message || 'No competitor metrics'));
+      }
+    } catch (compError) {
+      console.error('⚠️  Phase 7 failed (non-blocking):', compError.message);
+      console.log('   Competitor metrics will need to be calculated later');
+    }
+
+    // PHASE 8: MARK REPORT AS COMPLETE
+    console.log('\n✅ PHASE 8: FINALIZATION');
     console.log('─'.repeat(70));
 
     const { error: updateError } = await supabase
