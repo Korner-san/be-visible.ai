@@ -19,7 +19,7 @@ export const CitationsPage: React.FC<CitationsPageProps> = ({ onNavigateToAcadem
           <CitationShareChart brandId={brandId} timeRange={timeRange} />
         </div>
         <div className="col-span-12 lg:col-span-5 h-[340px]">
-          <AIPreferenceDistribution />
+          <AIPreferenceDistribution brandId={brandId} timeRange={timeRange} />
         </div>
       </div>
 

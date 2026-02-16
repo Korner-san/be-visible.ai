@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
-import { 
-  FileText, List, BookOpen, MessageCircle, Newspaper, 
-  Video, ShoppingBag, Shield, Clock, Info, ChevronRight, 
-  ExternalLink 
+import React, { useState, useEffect } from 'react';
+import {
+  FileText, List, BookOpen, MessageCircle, Newspaper,
+  Video, ShoppingBag, Shield, Info, HelpCircle, AlertTriangle
 } from 'lucide-react';
+import { TimeRange } from '../../types';
+import { supabase } from '../../lib/supabase';
 
 interface ContentUrl {
   url: string;
@@ -19,62 +20,101 @@ interface ContentTypeData {
   sampleUrls: ContentUrl[];
 }
 
-const data: ContentTypeData[] = [
-  { 
-    type: 'Community discussion', 
-    urls: 84, 
-    percentage: 32, 
+// Map DB category keys to display names
+const CATEGORY_LABELS: Record<string, string> = {
+  OFFICIAL_DOCS: 'Official docs',
+  HOW_TO_GUIDE: 'How-to guide',
+  COMPARISON_ANALYSIS: 'Comparison analysis',
+  PRODUCT_PAGE: 'Product page',
+  THOUGHT_LEADERSHIP: 'Thought leadership',
+  CASE_STUDY: 'Case study',
+  TECHNICAL_DEEP_DIVE: 'Technical deep dive',
+  NEWS_ANNOUNCEMENT: 'News announcement',
+  COMMUNITY_DISCUSSION: 'Community discussion',
+  VIDEO_CONTENT: 'Video content',
+  OTHER_LOW_CONFIDENCE: 'Other',
+  UNCLASSIFIED: 'Unclassified',
+};
+
+// Map DB category keys to icons
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  OFFICIAL_DOCS: <Shield size={14} />,
+  HOW_TO_GUIDE: <List size={14} />,
+  COMPARISON_ANALYSIS: <FileText size={14} />,
+  PRODUCT_PAGE: <ShoppingBag size={14} />,
+  THOUGHT_LEADERSHIP: <BookOpen size={14} />,
+  CASE_STUDY: <FileText size={14} />,
+  TECHNICAL_DEEP_DIVE: <FileText size={14} />,
+  NEWS_ANNOUNCEMENT: <Newspaper size={14} />,
+  COMMUNITY_DISCUSSION: <MessageCircle size={14} />,
+  VIDEO_CONTENT: <Video size={14} />,
+  OTHER_LOW_CONFIDENCE: <HelpCircle size={14} />,
+  UNCLASSIFIED: <AlertTriangle size={14} />,
+};
+
+const MOCK_DATA: ContentTypeData[] = [
+  {
+    type: 'Community discussion', urls: 84, percentage: 32,
     icon: <MessageCircle size={14} />,
     sampleUrls: [
       { url: 'reddit.com/r/cpp/best_accelerators', citations: 42 },
       { url: 'stackoverflow.com/q/112233/speed-up-builds', citations: 28 }
     ]
   },
-  { 
-    type: 'Official docs', 
-    urls: 62, 
-    percentage: 24, 
+  {
+    type: 'Official docs', urls: 62, percentage: 24,
     icon: <Shield size={14} />,
     sampleUrls: [
       { url: 'docs.incredibuild.com/integration/ci-cd', citations: 35 }
     ]
   },
-  { 
-    type: 'How-to guide', 
-    urls: 45, 
-    percentage: 17, 
+  {
+    type: 'How-to guide', urls: 45, percentage: 17,
     icon: <List size={14} />,
     sampleUrls: [
       { url: 'medium.com/engineering/faster-compilation', citations: 20 }
     ]
   },
-  { 
-    type: 'Comparison analysis', 
-    urls: 28, 
-    percentage: 11, 
+  {
+    type: 'Comparison analysis', urls: 28, percentage: 11,
     icon: <FileText size={14} />,
     sampleUrls: []
   },
-  { 
-    type: 'Thought leadership', 
-    urls: 18, 
-    percentage: 7, 
+  {
+    type: 'Thought leadership', urls: 18, percentage: 7,
     icon: <BookOpen size={14} />,
     sampleUrls: []
   },
-  { 
-    type: 'Product page', 
-    urls: 15, 
-    percentage: 6, 
+  {
+    type: 'Product page', urls: 15, percentage: 6,
     icon: <ShoppingBag size={14} />,
     sampleUrls: []
   },
 ];
 
+function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date();
+  switch (timeRange) {
+    case TimeRange.SEVEN_DAYS: from.setDate(from.getDate() - 7); break;
+    case TimeRange.NINETY_DAYS: from.setDate(from.getDate() - 90); break;
+    default: from.setDate(from.getDate() - 30);
+  }
+  return {
+    from: from.toISOString().split('T')[0],
+    to: to.toISOString().split('T')[0],
+  };
+}
+
+interface AIPreferenceDistributionProps {
+  brandId?: string | null;
+  timeRange?: TimeRange;
+}
+
 const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: string, align?: 'left' | 'right' | 'center' }) => {
-  const tooltipPositionClass = 
-    align === 'right' ? 'right-0' : 
-    align === 'center' ? 'left-1/2 -translate-x-1/2' : 
+  const tooltipPositionClass =
+    align === 'right' ? 'right-0' :
+    align === 'center' ? 'left-1/2 -translate-x-1/2' :
     'left-0';
 
   return (
@@ -95,16 +135,81 @@ const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: 
   );
 };
 
-export const AIPreferenceDistribution: React.FC = () => {
+export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [data, setData] = useState<ContentTypeData[]>(MOCK_DATA);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasRealData, setHasRealData] = useState(false);
   const brandTerracotta = '#874B34';
+
+  useEffect(() => {
+    if (!brandId) {
+      setData(MOCK_DATA);
+      setHasRealData(false);
+      return;
+    }
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const { from, to } = getDateRange(timeRange);
+
+        const { data: rows, error } = await supabase.rpc('get_content_type_stats', {
+          p_brand_id: brandId,
+          p_from_date: from,
+          p_to_date: to,
+        });
+
+        if (error) {
+          console.error('Content type stats RPC error:', error);
+          setData(MOCK_DATA);
+          setHasRealData(false);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!rows || rows.length === 0) {
+          setData(MOCK_DATA);
+          setHasRealData(false);
+          setIsLoading(false);
+          return;
+        }
+
+        const chartData: ContentTypeData[] = rows.map((row: any) => {
+          const cat = row.category || 'UNCLASSIFIED';
+          const topUrls = (row.top_urls || []).map((u: any) => ({
+            url: u.url,
+            citations: u.citations,
+          }));
+
+          return {
+            type: CATEGORY_LABELS[cat] || cat,
+            urls: Number(row.unique_urls) || 0,
+            percentage: Number(row.percentage) || 0,
+            icon: CATEGORY_ICONS[cat] || <FileText size={14} />,
+            sampleUrls: topUrls,
+          };
+        });
+
+        setData(chartData);
+        setHasRealData(true);
+      } catch (err) {
+        console.error('Content type fetch error:', err);
+        setData(MOCK_DATA);
+        setHasRealData(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [brandId, timeRange]);
 
   const toggleRow = (type: string) => {
     const next = new Set(expandedRows);
     if (next.has(type)) {
       next.delete(type);
     } else {
-      // Fix: Use 'type' instead of 'topic'
       next.add(type);
     }
     setExpandedRows(next);
@@ -125,6 +230,12 @@ export const AIPreferenceDistribution: React.FC = () => {
                 </div>
               </div>
             </div>
+            {hasRealData && (
+              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
+            )}
+            {!hasRealData && !isLoading && (
+              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
+            )}
           </h3>
           <p className="text-[11px] text-slate-500 font-medium mt-0.5">
             Content formats most influencing AI model answers
@@ -133,6 +244,11 @@ export const AIPreferenceDistribution: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin" />
+          </div>
+        ) : (
         <table className="w-full text-left text-[11px] table-auto">
           <thead className="bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 sticky top-0 z-10">
             <tr>
@@ -152,7 +268,7 @@ export const AIPreferenceDistribution: React.FC = () => {
               const isExpanded = expandedRows.has(row.type);
               return (
                 <React.Fragment key={index}>
-                  <tr 
+                  <tr
                     onClick={() => toggleRow(row.type)}
                     className={`hover:bg-gray-50/80 transition-all group cursor-pointer ${isExpanded ? 'bg-slate-50/60' : ''}`}
                   >
@@ -171,10 +287,10 @@ export const AIPreferenceDistribution: React.FC = () => {
                       <div className="flex items-center justify-end gap-3">
                         <span className="font-black text-slate-800 tabular-nums w-8 text-right text-[12px]">{row.percentage}%</span>
                         <div className="w-20 h-2 bg-gray-100 rounded-full overflow-hidden shrink-0">
-                          <div 
-                            className="h-full transition-all duration-1000 ease-out" 
-                            style={{ 
-                              width: `${row.percentage}%`, 
+                          <div
+                            className="h-full transition-all duration-1000 ease-out"
+                            style={{
+                              width: `${row.percentage}%`,
                               backgroundColor: brandTerracotta
                             }}
                           />
@@ -201,6 +317,7 @@ export const AIPreferenceDistribution: React.FC = () => {
             })}
           </tbody>
         </table>
+        )}
       </div>
     </div>
   );
