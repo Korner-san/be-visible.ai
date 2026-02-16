@@ -159,141 +159,47 @@ export const ContentPage: React.FC<ContentPageProps> = ({ brandId, timeRange = T
       try {
         const { from, to } = getDateRange(timeRange);
 
-        // Step 1: Get daily report IDs for this brand in date range
-        const { data: dailyReports, error: reportsError } = await supabase
-          .from('daily_reports')
-          .select('id')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .gte('report_date', from)
-          .lte('report_date', to);
-
-        if (reportsError || !dailyReports || dailyReports.length === 0) {
-          setData(MOCK_DATA);
-          setHasRealData(false);
-          setIsLoading(false);
-          return;
-        }
-
-        const reportIds = dailyReports.map(r => r.id);
-
-        // Step 2: Get prompt results for those reports
-        const { data: promptResults, error: resultsError } = await supabase
-          .from('prompt_results')
-          .select('id')
-          .in('daily_report_id', reportIds)
-          .in('provider_status', ['ok']);
-
-        if (resultsError || !promptResults || promptResults.length === 0) {
-          setData(MOCK_DATA);
-          setHasRealData(false);
-          setIsLoading(false);
-          return;
-        }
-
-        const promptResultIds = promptResults.map(r => r.id);
-
-        // Step 3: Get URL citations for those prompt results (batch if needed)
-        const BATCH_SIZE = 500;
-        const allCitations: any[] = [];
-
-        for (let i = 0; i < promptResultIds.length; i += BATCH_SIZE) {
-          const batch = promptResultIds.slice(i, i + BATCH_SIZE);
-          const { data: batchCitations, error: citError } = await supabase
-            .from('url_citations')
-            .select('url_id, prompt_result_id')
-            .in('prompt_result_id', batch);
-
-          if (citError) break;
-          if (batchCitations) allCitations.push(...batchCitations);
-        }
-
-        if (allCitations.length === 0) {
-          setData(MOCK_DATA);
-          setHasRealData(false);
-          setIsLoading(false);
-          return;
-        }
-
-        const urlIds = [...new Set(allCitations.map(c => c.url_id))];
-
-        // Step 4: Get URL inventory (for URL strings) and content facts (for classification)
-        const allInventory: any[] = [];
-        const allFacts: any[] = [];
-
-        for (let i = 0; i < urlIds.length; i += BATCH_SIZE) {
-          const batch = urlIds.slice(i, i + BATCH_SIZE);
-          const [invResult, factsResult] = await Promise.all([
-            supabase.from('url_inventory').select('id, url, domain').in('id', batch),
-            supabase.from('url_content_facts').select('url_id, content_structure_category, extracted_at').in('url_id', batch),
-          ]);
-          if (invResult.data) allInventory.push(...invResult.data);
-          if (factsResult.data) allFacts.push(...factsResult.data);
-        }
-
-        // Build lookup maps
-        const inventoryMap = new Map<string, { url: string; domain: string }>();
-        allInventory.forEach(inv => inventoryMap.set(inv.id, { url: inv.url, domain: inv.domain }));
-
-        // For duplicate url_ids in facts, keep the latest
-        const classificationMap = new Map<string, string>();
-        const extractionMap = new Map<string, string>();
-        allFacts.forEach(f => {
-          const existing = extractionMap.get(f.url_id);
-          if (!existing || (f.extracted_at && f.extracted_at > existing)) {
-            classificationMap.set(f.url_id, f.content_structure_category);
-            extractionMap.set(f.url_id, f.extracted_at);
-          }
+        // Call the SECURITY DEFINER RPC that does aggregation server-side
+        const { data: rows, error } = await supabase.rpc('get_content_type_stats', {
+          p_brand_id: brandId,
+          p_from_date: from,
+          p_to_date: to,
         });
 
-        // Step 5: Aggregate citations by category
-        const categoryStats: Record<string, { count: number; uniqueUrls: Set<string>; topUrls: Map<string, number> }> = {};
-
-        allCitations.forEach(citation => {
-          const urlId = citation.url_id;
-          const category = classificationMap.get(urlId) || 'UNCLASSIFIED';
-          const inv = inventoryMap.get(urlId);
-          const url = inv?.url || `url_id_${urlId}`;
-
-          if (!categoryStats[category]) {
-            categoryStats[category] = { count: 0, uniqueUrls: new Set(), topUrls: new Map() };
-          }
-          categoryStats[category].count++;
-          categoryStats[category].uniqueUrls.add(url);
-          categoryStats[category].topUrls.set(url, (categoryStats[category].topUrls.get(url) || 0) + 1);
-        });
-
-        const totalCitations = allCitations.length;
-
-        // Step 6: Build chart data sorted by percentage descending
-        const chartData: ContentTypeData[] = Object.entries(categoryStats)
-          .map(([category, stats]) => {
-            const pct = totalCitations > 0 ? parseFloat(((stats.count / totalCitations) * 100).toFixed(1)) : 0;
-
-            // Get top 3 URLs by citation count for sample URLs
-            const topUrls = [...stats.topUrls.entries()]
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 3)
-              .map(([url, count]) => ({ url, citations: count }));
-
-            return {
-              type: CATEGORY_LABELS[category] || category,
-              urls: stats.uniqueUrls.size,
-              totalScans: stats.count,
-              percentage: pct,
-              icon: CATEGORY_ICONS[category] || <FileText size={16} />,
-              sampleUrls: topUrls,
-            };
-          })
-          .sort((a, b) => b.percentage - a.percentage);
-
-        if (chartData.length > 0) {
-          setData(chartData);
-          setHasRealData(true);
-        } else {
+        if (error) {
+          console.error('Content type stats RPC error:', error);
           setData(MOCK_DATA);
           setHasRealData(false);
+          setIsLoading(false);
+          return;
         }
+
+        if (!rows || rows.length === 0) {
+          setData(MOCK_DATA);
+          setHasRealData(false);
+          setIsLoading(false);
+          return;
+        }
+
+        const chartData: ContentTypeData[] = rows.map((row: any) => {
+          const cat = row.category || 'UNCLASSIFIED';
+          const topUrls = (row.top_urls || []).map((u: any) => ({
+            url: u.url,
+            citations: u.citations,
+          }));
+
+          return {
+            type: CATEGORY_LABELS[cat] || cat,
+            urls: Number(row.unique_urls) || 0,
+            totalScans: Number(row.total_citations) || 0,
+            percentage: Number(row.percentage) || 0,
+            icon: CATEGORY_ICONS[cat] || <FileText size={16} />,
+            sampleUrls: topUrls,
+          };
+        });
+
+        setData(chartData);
+        setHasRealData(true);
       } catch (err) {
         console.error('Content type fetch error:', err);
         setData(MOCK_DATA);
