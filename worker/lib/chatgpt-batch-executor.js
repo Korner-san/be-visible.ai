@@ -51,9 +51,17 @@ async function executeBatch({
     // 1. Update schedule status to 'running'
     await updateScheduleStatus(scheduleId, 'running', startTime);
     
-    // 2. Get or create daily_report
-    const dailyReportId = await getOrCreateDailyReport(brandId, reportDate);
-    console.log(`✅ Daily Report ID: ${dailyReportId}`);
+    // 2. Per-brand daily report cache (fixes cross-contamination in mixed-brand batches)
+    const dailyReportCache = {};
+    async function getDailyReportForBrand(promptBrandId) {
+      if (!dailyReportCache[promptBrandId]) {
+        dailyReportCache[promptBrandId] = await getOrCreateDailyReport(promptBrandId, reportDate);
+      }
+      return dailyReportCache[promptBrandId];
+    }
+    // Pre-warm cache with the batch-level brandId
+    const defaultDailyReportId = await getDailyReportForBrand(brandId);
+    console.log(`✅ Default Daily Report ID: ${defaultDailyReportId}`);
     
     // 3. Load ChatGPT account and connect to persistent session
     const browser = await connectToPersistentSession();
@@ -136,6 +144,10 @@ async function executeBatch({
         const promptEndTime = new Date();
         const responseTime = promptEndTime - promptStartTime;
         
+        // Resolve correct brand for this prompt (fixes cross-contamination)
+        const promptBrandId = prompt.brandId || brandId;
+        const dailyReportId = await getDailyReportForBrand(promptBrandId);
+
         // Save result to database
         await savePromptResult({
           dailyReportId,
@@ -145,27 +157,32 @@ async function executeBatch({
           citations,
           responseTime
         });
-        
+
         results.push({
           promptId: prompt.promptId,
+          dailyReportId,
           success: true,
           responseLength: responseText.length,
           citationCount: citations.length,
           responseTime
         });
-        
+
         console.log(`✅ Prompt ${i + 1} completed successfully!`);
-        
+
         // Start new conversation for next prompt (skip for last prompt)
         if (i < prompts.length - 1) {
           console.log('🔄 Starting new conversation...');
           await page.keyboard.press('Control+Shift+KeyO');
           await page.waitForTimeout(2000);
         }
-        
+
       } catch (error) {
         console.error(`❌ Error processing prompt ${i + 1}:`, error.message);
-        
+
+        // Resolve correct brand for this prompt (fixes cross-contamination)
+        const promptBrandId = prompt.brandId || brandId;
+        const dailyReportId = await getDailyReportForBrand(promptBrandId);
+
         // Save error result to database
         await savePromptResult({
           dailyReportId,
@@ -176,13 +193,14 @@ async function executeBatch({
           responseTime: 0,
           error: error.message
         });
-        
+
         results.push({
           promptId: prompt.promptId,
+          dailyReportId,
           success: false,
           error: error.message
         });
-        
+
         // Continue with next prompt (don't fail entire batch)
       }
     }
@@ -195,27 +213,28 @@ async function executeBatch({
     const endTime = new Date();
     await updateScheduleStatus(scheduleId, 'completed', startTime, endTime);
     
-    // 9. Update daily_report aggregates
-    const aggregateResults = await updateDailyReportAggregates(dailyReportId);
-    
-    // 10. Process citations through unified processor (if any successful results)
-    if (aggregateResults && aggregateResults.ok > 0) {
-      console.log('\n🔗 [PROCESSOR] Starting unified citation processing...');
-      try {
-        const { processDailyReportCitations } = require('../process-daily-report-citations.js');
-        await processDailyReportCitations(dailyReportId);
-      } catch (processorError) {
-        console.error('⚠️  [PROCESSOR] Failed to process citations:', processorError.message);
-        console.error('   Citations will need to be processed manually or on next run');
-        // Don't fail the entire batch - citations can be processed later
+    // 9. Update daily_report aggregates - per-report for mixed-brand batches
+    const allReportIds = [...new Set(results.map(r => r.dailyReportId || defaultDailyReportId))];
+    for (const reportId of allReportIds) {
+      const aggregateResults = await updateDailyReportAggregates(reportId);
+
+      // 10. Process citations through unified processor (if any successful results)
+      if (aggregateResults && aggregateResults.ok > 0) {
+        console.log(`\n🔗 [PROCESSOR] Starting citation processing for report ${reportId}...`);
+        try {
+          const { processDailyReportCitations } = require('../process-daily-report-citations.js');
+          await processDailyReportCitations(reportId);
+        } catch (processorError) {
+          console.error('⚠️  [PROCESSOR] Failed to process citations:', processorError.message);
+          console.error('   Citations will need to be processed manually or on next run');
+        }
+      } else {
+        console.log(`\n⚠️  [PROCESSOR] Skipping citation processing for report ${reportId} (no successful results)`);
+        await supabase
+          .from('daily_reports')
+          .update({ url_processing_status: 'complete', urls_total: 0 })
+          .eq('id', reportId);
       }
-    } else {
-      console.log('\n⚠️  [PROCESSOR] Skipping citation processing (no successful ChatGPT results)');
-      // Mark URL processing as complete even with no results
-      await supabase
-        .from('daily_reports')
-        .update({ url_processing_status: 'complete', urls_total: 0 })
-        .eq('id', dailyReportId);
     }
     
     // 11. Display results summary

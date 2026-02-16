@@ -67,9 +67,17 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
   const startTime = new Date();
 
   try {
-    // 1. Get or create daily_report
-    const dailyReportId = await getOrCreateDailyReport(brandId, reportDate);
-    console.log('✅ Daily Report ID: ' + dailyReportId);
+    // 1. Per-brand daily report cache (fixes cross-contamination in mixed-brand batches)
+    const dailyReportCache = {};
+    async function getDailyReportForBrand(promptBrandId) {
+      if (!dailyReportCache[promptBrandId]) {
+        dailyReportCache[promptBrandId] = await getOrCreateDailyReport(promptBrandId, reportDate);
+      }
+      return dailyReportCache[promptBrandId];
+    }
+    // Pre-warm cache with the batch-level brandId
+    const defaultDailyReportId = await getDailyReportForBrand(brandId);
+    console.log('✅ Default Daily Report ID: ' + defaultDailyReportId);
 
     // 2. Load ChatGPT account and connect to persistent session
     const browser = await connectToPersistentSession(scheduleId);
@@ -176,11 +184,15 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
         const promptEndTime = new Date();
         const responseTime = promptEndTime - promptStartTime;
 
+        // Resolve correct brand for this prompt (fixes cross-contamination)
+        const promptBrandId = prompt.brandId || brandId;
+        const dailyReportId = await getDailyReportForBrand(promptBrandId);
+
         // Save RAW result to database (NO ANALYSIS)
         await saveRawPromptResult({
           dailyReportId,
           brandPromptId: prompt.promptId,
-          brandId,
+          brandId: promptBrandId,
           promptText: prompt.promptText,
           responseText,
           citations,
@@ -190,6 +202,7 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
 
         results.push({
           promptId: prompt.promptId,
+          dailyReportId,
           success: true,
           responseLength: responseText.length,
           citationCount: citations.length,
@@ -208,11 +221,15 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
       } catch (error) {
         console.error('❌ Error processing prompt ' + (i + 1) + ':', error.message);
 
+        // Resolve correct brand for this prompt (fixes cross-contamination)
+        const promptBrandId = prompt.brandId || brandId;
+        const dailyReportId = await getDailyReportForBrand(promptBrandId);
+
         // Save error result to database
         await saveRawPromptResult({
           dailyReportId,
           brandPromptId: prompt.promptId,
-          brandId,
+          brandId: promptBrandId,
           promptText: prompt.promptText,
           responseText: '',
           citations: [],
@@ -223,6 +240,7 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
 
         results.push({
           promptId: prompt.promptId,
+          dailyReportId,
           success: false,
           error: error.message
         });
@@ -249,31 +267,41 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
     console.log('Execution time: ' + Math.round((endTime - startTime) / 1000) + 's');
     console.log('='.repeat(70) + '\n');
 
-    // 8. Update daily_reports status
+    // 8. Update daily_reports status - per-report for mixed-brand batches
     console.log('📋 Updating daily_reports status...');
     try {
-      // Update daily_reports with batch execution stats
-      // Status remains 'running' until end-of-day processor marks it 'completed'
-      const { error: updateError } = await supabase
-        .from('daily_reports')
-        .update({
-          chatgpt_status: 'complete',
-          status: 'running',
-          completed_prompts: successCount,
-          total_prompts: prompts.length,
-          chatgpt_attempted: prompts.length,
-          chatgpt_ok: successCount,
-          chatgpt_no_result: failureCount
-          // completed_at set by end-of-day processor when ALL phases complete
-        })
-        .eq('id', dailyReportId);
+      // Group results by dailyReportId
+      const resultsByReport = {};
+      for (const r of results) {
+        const reportId = r.dailyReportId || defaultDailyReportId;
+        if (!resultsByReport[reportId]) resultsByReport[reportId] = [];
+        resultsByReport[reportId].push(r);
+      }
 
-      if (updateError) {
-        console.error('⚠️  Failed to update daily_reports:', updateError);
-      } else {
-        console.log('✅ Updated daily_reports status:');
-        console.log('   Completed: ' + successCount + '/' + prompts.length);
-        console.log('   Total citations: ' + totalCitations);
+      // Update each daily_report with its own stats
+      for (const [reportId, reportResults] of Object.entries(resultsByReport)) {
+        const reportOk = reportResults.filter(r => r.success).length;
+        const reportFail = reportResults.filter(r => !r.success).length;
+        const reportTotal = reportResults.length;
+
+        const { error: updateError } = await supabase
+          .from('daily_reports')
+          .update({
+            chatgpt_status: 'complete',
+            status: 'running',
+            completed_prompts: reportOk,
+            total_prompts: reportTotal,
+            chatgpt_attempted: reportTotal,
+            chatgpt_ok: reportOk,
+            chatgpt_no_result: reportFail
+          })
+          .eq('id', reportId);
+
+        if (updateError) {
+          console.error('⚠️  Failed to update daily_report ' + reportId + ':', updateError);
+        } else {
+          console.log('✅ Updated daily_report ' + reportId + ': ' + reportOk + '/' + reportTotal);
+        }
       }
     } catch (aggregationError) {
       console.error('⚠️  Update error:', aggregationError);
@@ -281,7 +309,7 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
 
     return {
       success: true,
-      dailyReportId,
+      dailyReportId: defaultDailyReportId,
       scheduleId,
       totalPrompts: prompts.length,
       successCount,
