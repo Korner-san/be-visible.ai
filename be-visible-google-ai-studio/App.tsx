@@ -81,6 +81,7 @@ const initialCompetitors: Competitor[] = [
 interface UserBrand {
   id: string;
   name: string;
+  domain?: string;
 }
 
 function AppContent() {
@@ -103,7 +104,7 @@ function AppContent() {
       try {
         const { data, error } = await supabase
           .from('brands')
-          .select('id, name')
+          .select('id, name, domain')
           .eq('owner_user_id', user.id)
           .order('created_at', { ascending: false });
 
@@ -185,7 +186,7 @@ function AppContent() {
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} />;
       case 'Citations':
-        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} />;
+        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} />;
       case 'Prompts':
         return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} />;
       case 'Improve':
