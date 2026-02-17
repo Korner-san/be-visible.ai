@@ -2,6 +2,7 @@
 -- Returns content structure category aggregation for the Content page
 -- Uses SECURITY DEFINER to bypass RLS (validates brand ownership internally)
 -- Uses url_citations table (pre-computed url_id links) for accurate matching
+-- Deduplicates url_content_facts to one classification per url_id (latest)
 
 DROP FUNCTION IF EXISTS public.get_content_type_stats(UUID, DATE, DATE);
 
@@ -46,7 +47,7 @@ BEGIN
     WHERE pr.daily_report_id IN (SELECT id FROM brand_reports)
       AND pr.provider_status = 'ok'
   ),
-  -- Use url_citations table (pre-computed url_id links) for accurate matching
+  -- Use url_citations table (pre-computed url_id links)
   brand_citations AS (
     SELECT
       uc.url_id,
@@ -54,15 +55,24 @@ BEGIN
     FROM url_citations uc
     WHERE uc.prompt_result_id IN (SELECT id FROM brand_prompt_results)
   ),
-  -- Join to url_inventory for URL strings and url_content_facts for classification
+  -- Deduplicate url_content_facts: one classification per url_id (latest by extracted_at)
+  -- This matches the old app's JavaScript deduplication logic
+  latest_classification AS (
+    SELECT DISTINCT ON (url_id)
+      url_id,
+      content_structure_category
+    FROM url_content_facts
+    ORDER BY url_id, extracted_at DESC NULLS LAST
+  ),
+  -- Join citations to deduplicated classifications
   citation_with_category AS (
     SELECT
       bc.url_id,
       ui.url AS original_url,
-      COALESCE(ucf.content_structure_category, 'UNCLASSIFIED') AS content_category
+      COALESCE(lc.content_structure_category, 'UNCLASSIFIED') AS content_category
     FROM brand_citations bc
     LEFT JOIN url_inventory ui ON ui.id = bc.url_id
-    LEFT JOIN url_content_facts ucf ON ucf.url_id = bc.url_id
+    LEFT JOIN latest_classification lc ON lc.url_id = bc.url_id
   ),
   -- Aggregate by category
   category_agg AS (
@@ -104,4 +114,4 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.get_content_type_stats IS 'Returns content structure category stats for the Content page. Uses url_citations table for accurate URL matching. SECURITY DEFINER to bypass RLS.';
+COMMENT ON FUNCTION public.get_content_type_stats IS 'Returns content structure category stats. Deduplicates url_content_facts to one classification per url_id (latest). SECURITY DEFINER to bypass RLS.';
