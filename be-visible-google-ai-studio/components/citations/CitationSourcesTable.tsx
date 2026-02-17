@@ -107,11 +107,14 @@ const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: 
   );
 };
 
+const PAGE_SIZE = 15;
+
 export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [data, setData] = useState<SourceData[]>(MOCK_DATA);
   const [isLoading, setIsLoading] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
     if (!brandId) {
@@ -169,6 +172,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
 
         setData(sourceData);
         setHasRealData(true);
+        setCurrentPage(0);
       } catch (err) {
         console.error('Citation sources fetch error:', err);
         setData(MOCK_DATA);
@@ -192,6 +196,8 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
   };
 
   const totalMentions = data.reduce((acc, c) => acc + c.mentions, 0);
+  const totalPages = Math.ceil(data.length / PAGE_SIZE);
+  const pagedData = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
@@ -240,7 +246,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {data.map((row) => {
+            {pagedData.map((row) => {
               const isExpanded = expandedRows.has(row.id);
               const citationPct = totalMentions > 0 ? ((row.mentions / totalMentions) * 100).toFixed(1) : '0';
 
@@ -309,11 +315,44 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
         )}
       </div>
 
-      {/* Compact Table Footer */}
-      <div className="py-5 bg-white flex justify-center border-t border-gray-200">
-         <button className="text-[10px] font-black text-gray-400 tracking-[0.2em] uppercase hover:text-brand-brown transition-colors">
-           Request full audit
-         </button>
+      {/* Pagination Footer */}
+      <div className="py-3.5 px-5 bg-white flex items-center justify-between border-t border-gray-200">
+        <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+          {data.length > 0
+            ? `${currentPage * PAGE_SIZE + 1}–${Math.min((currentPage + 1) * PAGE_SIZE, data.length)} of ${data.length} domains`
+            : 'No domains'}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+              disabled={currentPage === 0}
+              className="px-2.5 py-1 text-[10px] font-bold rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              Prev
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className={`w-6 h-6 text-[10px] font-bold rounded-md transition-all ${
+                  i === currentPage
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={currentPage === totalPages - 1}
+              className="px-2.5 py-1 text-[10px] font-bold rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
