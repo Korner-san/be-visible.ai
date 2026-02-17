@@ -25,7 +25,7 @@ export const CitationsPage: React.FC<CitationsPageProps> = ({ onNavigateToAcadem
 
       {/* Main Sources Table */}
       <div className="w-full">
-        <CitationSourcesTable />
+        <CitationSourcesTable brandId={brandId} timeRange={timeRange} />
       </div>
     </div>
   );

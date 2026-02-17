@@ -1,6 +1,13 @@
 
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Clock, Globe, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronRight, Clock, Globe, Info } from 'lucide-react';
+import { TimeRange } from '../../types';
+import { supabase } from '../../lib/supabase';
+
+interface SubUrl {
+  url: string;
+  citations: number;
+}
 
 interface SourceData {
   id: string;
@@ -8,18 +15,12 @@ interface SourceData {
   uniqueUrls: number;
   mentions: number;
   promptCoverage: number;
-  hasAction?: boolean;
-  subUrls: Array<{ url: string; citations: number }>;
+  subUrls: SubUrl[];
 }
 
-const mockData: SourceData[] = [
+const MOCK_DATA: SourceData[] = [
   {
-    id: '1',
-    domain: 'reddit.com',
-    uniqueUrls: 145,
-    mentions: 890,
-    promptCoverage: 92,
-    hasAction: true,
+    id: '1', domain: 'reddit.com', uniqueUrls: 145, mentions: 890, promptCoverage: 92,
     subUrls: [
       { url: '/r/cpp/comments/xy7z/best_build_acceleration_tools/', citations: 45 },
       { url: '/r/gamedev/comments/ab12/improving_compile_times_unreal/', citations: 32 },
@@ -27,38 +28,42 @@ const mockData: SourceData[] = [
     ]
   },
   {
-    id: '2',
-    domain: 'stackoverflow.com',
-    uniqueUrls: 82,
-    mentions: 540,
-    promptCoverage: 78,
-    hasAction: true,
+    id: '2', domain: 'stackoverflow.com', uniqueUrls: 82, mentions: 540, promptCoverage: 78,
     subUrls: [
       { url: '/questions/112233/how-to-speed-up-vs-builds', citations: 40 },
       { url: '/questions/445566/distributed-compiling-setup', citations: 22 },
     ]
   },
   {
-    id: '3',
-    domain: 'github.com',
-    uniqueUrls: 45,
-    mentions: 320,
-    promptCoverage: 64,
-    hasAction: true,
+    id: '3', domain: 'github.com', uniqueUrls: 45, mentions: 320, promptCoverage: 64,
     subUrls: [
       { url: '/incredibuild/actions-runner', citations: 15 },
     ]
   },
   {
-    id: '4',
-    domain: 'medium.com',
-    uniqueUrls: 28,
-    mentions: 150,
-    promptCoverage: 42,
-    hasAction: true,
+    id: '4', domain: 'medium.com', uniqueUrls: 28, mentions: 150, promptCoverage: 42,
     subUrls: []
   },
 ];
+
+function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date();
+  switch (timeRange) {
+    case TimeRange.SEVEN_DAYS: from.setDate(from.getDate() - 7); break;
+    case TimeRange.NINETY_DAYS: from.setDate(from.getDate() - 90); break;
+    default: from.setDate(from.getDate() - 30);
+  }
+  return {
+    from: from.toISOString().split('T')[0],
+    to: to.toISOString().split('T')[0],
+  };
+}
+
+interface CitationSourcesTableProps {
+  brandId?: string | null;
+  timeRange?: TimeRange;
+}
 
 const DomainLogo = ({ domain }: { domain: string }) => {
   const [error, setError] = useState(false);
@@ -69,9 +74,9 @@ const DomainLogo = ({ domain }: { domain: string }) => {
   }
 
   return (
-    <img 
-      src={faviconUrl} 
-      alt={`${domain} logo`} 
+    <img
+      src={faviconUrl}
+      alt={`${domain} logo`}
       className="w-4 h-4 object-contain rounded-sm"
       onError={() => setError(true)}
     />
@@ -79,9 +84,9 @@ const DomainLogo = ({ domain }: { domain: string }) => {
 };
 
 const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: string, align?: 'left' | 'right' | 'center' }) => {
-  const tooltipPositionClass = 
-    align === 'right' ? 'right-0' : 
-    align === 'center' ? 'left-1/2 -translate-x-1/2' : 
+  const tooltipPositionClass =
+    align === 'right' ? 'right-0' :
+    align === 'center' ? 'left-1/2 -translate-x-1/2' :
     'left-0';
 
   return (
@@ -102,9 +107,80 @@ const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: 
   );
 };
 
-export const CitationSourcesTable: React.FC = () => {
+export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  
+  const [data, setData] = useState<SourceData[]>(MOCK_DATA);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasRealData, setHasRealData] = useState(false);
+
+  useEffect(() => {
+    if (!brandId) {
+      setData(MOCK_DATA);
+      setHasRealData(false);
+      return;
+    }
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const { from, to } = getDateRange(timeRange);
+
+        const { data: rows, error } = await supabase.rpc('get_citation_sources', {
+          p_brand_id: brandId,
+          p_from_date: from,
+          p_to_date: to,
+        });
+
+        if (error) {
+          console.error('Citation sources RPC error:', error);
+          setData(MOCK_DATA);
+          setHasRealData(false);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!rows || rows.length === 0) {
+          setData(MOCK_DATA);
+          setHasRealData(false);
+          setIsLoading(false);
+          return;
+        }
+
+        const totalActivePrompts = Number(rows[0]?.total_active_prompts) || 1;
+
+        const sourceData: SourceData[] = rows.map((row: any, idx: number) => {
+          const promptCount = Number(row.prompt_coverage) || 0;
+          const coveragePct = Math.round((promptCount / totalActivePrompts) * 100);
+
+          const topUrls = (row.top_urls || []).map((u: any) => ({
+            url: u.url,
+            citations: u.citations,
+          }));
+
+          return {
+            id: String(idx),
+            domain: row.domain || 'unknown',
+            uniqueUrls: Number(row.urls_count) || 0,
+            mentions: Number(row.mentions_count) || 0,
+            promptCoverage: coveragePct,
+            subUrls: topUrls,
+          };
+        });
+
+        setData(sourceData);
+        setHasRealData(true);
+      } catch (err) {
+        console.error('Citation sources fetch error:', err);
+        setData(MOCK_DATA);
+        setHasRealData(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [brandId, timeRange]);
+
   const toggleRow = (id: string) => {
     const newExpanded = new Set(expandedRows);
     if (newExpanded.has(id)) {
@@ -115,17 +191,35 @@ export const CitationSourcesTable: React.FC = () => {
     setExpandedRows(newExpanded);
   };
 
+  const totalMentions = data.reduce((acc, c) => acc + c.mentions, 0);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
       {/* Table Header Section */}
       <div className="p-5 border-b border-gray-200 bg-white">
-        <h3 className="text-[15px] font-bold text-gray-400 tracking-wide leading-none">Citation sources</h3>
+        <h3 className="text-[15px] font-bold text-gray-400 tracking-wide leading-none flex items-center gap-2">
+          Citation sources
+          {hasRealData && (
+            <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
+          )}
+          {!hasRealData && !isLoading && (
+            <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
+          )}
+        </h3>
         <p className="text-[11px] text-slate-500 mt-1 font-medium">
           Unique URLs per domain across all AI responses. Click a domain to expand.
         </p>
       </div>
 
       <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center space-y-3">
+              <div className="w-8 h-8 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-gray-400 font-medium">Loading citation sources...</p>
+            </div>
+          </div>
+        ) : (
         <table className="w-full text-left text-[11px] border-collapse">
           <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
             <tr>
@@ -140,20 +234,19 @@ export const CitationSourcesTable: React.FC = () => {
                 <HeaderWithInfo title="% Total" info="Proportion of citation volume." align="center" />
               </th>
               <th className="px-4 py-3 font-bold text-center">
-                <HeaderWithInfo title="Coverage" info="Percentage of tracked prompts." align="center" />
+                <HeaderWithInfo title="Coverage" info="Percentage of tracked prompts where this domain was cited." align="center" />
               </th>
               <th className="px-5 py-3 font-bold text-center">Improve</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {mockData.map((row) => {
+            {data.map((row) => {
               const isExpanded = expandedRows.has(row.id);
-              const totalMentions = mockData.reduce((acc, c) => acc + c.mentions, 0);
-              const citationPct = ((row.mentions / totalMentions) * 100).toFixed(1);
-              
+              const citationPct = totalMentions > 0 ? ((row.mentions / totalMentions) * 100).toFixed(1) : '0';
+
               return (
                 <React.Fragment key={row.id}>
-                  <tr 
+                  <tr
                     className={`hover:bg-gray-50 transition-all cursor-pointer group ${isExpanded ? 'bg-slate-50' : ''}`}
                     onClick={() => toggleRow(row.id)}
                   >
@@ -192,7 +285,7 @@ export const CitationSourcesTable: React.FC = () => {
                                  <div key={idx} className="flex items-center justify-between text-[11px] bg-white p-3 rounded-lg border border-gray-200 hover:border-brand-brown/20 transition-all group/sub">
                                     <div className="flex items-center gap-2 text-blue-600 font-bold truncate">
                                       <Globe size={12} className="opacity-60" />
-                                      <span className="truncate hover:underline">{row.domain}{sub.url}</span>
+                                      <span className="truncate hover:underline">{sub.url}</span>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
                                       <span className="text-slate-900 font-bold tabular-nums text-[12px]">{sub.citations}</span>
@@ -213,8 +306,9 @@ export const CitationSourcesTable: React.FC = () => {
             })}
           </tbody>
         </table>
+        )}
       </div>
-      
+
       {/* Compact Table Footer */}
       <div className="py-5 bg-white flex justify-center border-t border-gray-200">
          <button className="text-[10px] font-black text-gray-400 tracking-[0.2em] uppercase hover:text-brand-brown transition-colors">
