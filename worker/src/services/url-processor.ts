@@ -279,12 +279,12 @@ export const processUrlsForReport = async (
     } catch (error) {
       console.error('❌ [URL PROCESSOR] Error during classification:', error)
       // Continue with empty classifications - we'll use defaults
-      classifications = classificationsInput.map(() => ({ content_structure_category: 'OFFICIAL_DOCUMENTATION' }))
+      classifications = classificationsInput.map(() => ({ content_structure_category: 'OTHER_LOW_CONFIDENCE' }))
     }
     
     // Step 9: Store content and classifications (with resilience)
     const contentFactsRecords = successfulExtractions.map((extraction, index) => {
-      const classification = classifications[index] || { content_structure_category: 'OFFICIAL_DOCUMENTATION' }
+      const classification = classifications[index] || { content_structure_category: 'OTHER_LOW_CONFIDENCE' }
       const urlId = existingUrlMap.get(extraction.url)?.id
       
       if (!urlId) return null
@@ -295,9 +295,9 @@ export const processUrlsForReport = async (
         description: extraction.content || '',
         raw_content: extraction.raw_content || extraction.content || '',
         content_snippet: (extraction.raw_content || extraction.content || '').substring(0, 2000),
-        content_structure_category: classification?.content_structure_category || 'OFFICIAL_DOCUMENTATION',
-        classification_confidence: 0.8,
-        classifier_version: 'v1'
+        content_structure_category: classification?.content_structure_category || 'OTHER_LOW_CONFIDENCE',
+        classification_confidence: classification?.confidence || 0.8,
+        classifier_version: 'v2'
       }
     }).filter(Boolean)
     
@@ -507,9 +507,9 @@ const processDomainHomepages = async (dailyReportId: string): Promise<{ processe
       description: e.content || '',
       raw_content: e.raw_content || e.content || '',
       content_snippet: (e.raw_content || e.content || '').substring(0, 2000),
-      content_structure_category: classifications[i]?.content_structure_category || 'OFFICIAL_DOCUMENTATION',
-      classification_confidence: 0.8,
-      classifier_version: 'v1'
+      content_structure_category: classifications[i]?.content_structure_category || 'OTHER_LOW_CONFIDENCE',
+      classification_confidence: classifications[i]?.confidence || 0.8,
+      classifier_version: 'v2'
     })).filter(r => r.url_id)
     
     if (contentRecords.length > 0) {
