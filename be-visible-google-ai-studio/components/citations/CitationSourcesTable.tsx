@@ -323,7 +323,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
             : 'No domains'}
         </span>
         {totalPages > 1 && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
               disabled={currentPage === 0}
@@ -331,19 +331,37 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
             >
               Prev
             </button>
-            {Array.from({ length: totalPages }, (_, i) => (
-              <button
-                key={i}
-                onClick={() => setCurrentPage(i)}
-                className={`w-6 h-6 text-[10px] font-bold rounded-md transition-all ${
-                  i === currentPage
-                    ? 'bg-slate-800 text-white shadow-sm'
-                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
+            {(() => {
+              const pages: (number | 'ellipsis-start' | 'ellipsis-end')[] = [];
+              if (totalPages <= 7) {
+                for (let i = 0; i < totalPages; i++) pages.push(i);
+              } else {
+                pages.push(0);
+                if (currentPage > 2) pages.push('ellipsis-start');
+                const start = Math.max(1, currentPage - 1);
+                const end = Math.min(totalPages - 2, currentPage + 1);
+                for (let i = start; i <= end; i++) pages.push(i);
+                if (currentPage < totalPages - 3) pages.push('ellipsis-end');
+                pages.push(totalPages - 1);
+              }
+              return pages.map((p) =>
+                typeof p === 'string' ? (
+                  <span key={p} className="w-6 h-6 flex items-center justify-center text-[10px] text-gray-300 select-none">...</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p)}
+                    className={`w-6 h-6 text-[10px] font-bold rounded-md transition-all ${
+                      p === currentPage
+                        ? 'bg-slate-800 text-white shadow-sm'
+                        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                    }`}
+                  >
+                    {p + 1}
+                  </button>
+                )
+              );
+            })()}
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={currentPage === totalPages - 1}
