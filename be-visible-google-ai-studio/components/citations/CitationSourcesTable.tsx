@@ -1,12 +1,14 @@
 
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, Clock, Globe, Info } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronRight, Clock, Globe, Info, CheckCircle, XCircle } from 'lucide-react';
 import { TimeRange } from '../../types';
 import { supabase } from '../../lib/supabase';
 
 interface SubUrl {
   url: string;
-  citations: number;
+  mentions: number;
+  brandMentioned: boolean;
+  title: string;
 }
 
 interface SourceData {
@@ -22,22 +24,22 @@ const MOCK_DATA: SourceData[] = [
   {
     id: '1', domain: 'reddit.com', uniqueUrls: 145, mentions: 890, promptCoverage: 92,
     subUrls: [
-      { url: '/r/cpp/comments/xy7z/best_build_acceleration_tools/', citations: 45 },
-      { url: '/r/gamedev/comments/ab12/improving_compile_times_unreal/', citations: 32 },
-      { url: '/r/devops/comments/ck99/ci_cd_pipeline_optimization/', citations: 28 },
+      { url: 'https://reddit.com/r/cpp/comments/xy7z/best_build_acceleration_tools/', mentions: 45, brandMentioned: true, title: 'Best Build Acceleration Tools' },
+      { url: 'https://reddit.com/r/gamedev/comments/ab12/improving_compile_times_unreal/', mentions: 32, brandMentioned: false, title: 'Improving Compile Times in Unreal' },
+      { url: 'https://reddit.com/r/devops/comments/ck99/ci_cd_pipeline_optimization/', mentions: 28, brandMentioned: true, title: 'CI/CD Pipeline Optimization' },
     ]
   },
   {
     id: '2', domain: 'stackoverflow.com', uniqueUrls: 82, mentions: 540, promptCoverage: 78,
     subUrls: [
-      { url: '/questions/112233/how-to-speed-up-vs-builds', citations: 40 },
-      { url: '/questions/445566/distributed-compiling-setup', citations: 22 },
+      { url: 'https://stackoverflow.com/questions/112233/how-to-speed-up-vs-builds', mentions: 40, brandMentioned: true, title: 'How to speed up VS builds' },
+      { url: 'https://stackoverflow.com/questions/445566/distributed-compiling-setup', mentions: 22, brandMentioned: false, title: 'Distributed compiling setup' },
     ]
   },
   {
     id: '3', domain: 'github.com', uniqueUrls: 45, mentions: 320, promptCoverage: 64,
     subUrls: [
-      { url: '/incredibuild/actions-runner', citations: 15 },
+      { url: 'https://github.com/incredibuild/actions-runner', mentions: 15, brandMentioned: true, title: 'Incredibuild Actions Runner' },
     ]
   },
   {
@@ -115,6 +117,50 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
   const [isLoading, setIsLoading] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [loadingUrls, setLoadingUrls] = useState<Set<string>>(new Set());
+  const [loadedDomains, setLoadedDomains] = useState<Set<string>>(new Set());
+
+  const fetchDomainUrls = useCallback(async (domain: string, rowId: string) => {
+    if (!brandId || !hasRealData || loadedDomains.has(domain)) return;
+
+    setLoadingUrls(prev => new Set(prev).add(rowId));
+    try {
+      const { from, to } = getDateRange(timeRange);
+      const { data: urls, error } = await supabase.rpc('get_citation_source_urls', {
+        p_brand_id: brandId,
+        p_domain: domain,
+        p_from_date: from,
+        p_to_date: to,
+      });
+
+      if (error) {
+        console.error('Citation source URLs RPC error:', error);
+        return;
+      }
+
+      if (urls && urls.length > 0) {
+        const subUrls: SubUrl[] = urls.map((u: any) => ({
+          url: u.url || '',
+          mentions: Number(u.mentions) || 0,
+          brandMentioned: Boolean(u.brand_mentioned),
+          title: u.page_title || '',
+        }));
+
+        setData(prev => prev.map(row =>
+          row.id === rowId ? { ...row, subUrls } : row
+        ));
+        setLoadedDomains(prev => new Set(prev).add(domain));
+      }
+    } catch (err) {
+      console.error('Citation source URLs fetch error:', err);
+    } finally {
+      setLoadingUrls(prev => {
+        const next = new Set(prev);
+        next.delete(rowId);
+        return next;
+      });
+    }
+  }, [brandId, timeRange, hasRealData, loadedDomains]);
 
   useEffect(() => {
     if (!brandId) {
@@ -155,24 +201,21 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
           const promptCount = Number(row.prompt_coverage) || 0;
           const coveragePct = Math.round((promptCount / totalActivePrompts) * 100);
 
-          const topUrls = (row.top_urls || []).map((u: any) => ({
-            url: u.url,
-            citations: u.citations,
-          }));
-
           return {
             id: String(idx),
             domain: row.domain || 'unknown',
             uniqueUrls: Number(row.urls_count) || 0,
             mentions: Number(row.mentions_count) || 0,
             promptCoverage: coveragePct,
-            subUrls: topUrls,
+            subUrls: [],
           };
         });
 
         setData(sourceData);
         setHasRealData(true);
         setCurrentPage(0);
+        setLoadedDomains(new Set());
+        setExpandedRows(new Set());
       } catch (err) {
         console.error('Citation sources fetch error:', err);
         setData(MOCK_DATA);
@@ -191,6 +234,11 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
       newExpanded.delete(id);
     } else {
       newExpanded.add(id);
+      // Lazy-load URLs for this domain
+      const row = data.find(r => r.id === id);
+      if (row) {
+        fetchDomainUrls(row.domain, id);
+      }
     }
     setExpandedRows(newExpanded);
   };
@@ -283,25 +331,45 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
                   {isExpanded && (
                     <tr className="bg-slate-50/40">
                       <td colSpan={6} className="px-5 py-4 border-b border-gray-200">
-                        <div className="ml-10 space-y-2 animate-fadeIn">
-                          <h4 className="text-[8px] font-bold text-gray-400 tracking-widest uppercase">Targeted citations: {row.domain}</h4>
-                          {row.subUrls.length > 0 ? (
-                            <div className="grid grid-cols-1 gap-2 max-w-4xl">
+                        <div className="ml-6 space-y-2 animate-fadeIn" style={{ width: '95%' }}>
+                          <h4 className="text-[8px] font-bold text-gray-400 tracking-widest uppercase">Cited URLs: {row.domain}</h4>
+                          {loadingUrls.has(row.id) ? (
+                            <div className="flex items-center gap-2 py-4">
+                              <div className="w-4 h-4 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin" />
+                              <span className="text-[10px] text-gray-400 font-medium">Loading URLs...</span>
+                            </div>
+                          ) : row.subUrls.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-1.5">
                                {row.subUrls.map((sub, idx) => (
                                  <div key={idx} className="flex items-center justify-between text-[11px] bg-white p-3 rounded-lg border border-gray-200 hover:border-brand-brown/20 transition-all group/sub">
-                                    <div className="flex items-center gap-2 text-blue-600 font-bold truncate">
-                                      <Globe size={12} className="opacity-60" />
-                                      <span className="truncate hover:underline">{sub.url}</span>
+                                    <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
+                                      <Globe size={12} className="opacity-60 shrink-0 text-gray-400" />
+                                      <div className="min-w-0 flex-1">
+                                        {sub.title && (
+                                          <div className="text-[10px] text-gray-400 font-medium truncate">{sub.title}</div>
+                                        )}
+                                        <a href={sub.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-blue-600 font-bold truncate block hover:underline">{sub.url}</a>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="text-slate-900 font-bold tabular-nums text-[12px]">{sub.citations}</span>
-                                      <span className="text-[9px] font-bold text-gray-400 uppercase">Citations</span>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-slate-900 font-bold tabular-nums text-[12px]">{sub.mentions}</span>
+                                        <span className="text-[9px] font-bold text-gray-400 uppercase">Mentions</span>
+                                      </div>
+                                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                        sub.brandMentioned
+                                          ? 'bg-emerald-50 text-emerald-600'
+                                          : 'bg-red-50 text-red-400'
+                                      }`}>
+                                        {sub.brandMentioned ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                                        <span>{sub.brandMentioned ? 'Mentioned' : 'Not mentioned'}</span>
+                                      </div>
                                     </div>
                                  </div>
                                ))}
                             </div>
                           ) : (
-                            <span className="text-[10px] text-gray-400 italic">Detailed URL data pending audit...</span>
+                            <span className="text-[10px] text-gray-400 italic">No URL data available for this domain.</span>
                           )}
                         </div>
                       </td>
