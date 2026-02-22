@@ -135,10 +135,13 @@ function AppContent() {
         setActiveBrandId(primary.id);
         setActiveBrand(primary);
 
-        if (primary.first_report_status === 'succeeded') {
-          setAppView('AUTHENTICATED_READY');
-        } else {
+        // Only hold on WaitingScreen if report is actively queued/running.
+        // null (old brands) and 'succeeded'/'failed' all go straight to dashboard.
+        const waitingStatuses = ['queued', 'running'];
+        if (waitingStatuses.includes(primary.first_report_status ?? '')) {
           setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
+        } else {
+          setAppView('AUTHENTICATED_READY');
         }
       } else if (incompleteBrands.length > 0) {
         const pending = incompleteBrands[0];
