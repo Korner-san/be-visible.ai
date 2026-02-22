@@ -191,7 +191,7 @@ function AppContent() {
         id: p.id,
         text: p.improved_prompt || p.raw_prompt,
         category: (p.category || 'General').toUpperCase(),
-        isActive: p.status === 'selected' || p.status === 'active',
+        isActive: p.status === 'active',
         visibilityScore: 0,
         visibilityTrend: 0,
         avgPosition: 0,

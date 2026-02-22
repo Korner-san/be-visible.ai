@@ -109,15 +109,14 @@ Return exactly the same number of prompts as input. Keep the same numbering.`;
       return {
         id: original.id,
         improved_prompt: item.prompt,
-        status: 'improved',
       };
     }).filter(Boolean);
 
-    // Update each prompt row
+    // Update each prompt row — set status + is_active together for consistency
     const updatePromises = updates.map((u) =>
       supabase
         .from('brand_prompts')
-        .update({ improved_prompt: u.improved_prompt, status: 'improved' })
+        .update({ improved_prompt: u.improved_prompt, status: 'active', is_active: true })
         .eq('id', u.id)
     );
 
@@ -130,7 +129,7 @@ Return exactly the same number of prompts as input. Keep the same numbering.`;
       .from('brand_prompts')
       .select('id, raw_prompt, improved_prompt, category, status')
       .eq('brand_id', brandId)
-      .eq('status', 'improved')
+      .eq('status', 'active')
       .order('source_template_code');
 
     return res.status(200).json({

@@ -75,20 +75,20 @@ module.exports = async function handler(req, res) {
     const answers = brand.onboarding_answers || {};
     const normalizedDomain = normalizeDomain(answers.website || brand.domain || '');
 
-    // Mark selected prompts
+    // Mark prompts as active — set status + is_active together for consistency
     if (selectedPromptIds.length > 0) {
       await supabase
         .from('brand_prompts')
-        .update({ status: 'selected' })
+        .update({ status: 'active', is_active: true })
         .in('id', selectedPromptIds)
         .eq('brand_id', brandId);
     } else {
-      // If no specific IDs, mark all improved/inactive prompts as selected
+      // If no specific IDs, activate all prompts for this brand
       await supabase
         .from('brand_prompts')
-        .update({ status: 'selected' })
+        .update({ status: 'active', is_active: true })
         .eq('brand_id', brandId)
-        .in('status', ['improved', 'inactive']);
+        .eq('status', 'inactive');
     }
 
     // Complete the brand — set onboarding_prompts_sent = 0 to signal v2 brand

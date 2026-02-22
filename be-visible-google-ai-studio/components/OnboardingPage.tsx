@@ -189,7 +189,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         .from('brand_prompts')
         .select('id, improved_prompt, raw_prompt, category')
         .eq('brand_id', existingBrandId)
-        .in('status', ['improved', 'selected', 'inactive'])
+        .in('status', ['active', 'inactive'])
         .order('created_at');
 
       if (existingPrompts && existingPrompts.length > 0) {
