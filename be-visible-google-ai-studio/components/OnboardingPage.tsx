@@ -183,6 +183,24 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         }));
         if (a.industry) setPrefilled(true);
       }
+
+      // If brand already has generated prompts, jump straight to Step 14 (preview)
+      const { data: existingPrompts } = await supabase
+        .from('brand_prompts')
+        .select('id, improved_prompt, raw_prompt, category')
+        .eq('brand_id', existingBrandId)
+        .in('status', ['improved', 'selected', 'inactive'])
+        .order('created_at');
+
+      if (existingPrompts && existingPrompts.length > 0) {
+        setGeneratedPrompts(existingPrompts.map(p => ({
+          id: p.id,
+          text: p.improved_prompt || p.raw_prompt,
+          category: p.category || 'General',
+        })));
+        setGenerationPhase('completed');
+        setStep(14);
+      }
     };
     loadExisting();
   }, [existingBrandId]);
@@ -462,7 +480,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       const webhookUrl = import.meta.env.VITE_HETZNER_WEBHOOK_URL;
       const webhookSecret = import.meta.env.VITE_WEBHOOK_SECRET;
       if (webhookUrl) {
-        fetch(`${webhookUrl}/run-onboarding-prompts`, {
+        fetch(`${webhookUrl}/run-onboarding-batch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ brandId, secret: webhookSecret }),

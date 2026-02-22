@@ -19,6 +19,7 @@ import { IntegrationsPage } from './components/IntegrationsPage';
 import { OnboardingPage } from './components/OnboardingPage';
 import { OnboardingEditPromptsPage } from './components/OnboardingEditPromptsPage';
 import { WaitingScreen } from './components/WaitingScreen';
+import { OnboardingProgressScreen } from './components/OnboardingProgressScreen';
 import { BillingPage } from './components/BillingPage';
 import { SupportPage } from './components/SupportPage';
 import { UserSettingsPage } from './components/UserSettingsPage';
@@ -28,13 +29,14 @@ import { supabase } from './lib/supabase';
 
 // ─── 5-State App View Machine ───────────────────────────────────────────────
 type AppView =
-  | 'AUTH_LOADING'           // Determining auth + brand state
-  | 'AUTH_CALLBACK'          // Handling email confirmation redirect
-  | 'NOT_AUTHENTICATED'      // No session → show sign in / sign up
-  | 'AUTHENTICATED_NO_BRAND' // Logged in, no brand → onboarding
-  | 'AUTHENTICATED_ONBOARDING_IN_PROGRESS' // Has incomplete brand → onboarding
-  | 'AUTHENTICATED_ONBOARDING_DONE_NO_REPORT' // Complete but report not ready → waiting
-  | 'AUTHENTICATED_READY';   // Fully set up → dashboard
+  | 'AUTH_LOADING'                          // Determining auth + brand state
+  | 'AUTH_CALLBACK'                         // Handling email confirmation redirect
+  | 'NOT_AUTHENTICATED'                     // No session → show sign in / sign up
+  | 'AUTHENTICATED_NO_BRAND'               // Logged in, no brand → fresh onboarding
+  | 'AUTHENTICATED_ONBOARDING_IN_PROGRESS' // Incomplete brand → resume onboarding
+  | 'AUTHENTICATED_ONBOARDING_DONE_NO_REPORT' // Just finished onboarding in-session
+  | 'AUTHENTICATED_PROGRESS'               // Browserless scan running → live progress screen
+  | 'AUTHENTICATED_READY';                 // Fully set up → dashboard
 
 interface UserBrand {
   id: string;
@@ -42,6 +44,7 @@ interface UserBrand {
   domain?: string;
   onboarding_completed: boolean;
   first_report_status: string | null;
+  onboarding_prompts_sent: number | null;
 }
 
 const initialCompetitors: Competitor[] = [
@@ -105,7 +108,7 @@ function AppContent() {
     try {
       const { data: brandsData, error } = await supabase
         .from('brands')
-        .select('id, name, domain, onboarding_completed, first_report_status')
+        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
         .eq('owner_user_id', user.id)
         .eq('is_demo', false)
         .order('created_at', { ascending: false });
@@ -135,11 +138,20 @@ function AppContent() {
         setActiveBrandId(primary.id);
         setActiveBrand(primary);
 
-        // Any brand with onboarding_completed = true goes straight to dashboard.
-        // WaitingScreen is only triggered explicitly after completing the NEW
-        // v2 onboarding in the same session (via handleOnboardingComplete).
-        // Never route to WaitingScreen on login — status may be stale.
-        setAppView('AUTHENTICATED_READY');
+        // onboarding_prompts_sent IS NULL → old brand (pre-v2) → always dashboard
+        // onboarding_prompts_sent = 0–29 AND status running/queued → progress screen
+        // onboarding_prompts_sent = 30 OR status succeeded → dashboard
+        const sent = primary.onboarding_prompts_sent;
+        const activeStatuses = ['queued', 'running'];
+        if (
+          sent !== null &&
+          sent < 30 &&
+          activeStatuses.includes(primary.first_report_status ?? '')
+        ) {
+          setAppView('AUTHENTICATED_PROGRESS');
+        } else {
+          setAppView('AUTHENTICATED_READY');
+        }
       } else if (incompleteBrands.length > 0) {
         const pending = incompleteBrands[0];
         setActiveBrandId(pending.id);
@@ -291,13 +303,25 @@ function AppContent() {
     );
   }
 
-  // 5. Waiting for first report (post-onboarding)
+  // 5a. Just finished onboarding in-session — simple wait (webhook just fired)
   if (appView === 'AUTHENTICATED_ONBOARDING_DONE_NO_REPORT') {
     return (
       <WaitingScreen
         brandId={activeBrandId!}
         brandName={activeBrand?.name || ''}
         onReportReady={handleReportReady}
+      />
+    );
+  }
+
+  // 5b. Browserless scan in progress — live progress screen (resume or in-session)
+  if (appView === 'AUTHENTICATED_PROGRESS') {
+    return (
+      <OnboardingProgressScreen
+        brandId={activeBrandId!}
+        brandName={activeBrand?.name || ''}
+        initialCount={activeBrand?.onboarding_prompts_sent ?? 0}
+        onComplete={handleReportReady}
       />
     );
   }

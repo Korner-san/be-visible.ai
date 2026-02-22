@@ -91,7 +91,7 @@ module.exports = async function handler(req, res) {
         .in('status', ['improved', 'inactive']);
     }
 
-    // Complete the brand
+    // Complete the brand — set onboarding_prompts_sent = 0 to signal v2 brand
     const { data: updatedBrand, error: updateError } = await supabase
       .from('brands')
       .update({
@@ -99,6 +99,7 @@ module.exports = async function handler(req, res) {
         domain: normalizedDomain || brand.domain,
         onboarding_completed: true,
         first_report_status: 'queued',
+        onboarding_prompts_sent: 0,
       })
       .eq('id', brandId)
       .select('id, name, domain, onboarding_completed, first_report_status')
