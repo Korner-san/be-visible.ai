@@ -17,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   setTimeRange,
   isScrolled
 }) => {
-  const tabs = ['Visibility', 'Competitors', 'Citations', 'Prompts', 'Improve', 'Onboarding'];
+  const tabs = ['Visibility', 'Competitors', 'Citations', 'Prompts', 'Improve'];
 
   return (
     <header 

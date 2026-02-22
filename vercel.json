@@ -1,6 +1,9 @@
 {
   "framework": null,
-  "buildCommand": "cd be-visible-google-ai-studio && npm install && npm run build",
+  "installCommand": "npm install && cd be-visible-google-ai-studio && npm install",
+  "buildCommand": "cd be-visible-google-ai-studio && npm run build",
   "outputDirectory": "be-visible-google-ai-studio/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

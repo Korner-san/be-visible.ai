@@ -29,12 +29,60 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Only accept POST requests to /initialize-session
-  if (req.method !== 'POST' || req.url !== '/initialize-session') {
+  // Only accept POST to known endpoints
+  if (req.method !== 'POST' || (req.url !== '/initialize-session' && req.url !== '/run-onboarding-prompts')) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: 'Not found' }));
     return;
   }
+
+  // ── /run-onboarding-prompts handler ────────────────────────────────────────
+  if (req.url === '/run-onboarding-prompts') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const { brandId, secret } = JSON.parse(body);
+
+        if (secret !== WEBHOOK_SECRET) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Unauthorized' }));
+          return;
+        }
+
+        if (!brandId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Missing brandId' }));
+          return;
+        }
+
+        console.log(`🚀 [WEBHOOK] Triggering onboarding prompt run for brand: ${brandId}`);
+
+        const scriptPath = path.join(__dirname, 'run-onboarding-prompts.js');
+        const proc = spawn('node', [scriptPath], {
+          env: { ...process.env, BRAND_ID: brandId },
+          cwd: __dirname,
+          detached: true,  // Run fully in background
+          stdio: 'ignore', // Don't pipe — just fire and forget
+        });
+        proc.unref();
+
+        // Return immediately — script runs in background
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          message: `Onboarding prompt run started for brand ${brandId}`,
+        }));
+      } catch (error) {
+        console.error('❌ [WEBHOOK /run-onboarding-prompts] Error:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
+    return;
+  }
+
+  // ── /initialize-session handler ────────────────────────────────────────────
 
   // Parse request body
   let body = '';
