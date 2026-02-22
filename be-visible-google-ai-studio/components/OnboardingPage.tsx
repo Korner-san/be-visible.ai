@@ -377,25 +377,24 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
   // ── Generate Prompts ─────────────────────────────────────────────────────────
   const handleGenerate = async () => {
-    if (!brandId) {
-      setGenerationError('Brand not initialized. Please restart onboarding.');
-      return;
-    }
-
     setIsGenerating(true);
     setGenerationPhase('analyzing');
     setGenerationStep(0);
     setGenerationError(null);
 
-    // Save final answers before generating
-    await saveAnswers(brandId, data);
+    // Ensure brand exists — create on-demand if step 1 creation somehow failed
+    let currentBrandId = brandId;
+    if (!currentBrandId) {
+      currentBrandId = await ensureBrand(data.brandName || 'My Brand', data.website || '');
+      if (!currentBrandId) {
+        setGenerationError('Could not initialize brand profile. Please go back to step 1 and try again.');
+        setIsGenerating(false);
+        return;
+      }
+    }
 
-    const genMessages = [
-      'Analyzing your brand profile and market position...',
-      'Synthesizing industry-specific visibility queries...',
-      'Organizing prompts into strategic performance categories...',
-      'Improving prompt quality with AI...',
-    ];
+    // Save final answers before generating
+    await saveAnswers(currentBrandId, data);
 
     // Animate message steps while API calls run
     const t1 = setTimeout(() => setGenerationStep(1), 2000);
@@ -407,7 +406,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandId,
+          brandId: currentBrandId,
           language: data.language,
           industry: data.industry,
           productCategory: data.productCategory,
@@ -429,7 +428,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       const improveRes = await fetch('/api/onboarding/improve-prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, language: data.language }),
+        body: JSON.stringify({ brandId: currentBrandId, language: data.language }),
       });
 
       const improveResult = await improveRes.json();
@@ -1051,6 +1050,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                 )}
               </div>
             </div>
+
+            {/* Generation error (shown when not in generating animation) */}
+            {generationError && !isGenerating && (
+              <p className="mt-4 text-sm text-red-600 text-center">{generationError}</p>
+            )}
 
             {/* Finish error */}
             {finishError && (
