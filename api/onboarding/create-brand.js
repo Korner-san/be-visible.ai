@@ -72,7 +72,7 @@ module.exports = async function handler(req, res) {
         name: brandName || 'My Brand',
         domain: website || '',
         onboarding_completed: false,
-        first_report_status: null,
+        first_report_status: 'idle',
         is_demo: false,
       })
       .select('id')
