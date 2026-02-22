@@ -135,28 +135,11 @@ function AppContent() {
         setActiveBrandId(primary.id);
         setActiveBrand(primary);
 
-        // Only hold on WaitingScreen if report is actively queued/running.
-        // null (old brands) and 'succeeded'/'failed' all go straight to dashboard.
-        const waitingStatuses = ['queued', 'running'];
-        if (waitingStatuses.includes(primary.first_report_status ?? '')) {
-          // Fallback: even if status says running/queued, check if this brand
-          // already has completed daily_reports (old brands, stale status).
-          const { data: existingReports } = await supabase
-            .from('daily_reports')
-            .select('id')
-            .eq('brand_id', primary.id)
-            .eq('status', 'completed')
-            .limit(1);
-
-          if (existingReports && existingReports.length > 0) {
-            // Brand already has a completed report — go straight to dashboard
-            setAppView('AUTHENTICATED_READY');
-          } else {
-            setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
-          }
-        } else {
-          setAppView('AUTHENTICATED_READY');
-        }
+        // Any brand with onboarding_completed = true goes straight to dashboard.
+        // WaitingScreen is only triggered explicitly after completing the NEW
+        // v2 onboarding in the same session (via handleOnboardingComplete).
+        // Never route to WaitingScreen on login — status may be stale.
+        setAppView('AUTHENTICATED_READY');
       } else if (incompleteBrands.length > 0) {
         const pending = incompleteBrands[0];
         setActiveBrandId(pending.id);
@@ -218,11 +201,27 @@ function AppContent() {
     fetchPrompts();
   }, [activeBrandId, appView]);
 
-  // ── Callback: onboarding completed → re-run routing ─────────────────────
-  const handleOnboardingComplete = useCallback(() => {
-    // Re-determine view after onboarding finishes (will land on DONE_NO_REPORT)
-    determineAppView();
-  }, [determineAppView]);
+  // ── Callback: onboarding completed → show WaitingScreen ─────────────────
+  // This is the ONLY place WaitingScreen is triggered. Never via routing.
+  // We fetch the brand directly here — do NOT call determineAppView() which
+  // would immediately override back to AUTHENTICATED_READY.
+  const handleOnboardingComplete = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('brands')
+      .select('id, name, domain, onboarding_completed, first_report_status')
+      .eq('owner_user_id', user.id)
+      .eq('is_demo', false)
+      .eq('onboarding_completed', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (data && data.length > 0) {
+      setActiveBrandId(data[0].id);
+      setActiveBrand(data[0]);
+    }
+    setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
+  }, [user]);
 
   // ── Callback: report ready → move to dashboard ───────────────────────────
   const handleReportReady = useCallback(() => {
