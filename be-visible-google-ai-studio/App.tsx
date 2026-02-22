@@ -139,7 +139,21 @@ function AppContent() {
         // null (old brands) and 'succeeded'/'failed' all go straight to dashboard.
         const waitingStatuses = ['queued', 'running'];
         if (waitingStatuses.includes(primary.first_report_status ?? '')) {
-          setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
+          // Fallback: even if status says running/queued, check if this brand
+          // already has completed daily_reports (old brands, stale status).
+          const { data: existingReports } = await supabase
+            .from('daily_reports')
+            .select('id')
+            .eq('brand_id', primary.id)
+            .eq('status', 'completed')
+            .limit(1);
+
+          if (existingReports && existingReports.length > 0) {
+            // Brand already has a completed report — go straight to dashboard
+            setAppView('AUTHENTICATED_READY');
+          } else {
+            setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
+          }
         } else {
           setAppView('AUTHENTICATED_READY');
         }
