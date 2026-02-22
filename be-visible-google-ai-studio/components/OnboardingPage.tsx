@@ -207,9 +207,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
   // ── Create or fetch brand after Step 1 ──────────────────────────────────────
   const ensureBrand = async (brandName: string, website: string): Promise<string | null> => {
-    if (!user) return null;
-
-    // Reuse existing if already set
+    // Reuse existing if already set (just update name/domain)
     if (brandId) {
       await supabase
         .from('brands')
@@ -218,44 +216,37 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       return brandId;
     }
 
-    // Check for any existing pending brand for this user
-    const { data: pending } = await supabase
-      .from('brands')
-      .select('id')
-      .eq('owner_user_id', user.id)
-      .eq('is_demo', false)
-      .eq('onboarding_completed', false)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (pending && pending.length > 0) {
-      const id = pending[0].id;
-      setBrandId(id);
-      await supabase.from('brands').update({ name: brandName, domain: website }).eq('id', id);
-      return id;
-    }
-
-    // Create new brand
-    const { data: created, error } = await supabase
-      .from('brands')
-      .insert({
-        owner_user_id: user.id,
-        name: brandName,
-        domain: website,
-        onboarding_completed: false,
-        first_report_status: null,
-        is_demo: false,
-      })
-      .select('id')
-      .single();
-
-    if (error || !created) {
-      console.error('[OnboardingPage] Failed to create brand:', error?.message);
+    // Get JWT for the serverless function
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      console.error('[OnboardingPage] No session token — cannot create brand');
       return null;
     }
 
-    setBrandId(created.id);
-    return created.id;
+    // Call serverless function (uses service role to bypass RLS)
+    try {
+      const res = await fetch('/api/onboarding/create-brand', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ brandName, website }),
+      });
+
+      const result = await res.json();
+      if (!result.success || !result.brandId) {
+        console.error('[OnboardingPage] create-brand API error:', result.error);
+        return null;
+      }
+
+      setBrandId(result.brandId);
+      return result.brandId;
+    } catch (err) {
+      console.error('[OnboardingPage] create-brand fetch error:', err);
+      return null;
+    }
   };
 
   // ── Save current answers to Supabase ────────────────────────────────────────
