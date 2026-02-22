@@ -206,46 +206,44 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   }, [existingBrandId]);
 
   // ── Create or fetch brand after Step 1 ──────────────────────────────────────
-  const ensureBrand = async (brandName: string, website: string): Promise<string | null> => {
+  // Returns [brandId, errorMessage]
+  const ensureBrand = async (brandName: string, website: string): Promise<[string | null, string | null]> => {
     // Reuse existing if already set (just update name/domain)
     if (brandId) {
       await supabase
         .from('brands')
         .update({ name: brandName, domain: website })
         .eq('id', brandId);
-      return brandId;
+      return [brandId, null];
     }
 
-    // Get JWT for the serverless function
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      console.error('[OnboardingPage] No session token — cannot create brand');
-      return null;
+    if (!user?.id) {
+      return [null, 'Not authenticated — please sign in again.'];
     }
 
-    // Call serverless function (uses service role to bypass RLS)
+    // Call serverless function (uses service role key to bypass RLS)
     try {
       const res = await fetch('/api/onboarding/create-brand', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ brandName, website }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, brandName, website }),
       });
 
-      const result = await res.json();
+      let result: any;
+      try {
+        result = await res.json();
+      } catch {
+        return [null, `Server error (HTTP ${res.status}) — check Vercel env vars.`];
+      }
+
       if (!result.success || !result.brandId) {
-        console.error('[OnboardingPage] create-brand API error:', result.error);
-        return null;
+        return [null, result.error || 'Brand creation failed (unknown reason).'];
       }
 
       setBrandId(result.brandId);
-      return result.brandId;
-    } catch (err) {
-      console.error('[OnboardingPage] create-brand fetch error:', err);
-      return null;
+      return [result.brandId, null];
+    } catch (err: any) {
+      return [null, 'Network error: ' + (err?.message || 'Could not reach server.')];
     }
   };
 
@@ -316,8 +314,12 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     if (step === 1) {
       // Create brand after step 1
       setIsSaving(true);
-      await ensureBrand(data.brandName, data.website);
+      const [id, err] = await ensureBrand(data.brandName, data.website);
       setIsSaving(false);
+      if (!id) {
+        // Show error visibly but still allow proceeding — brand will be created on-demand at Generate
+        console.error('[OnboardingPage] ensureBrand at step 1 failed:', err);
+      }
       setStep(2);
       return;
     }
@@ -376,12 +378,13 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     // Ensure brand exists — create on-demand if step 1 creation somehow failed
     let currentBrandId = brandId;
     if (!currentBrandId) {
-      currentBrandId = await ensureBrand(data.brandName || 'My Brand', data.website || '');
-      if (!currentBrandId) {
-        setGenerationError('Could not initialize brand profile. Please go back to step 1 and try again.');
+      const [id, err] = await ensureBrand(data.brandName || 'My Brand', data.website || '');
+      if (!id) {
+        setGenerationError(err || 'Could not initialize brand profile. Please go back to step 1 and try again.');
         setIsGenerating(false);
         return;
       }
+      currentBrandId = id;
     }
 
     // Save final answers before generating

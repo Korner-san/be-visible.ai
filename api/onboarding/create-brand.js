@@ -2,8 +2,8 @@
  * Vercel Serverless Function: /api/onboarding/create-brand
  *
  * Creates (or finds existing pending) brand for the authenticated user.
- * Uses service role key to bypass client-side RLS restrictions.
- * Verifies the caller via their Supabase JWT.
+ * Uses service role key to bypass all RLS restrictions.
+ * Accepts userId from the client (user is already authenticated client-side).
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -18,71 +18,79 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // Verify caller via JWT
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, error: 'Missing Authorization header' });
-  }
-  const token = authHeader.slice(7);
+  const { userId, brandName, website } = req.body || {};
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
-  // Validate JWT and get user
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !user) {
-    console.error('[create-brand] Auth error:', authError?.message);
-    return res.status(401).json({ success: false, error: 'Invalid or expired session' });
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'Missing userId' });
   }
 
-  const { brandName, website } = req.body || {};
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // Check for any existing pending brand for this user
-  const { data: pending } = await supabase
-    .from('brands')
-    .select('id')
-    .eq('owner_user_id', user.id)
-    .eq('is_demo', false)
-    .eq('onboarding_completed', false)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  if (!supabaseUrl || !serviceKey) {
+    console.error('[create-brand] Missing Supabase env vars:', { hasUrl: !!supabaseUrl, hasKey: !!serviceKey });
+    return res.status(500).json({ success: false, error: 'Server configuration error: missing Supabase credentials' });
+  }
 
-  if (pending && pending.length > 0) {
-    const id = pending[0].id;
-    if (brandName || website) {
-      await supabase
-        .from('brands')
-        .update({ name: brandName, domain: website })
-        .eq('id', id);
+  const supabase = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  try {
+    // Reuse existing pending brand if one exists for this user
+    const { data: pending, error: selectError } = await supabase
+      .from('brands')
+      .select('id')
+      .eq('owner_user_id', userId)
+      .eq('is_demo', false)
+      .eq('onboarding_completed', false)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (selectError) {
+      console.error('[create-brand] Select error:', selectError.message);
+      return res.status(500).json({ success: false, error: 'DB select failed: ' + selectError.message });
     }
-    console.log('[create-brand] Reusing existing pending brand:', id);
-    return res.status(200).json({ success: true, brandId: id, existing: true });
+
+    if (pending && pending.length > 0) {
+      const id = pending[0].id;
+      if (brandName || website) {
+        await supabase
+          .from('brands')
+          .update({ name: brandName, domain: website })
+          .eq('id', id);
+      }
+      console.log('[create-brand] Reusing existing brand:', id, 'for user:', userId);
+      return res.status(200).json({ success: true, brandId: id, existing: true });
+    }
+
+    // Create new brand
+    const { data: created, error: insertError } = await supabase
+      .from('brands')
+      .insert({
+        owner_user_id: userId,
+        name: brandName || 'My Brand',
+        domain: website || '',
+        onboarding_completed: false,
+        first_report_status: null,
+        is_demo: false,
+      })
+      .select('id')
+      .single();
+
+    if (insertError || !created) {
+      console.error('[create-brand] Insert error:', insertError?.message);
+      return res.status(500).json({
+        success: false,
+        error: 'DB insert failed: ' + (insertError?.message || 'unknown'),
+      });
+    }
+
+    console.log('[create-brand] Created brand:', created.id, 'for user:', userId);
+    return res.status(200).json({ success: true, brandId: created.id, existing: false });
+
+  } catch (err) {
+    console.error('[create-brand] Unexpected error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Unexpected error' });
   }
-
-  // Create new brand
-  const { data: created, error: insertError } = await supabase
-    .from('brands')
-    .insert({
-      owner_user_id: user.id,
-      name: brandName || 'My Brand',
-      domain: website || '',
-      onboarding_completed: false,
-      first_report_status: null,
-      is_demo: false,
-    })
-    .select('id')
-    .single();
-
-  if (insertError || !created) {
-    console.error('[create-brand] Insert error:', insertError?.message);
-    return res.status(500).json({
-      success: false,
-      error: insertError?.message || 'Failed to create brand',
-    });
-  }
-
-  console.log('[create-brand] Created new brand:', created.id, 'for user:', user.id);
-  return res.status(200).json({ success: true, brandId: created.id, existing: false });
 };
