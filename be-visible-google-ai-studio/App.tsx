@@ -213,15 +213,16 @@ function AppContent() {
     fetchPrompts();
   }, [activeBrandId, appView]);
 
-  // ── Callback: onboarding completed → show WaitingScreen ─────────────────
-  // This is the ONLY place WaitingScreen is triggered. Never via routing.
+  // ── Callback: onboarding completed → show live progress screen ───────────
+  // Skip WaitingScreen entirely — go straight to OnboardingProgressScreen
+  // so the user sees the 0/30 counter from the first moment.
   // We fetch the brand directly here — do NOT call determineAppView() which
   // would immediately override back to AUTHENTICATED_READY.
   const handleOnboardingComplete = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from('brands')
-      .select('id, name, domain, onboarding_completed, first_report_status')
+      .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
       .eq('owner_user_id', user.id)
       .eq('is_demo', false)
       .eq('onboarding_completed', true)
@@ -232,7 +233,7 @@ function AppContent() {
       setActiveBrandId(data[0].id);
       setActiveBrand(data[0]);
     }
-    setAppView('AUTHENTICATED_ONBOARDING_DONE_NO_REPORT');
+    setAppView('AUTHENTICATED_PROGRESS');
   }, [user]);
 
   // ── Callback: report ready → move to dashboard ───────────────────────────
