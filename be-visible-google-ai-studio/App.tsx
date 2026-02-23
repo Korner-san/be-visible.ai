@@ -386,7 +386,7 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50">
-      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} onSignOut={signOut} />
+      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} onSignOut={signOut} brandName={activeBrand?.name} brandDomain={activeBrand?.domain} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Header
           activeTab={activeTab}

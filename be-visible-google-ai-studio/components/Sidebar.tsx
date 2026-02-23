@@ -1,36 +1,47 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Link2, 
-  CreditCard, 
-  HelpCircle, 
+import {
+  LayoutDashboard,
+  Link2,
+  CreditCard,
+  HelpCircle,
   ChevronDown,
   Activity,
   Rocket,
   Shield
 } from 'lucide-react';
+import { useAuth } from './AuthContext';
 
 interface SidebarProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
   onSignOut?: () => void;
+  brandName?: string;
+  brandDomain?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSignOut }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSignOut, brandName, brandDomain }) => {
+  const { user } = useAuth();
+
   const handleNavClick = (tabName: string) => {
     if (setActiveTab) {
       setActiveTab(tabName);
     }
   };
 
+  // Derive initials and display name from the authenticated user's email
+  const email = user?.email ?? '';
+  const emailPrefix = email.split('@')[0] ?? '';
+  const initials = emailPrefix.slice(0, 2).toUpperCase() || '?';
+  const displayName = emailPrefix || email;
+
   return (
     <aside className="w-60 bg-white border-r border-gray-200 flex flex-col h-full shrink-0 z-20">
       {/* Logo Area */}
       <div className="h-20 flex items-center px-6 border-b border-gray-100">
-        <img 
-          src="https://i.ibb.co/4wxqhcJv/image-20.png" 
-          alt="be-visible.ai logo" 
-          className="h-14 w-auto" 
+        <img
+          src="https://i.ibb.co/4wxqhcJv/image-20.png"
+          alt="be-visible.ai logo"
+          className="h-14 w-auto"
         />
       </div>
 
@@ -41,11 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
             Active Brand
           </label>
           <button className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors shadow-sm text-sm font-medium text-slate-700">
-            <span className="flex items-center gap-2">
-               <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
-               Incredibuild
+            <span className="flex items-center gap-2 min-w-0">
+               <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0"></span>
+               <span className="truncate">{brandName || '—'}</span>
             </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
           </button>
         </div>
 
@@ -107,11 +118,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
           className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all hover:bg-gray-50 text-left ${activeTab === 'User Settings' ? 'bg-slate-50 ring-1 ring-brand-brown/10' : ''}`}
         >
           <div className={`w-9 h-9 rounded-full flex items-center justify-center font-medium text-sm transition-colors ${activeTab === 'User Settings' ? 'bg-brand-brown text-white' : 'bg-gray-100 text-slate-600'}`}>
-            TS
+            {initials}
           </div>
           <div className="flex flex-col overflow-hidden">
-            <span className="text-sm font-semibold text-brand-brown truncate">Tomer</span>
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Premium Account</span>
+            <span className="text-sm font-semibold text-brand-brown truncate">{displayName}</span>
+            <span className="text-[10px] text-slate-400 truncate">{email}</span>
           </div>
         </button>
         {onSignOut && (
