@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 // Normalize domain function
 const normalizeDomain = (domain: string): string => {
@@ -92,6 +93,23 @@ export async function POST(request: NextRequest) {
     console.log('✅ [COMPLETE-FINAL API] DB update OK')
     console.log('✅ [COMPLETE-FINAL API] onboarding_completed AFTER:', updatedBrand.onboarding_completed)
     console.log('✅ [COMPLETE-FINAL API] first_report_status AFTER:', updatedBrand.first_report_status)
+
+    // Ensure user has a row in the users table
+    const adminSupabase = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    const { error: upsertUserError } = await adminSupabase
+      .from('users')
+      .upsert(
+        { id: user.id, email: user.email, subscription_plan: 'free_trial', reports_enabled: true },
+        { onConflict: 'id', ignoreDuplicates: true }
+      )
+    if (upsertUserError) {
+      console.warn('⚠️ [COMPLETE-FINAL API] Could not upsert users row:', upsertUserError.message)
+    } else {
+      console.log('✅ [COMPLETE-FINAL API] Users table row ensured for:', user.id)
+    }
     
     // VERIFICATION: Double-check the brand was actually updated in the database
     const { data: verifyBrand, error: verifyError } = await supabase
@@ -127,12 +145,24 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Simulate background job trigger
-    console.log('🚀 [COMPLETE-FINAL API] Triggering background job for brand:', updatedBrand.id)
-    
-    // In a real app, you'd trigger a background job here
-    // For now, we'll just log it
-    console.log('📋 [COMPLETE-FINAL API] Background job queued for report generation')
+    // Trigger the Hetzner worker to run the onboarding batch
+    console.log('🚀 [COMPLETE-FINAL API] Calling Hetzner webhook for brand:', updatedBrand.id)
+    try {
+      const webhookUrl = process.env.WEBHOOK_SERVER_URL || 'http://135.181.203.202:3001/run-onboarding-batch'
+      const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here'
+      const webhookRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId: updatedBrand.id, secret: webhookSecret }),
+      })
+      if (webhookRes.ok) {
+        console.log('✅ [COMPLETE-FINAL API] Webhook triggered successfully')
+      } else {
+        console.warn('⚠️ [COMPLETE-FINAL API] Webhook returned', webhookRes.status)
+      }
+    } catch (webhookErr) {
+      console.error('❌ [COMPLETE-FINAL API] Webhook call failed (non-fatal):', webhookErr instanceof Error ? webhookErr.message : webhookErr)
+    }
     
     console.log('✅ [COMPLETE-FINAL API] COMPLETION SUCCESS - Brand ready for finishing page')
     

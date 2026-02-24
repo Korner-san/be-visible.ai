@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, Loader2, Zap, ArrowRight } from 'lucide-react';
+import { CheckCircle, Loader2, Zap, ArrowRight, LogOut } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 interface OnboardingProgressScreenProps {
   brandId: string;
@@ -19,6 +20,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   initialCount = 0,
   onComplete,
 }) => {
+  const { signOut } = useAuth();
   const [sent, setSent] = useState(initialCount);
   const [phase, setPhase] = useState<'running' | 'complete' | 'timeout'>('running');
 
@@ -57,6 +59,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 w-full max-w-md text-center space-y-6">
+          <div className="flex justify-end -mt-4 -mr-4">
+            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              <LogOut size={13} /> Sign out
+            </button>
+          </div>
           <div className="mx-auto w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center">
             <CheckCircle size={36} className="text-emerald-500" />
           </div>
@@ -74,6 +81,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 w-full max-w-md text-center space-y-6">
+          <div className="flex justify-end -mt-4 -mr-4">
+            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              <LogOut size={13} /> Sign out
+            </button>
+          </div>
           <p className="text-sm text-gray-500">
             This is taking longer than expected. Your report will be ready soon — check back in a few minutes.
           </p>
@@ -156,9 +168,14 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
           ))}
         </div>
 
-        <p className="text-xs text-gray-400 text-center pt-2 border-t border-gray-100">
-          Brand: <strong className="text-gray-600">{brandName}</strong> — updating every 5s
-        </p>
+        <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+          <p className="text-xs text-gray-400">
+            Brand: <strong className="text-gray-600">{brandName}</strong> — updating every 5s
+          </p>
+          <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            <LogOut size={13} /> Sign out
+          </button>
+        </div>
       </div>
     </div>
   );

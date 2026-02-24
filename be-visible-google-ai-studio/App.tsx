@@ -23,6 +23,7 @@ import { OnboardingProgressScreen } from './components/OnboardingProgressScreen'
 import { BillingPage } from './components/BillingPage';
 import { SupportPage } from './components/SupportPage';
 import { UserSettingsPage } from './components/UserSettingsPage';
+import { ForensicPage } from './components/ForensicPage';
 import { ContentPage } from './components/ContentPage';
 import { TimeRange, PromptStats, Competitor } from './types';
 import { supabase } from './lib/supabase';
@@ -376,7 +377,9 @@ function AppContent() {
       case 'Support':
         return <SupportPage />;
       case 'User Settings':
-        return <UserSettingsPage />;
+        return <UserSettingsPage onNavigateToForensic={() => setActiveTab('Forensic')} />;
+      case 'Forensic':
+        return <ForensicPage />;
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:

@@ -359,17 +359,28 @@ async function updateRetryCounters(failedExtractions, urlList) {
 
 // ========== STEP 4: Prepare Classification Inputs ==========
 async function prepareClassificationInputs(urls) {
-  const { data: urlData } = await supabase
-    .from('url_inventory')
-    .select(`
-      id,
-      url,
-      url_content_facts(title, description, content_snippet)
-    `)
-    .in('url', urls)
-    .eq('content_extracted', true);
-  
-  return (urlData || [])
+  // Batch .in() queries to avoid "Bad Request" (URL too long) when urls > ~100
+  const BATCH_SIZE = 100;
+  const allRows = [];
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const batch = urls.slice(i, i + BATCH_SIZE);
+    const { data: batchData, error } = await supabase
+      .from('url_inventory')
+      .select(`
+        id,
+        url,
+        url_content_facts(title, description, content_snippet)
+      `)
+      .in('url', batch)
+      .eq('content_extracted', true);
+    if (error) {
+      console.warn(`⚠️ [CLASSIFICATION] prepareClassificationInputs batch ${Math.floor(i/BATCH_SIZE)+1} error:`, error.message);
+    } else {
+      allRows.push(...(batchData || []));
+    }
+  }
+
+  return allRows
     .filter(u => u.url_content_facts && typeof u.url_content_facts === "object")
     .map(u => {
       const facts = u.url_content_facts;

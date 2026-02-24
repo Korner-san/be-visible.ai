@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  User, 
-  Mail, 
-  Lock, 
-  Trash2, 
-  Save, 
-  CheckCircle2, 
+import {
+  User,
+  Lock,
+  Trash2,
+  Save,
+  CheckCircle2,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  FlaskConical
 } from 'lucide-react';
 
-export const UserSettingsPage: React.FC = () => {
+interface UserSettingsPageProps {
+  onNavigateToForensic?: () => void;
+}
+
+export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onNavigateToForensic }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -61,11 +65,23 @@ export const UserSettingsPage: React.FC = () => {
               
               {/* General Information Section */}
               <div className="space-y-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-brand-brown/5 text-brand-brown flex items-center justify-center">
-                    <User size={20} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-brand-brown/5 text-brand-brown flex items-center justify-center">
+                      <User size={20} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase tracking-[0.1em]">General Profile</h3>
                   </div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase tracking-[0.1em]">General Profile</h3>
+                  {onNavigateToForensic && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToForensic}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-all"
+                    >
+                      <FlaskConical size={13} />
+                      Forensic Panel
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

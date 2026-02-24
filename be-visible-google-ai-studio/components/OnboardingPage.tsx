@@ -24,6 +24,7 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
@@ -129,7 +130,7 @@ const CompetitorLogo = ({ name }: { name: string }) => {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId, onComplete, onNavigate }) => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
 
   // ── Step / form state ──────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
@@ -972,10 +973,18 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-8">
+              <div className="flex items-center gap-4">
                 <span className="text-[13px] font-bold text-[#64748B] tabular-nums">
                   {step > totalSteps ? '100' : progressPercentage}% Complete
                 </span>
+                <button
+                  onClick={signOut}
+                  title="Sign out"
+                  className="flex items-center gap-1.5 text-[12px] text-[#94A3B8] hover:text-[#64748B] transition-colors"
+                >
+                  <LogOut size={14} />
+                  Sign out
+                </button>
               </div>
             </div>
 
