@@ -412,6 +412,36 @@ export const ForensicPage: React.FC = () => {
               <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
               <p className="text-xs text-slate-400 mt-1">Today &amp; tomorrow's batches — click a row to expand and see all prompts</p>
             </div>
+
+            {/* Summary bar */}
+            {(() => {
+              const q = data.schedulingQueue;
+              const totalPrompts = q.reduce((sum, s) => sum + (s.batch_size || 0), 0);
+              const uniqueAccounts = new Set(q.map(s => s.account_assigned).filter(Boolean));
+              const uniqueProxies = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
+              return (
+                <div className="flex items-center gap-6 px-8 py-4 bg-slate-50 border-b border-gray-100">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Prompts</span>
+                    <span className="text-2xl font-black text-slate-800">{totalPrompts}</span>
+                    <span className="text-[10px] text-slate-400">across {q.length} {q.length === 1 ? 'batch' : 'batches'}</span>
+                  </div>
+                  <div className="w-px h-12 bg-gray-200" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ChatGPT Accounts</span>
+                    <span className="text-2xl font-black text-slate-800">{uniqueAccounts.size}</span>
+                    <span className="text-[10px] text-slate-400">{uniqueAccounts.size === 1 ? 'account' : 'accounts'} assigned</span>
+                  </div>
+                  <div className="w-px h-12 bg-gray-200" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Proxies</span>
+                    <span className="text-2xl font-black text-slate-800">{uniqueProxies.size}</span>
+                    <span className="text-[10px] text-slate-400">{uniqueProxies.size === 1 ? 'proxy' : 'proxies'} in use</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

@@ -10,16 +10,21 @@ import {
   EyeOff,
   FlaskConical
 } from 'lucide-react';
+import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface UserSettingsPageProps {
   onNavigateToForensic?: () => void;
 }
 
 export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onNavigateToForensic }) => {
+  const { user, signOut } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: 'Tomer S.',
@@ -46,12 +51,31 @@ export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onNavigateTo
     }, 1500);
   };
 
-  const handleDeleteAccount = () => {
+  const handleDeleteAccount = async () => {
     if (!deleteConfirm) {
       setDeleteConfirm(true);
       return;
     }
-    alert("Account deletion request initiated.");
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/user/delete-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Deletion failed');
+      await signOut(); // App.tsx detects no session → shows SignIn
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Unknown error');
+      setIsDeleting(false);
+      setDeleteConfirm(false);
+    }
   };
 
   return (
@@ -210,29 +234,39 @@ export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onNavigateTo
             </div>
 
             <div className="shrink-0 flex flex-col items-center md:items-end gap-3">
-              {deleteConfirm && (
+              {deleteConfirm && !isDeleting && (
                 <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest animate-pulse">
                   Are you absolutely sure?
                 </span>
               )}
-              <button 
+              <button
                 onClick={handleDeleteAccount}
+                disabled={isDeleting}
                 className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] transition-all border-2 ${
-                  deleteConfirm 
-                    ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' 
+                  deleteConfirm
+                    ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700'
                     : 'text-rose-500 border-rose-100 hover:border-rose-500 hover:bg-rose-50'
-                }`}
+                } ${isDeleting ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                <Trash2 size={18} />
-                {deleteConfirm ? 'Confirm Account Deletion' : 'Delete My Account'}
+                {isDeleting ? (
+                  <RefreshCw size={18} className="animate-spin" />
+                ) : (
+                  <Trash2 size={18} />
+                )}
+                {isDeleting ? 'Deleting...' : deleteConfirm ? 'Confirm Account Deletion' : 'Delete My Account'}
               </button>
-              {deleteConfirm && (
-                <button 
+              {deleteConfirm && !isDeleting && (
+                <button
                   onClick={() => setDeleteConfirm(false)}
                   className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:underline"
                 >
                   Cancel
                 </button>
+              )}
+              {deleteError && (
+                <p className="text-[11px] font-bold text-rose-600 max-w-xs text-center md:text-right">
+                  {deleteError}
+                </p>
               )}
             </div>
           </div>
