@@ -218,29 +218,28 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       return [brandId, null];
     }
 
-    // Use existing /api/onboarding/init — server reads auth session (no userId in body)
+    if (!user?.id) {
+      return [null, 'Not authenticated — please sign in again.'];
+    }
+
+    // Call serverless function (uses service role key to bypass RLS)
     try {
-      const res = await fetch('/api/onboarding/init', {
+      const res = await fetch('/api/onboarding/create-brand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, brandName, website }),
       });
 
       let result: any;
       try {
         result = await res.json();
       } catch {
-        return [null, `Server error (HTTP ${res.status}) — check server config.`];
+        return [null, `Server error (HTTP ${res.status}) — check Vercel env vars.`];
       }
 
       if (!result.success || !result.brandId) {
         return [null, result.error || 'Brand creation failed (unknown reason).'];
       }
-
-      // init creates a placeholder name — update with the real brand name/domain now
-      await supabase
-        .from('brands')
-        .update({ name: brandName, domain: website })
-        .eq('id', result.brandId);
 
       setBrandId(result.brandId);
       return [result.brandId, null];

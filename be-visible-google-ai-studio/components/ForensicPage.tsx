@@ -3,7 +3,6 @@ import {
   RefreshCw, Loader2, AlertCircle, CheckCircle, Clock,
   ChevronDown, ChevronRight, Lock
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -141,156 +140,18 @@ export const ForensicPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // ── Table A: Storage State Health ──────────────────────────────────────
-      const { data: accounts } = await supabase
-        .from('chatgpt_accounts')
-        .select('email, proxy_host, proxy_port, cookies_created_at')
-        .order('email');
+      // All data fetched via server-side API using service role key (bypasses RLS for global visibility)
+      const res = await fetch('/api/admin/forensic', {
+        headers: { 'x-forensic-password': 'Korneret' },
+      });
 
-      const storageStateHealth: StorageStateHealth[] = await Promise.all(
-        (accounts || []).map(async (account: any) => {
-          const now = new Date();
-          const cookiesCreated = account.cookies_created_at ? new Date(account.cookies_created_at) : null;
-          const ageInDays = cookiesCreated
-            ? Math.floor((now.getTime() - cookiesCreated.getTime()) / (1000 * 60 * 60 * 24))
-            : null;
-
-          const { data: lastSuccessData } = await supabase
-            .from('automation_forensics')
-            .select('timestamp')
-            .eq('chatgpt_account_email', account.email)
-            .eq('connection_status', 'Connected')
-            .eq('visual_state', 'Logged_In')
-            .order('timestamp', { ascending: false })
-            .limit(1)
-            .single();
-
-          const { data: recentStates } = await supabase
-            .from('automation_forensics')
-            .select('visual_state')
-            .eq('chatgpt_account_email', account.email)
-            .order('timestamp', { ascending: false })
-            .limit(10);
-
-          const visualStates = (recentStates || []).map((s: any) => s.visual_state).filter(Boolean);
-          const loggedInCount = visualStates.filter((s: string) => s === 'Logged_In').length;
-          const totalStates = visualStates.length;
-          let visualStateTrend = 'Unknown';
-          if (totalStates > 0) {
-            const pct = Math.round((loggedInCount / totalStates) * 100);
-            visualStateTrend = `${visualStates[0]} (${pct}%)`;
-          }
-          let status = 'Active';
-          if (totalStates >= 3 && visualStates.slice(0, 3).filter((s: string) => s !== 'Logged_In').length >= 2) {
-            status = 'Failed';
-          }
-          return {
-            extractionPc: 'Koren-laptop',
-            pcAccess: '',
-            chatgptAccount: account.email,
-            proxy: `${account.proxy_host}:${account.proxy_port}`,
-            age: ageInDays,
-            status,
-            lastSuccess: lastSuccessData?.timestamp || null,
-            visualStateTrend,
-            actionNeeded: '',
-          };
-        })
-      );
-
-      // ── Table B: Session Matrix ────────────────────────────────────────────
-      const { data: sessionMatrix } = await supabase
-        .from('v_forensic_session_attempts_24h')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(100);
-
-      // ── Table C: Citation Trace ────────────────────────────────────────────
-      const { data: rawCitations } = await supabase
-        .from('prompt_results')
-        .select(`
-          id, created_at, brand_prompt_id, prompt_text,
-          chatgpt_response, chatgpt_citations,
-          brand_prompts!inner(id, brands!inner(id, name))
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      const uniquePromptIds = [...new Set((rawCitations || []).map((r: any) => r.brand_prompt_id))];
-      const citationRates: Record<string, number> = {};
-      for (const promptId of uniquePromptIds) {
-        const { data: last5 } = await supabase
-          .from('prompt_results')
-          .select('chatgpt_citations')
-          .eq('brand_prompt_id', promptId)
-          .order('created_at', { ascending: false })
-          .limit(5);
-        if (last5 && last5.length > 0) {
-          const withCits = last5.filter((r: any) => r.chatgpt_citations && r.chatgpt_citations.length > 0).length;
-          citationRates[promptId] = Math.round((withCits / last5.length) * 100);
-        } else {
-          citationRates[promptId] = 0;
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
       }
-      const citationTrace: CitationTrace[] = (rawCitations || []).map((row: any) => ({
-        id: row.id,
-        timestamp: row.created_at,
-        brandName: row.brand_prompts?.brands?.name || 'Unknown',
-        promptText: row.prompt_text || '',
-        responseLength: (row.chatgpt_response || '').length,
-        citationsExtracted: row.chatgpt_citations?.length || 0,
-        citationRate: citationRates[row.brand_prompt_id] || 0,
-      }));
 
-      // ── Table D: Scheduling Queue ──────────────────────────────────────────
-      const today = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      const { data: schedules } = await supabase
-        .from('daily_schedules')
-        .select(`
-          id, schedule_date, batch_number, execution_time, status, batch_size, prompt_ids,
-          chatgpt_accounts!inner(email, proxy_host, proxy_port, last_visual_state, browserless_session_id)
-        `)
-        .gte('schedule_date', today)
-        .lte('schedule_date', tomorrow)
-        .order('execution_time', { ascending: true });
-
-      const schedulingQueue: ScheduleItem[] = await Promise.all(
-        (schedules || []).map(async (schedule: any) => {
-          const { data: prompts } = await supabase
-            .from('brand_prompts')
-            .select(`id, improved_prompt, raw_prompt, brand_id, brands!inner(id, name, owner_user_id)`)
-            .in('id', schedule.prompt_ids || []);
-
-          const userIds = [...new Set((prompts || []).map((p: any) => p.brands?.owner_user_id).filter(Boolean))];
-          let userMap: Record<string, string> = {};
-          if (userIds.length > 0) {
-            const { data: users } = await supabase.from('users').select('id, email').in('id', userIds);
-            (users || []).forEach((u: any) => { userMap[u.id] = u.email; });
-          }
-          return {
-            id: schedule.id,
-            schedule_date: schedule.schedule_date,
-            batch_number: schedule.batch_number,
-            execution_time: schedule.execution_time,
-            status: schedule.status,
-            batch_size: schedule.batch_size,
-            account_assigned: schedule.chatgpt_accounts?.email || null,
-            proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
-            account_last_visual_state: schedule.chatgpt_accounts?.last_visual_state || null,
-            session_id_assigned: schedule.chatgpt_accounts?.browserless_session_id || null,
-            prompts: (prompts || []).map((p: any) => ({
-              id: p.id,
-              prompt_text: p.improved_prompt || p.raw_prompt || '',
-              brand_name: p.brands?.name || 'Unknown',
-              brand_id: p.brands?.id || p.brand_id,
-              user_email: userMap[p.brands?.owner_user_id] || 'Unknown',
-            })),
-          };
-        })
-      );
-
-      setData({ storageStateHealth, sessionMatrix: sessionMatrix || [], citationTrace, schedulingQueue });
+      const json = await res.json();
+      setData(json);
       setLastRefresh(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');

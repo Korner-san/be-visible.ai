@@ -127,6 +127,35 @@ module.exports = async function handler(req, res) {
       console.log(`[complete-final] Cleaned up ${otherPending.length} pending brands`);
     }
 
+    // Ensure the brand owner has a row in the users table so nightly scheduler can find them
+    const { error: upsertUserError } = await supabase
+      .from('users')
+      .upsert(
+        { id: brand.owner_user_id, subscription_plan: 'free_trial', reports_enabled: true },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+    if (upsertUserError) {
+      console.warn('[complete-final] Could not upsert users row:', upsertUserError.message);
+    }
+
+    // Trigger Hetzner worker to run the onboarding batch (first report)
+    try {
+      const webhookUrl = process.env.WEBHOOK_SERVER_URL || 'http://135.181.203.202:3001/run-onboarding-batch';
+      const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here';
+      const webhookRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId: updatedBrand.id, secret: webhookSecret }),
+      });
+      if (webhookRes.ok) {
+        console.log('[complete-final] Hetzner webhook triggered for brand:', updatedBrand.id);
+      } else {
+        console.warn('[complete-final] Webhook returned', webhookRes.status);
+      }
+    } catch (webhookErr) {
+      console.error('[complete-final] Webhook call failed (non-fatal):', webhookErr.message);
+    }
+
     console.log('[complete-final] Completed onboarding for brand:', brandId);
 
     return res.status(200).json({
