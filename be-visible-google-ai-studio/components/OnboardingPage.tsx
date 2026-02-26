@@ -218,28 +218,29 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       return [brandId, null];
     }
 
-    if (!user?.id) {
-      return [null, 'Not authenticated — please sign in again.'];
-    }
-
-    // Call serverless function (uses service role key to bypass RLS)
+    // Use existing /api/onboarding/init — server reads auth session (no userId in body)
     try {
-      const res = await fetch('/api/onboarding/create-brand', {
+      const res = await fetch('/api/onboarding/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, brandName, website }),
       });
 
       let result: any;
       try {
         result = await res.json();
       } catch {
-        return [null, `Server error (HTTP ${res.status}) — check Vercel env vars.`];
+        return [null, `Server error (HTTP ${res.status}) — check server config.`];
       }
 
       if (!result.success || !result.brandId) {
         return [null, result.error || 'Brand creation failed (unknown reason).'];
       }
+
+      // init creates a placeholder name — update with the real brand name/domain now
+      await supabase
+        .from('brands')
+        .update({ name: brandName, domain: website })
+        .eq('id', result.brandId);
 
       setBrandId(result.brandId);
       return [result.brandId, null];
@@ -470,16 +471,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       const result = await res.json();
       if (!result.success) throw new Error(result.error || 'Failed to complete onboarding');
 
-      // Trigger Hetzner webhook (non-blocking)
-      const webhookUrl = import.meta.env.VITE_HETZNER_WEBHOOK_URL;
-      const webhookSecret = import.meta.env.VITE_WEBHOOK_SECRET;
-      if (webhookUrl) {
-        fetch(`${webhookUrl}/run-onboarding-batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId, secret: webhookSecret }),
-        }).catch(err => console.warn('[OnboardingPage] Webhook trigger failed:', err.message));
-      }
+      // Webhook is fired by /api/onboarding/complete-final — no duplicate call needed here
 
       // Transition app to waiting screen
       onComplete();
