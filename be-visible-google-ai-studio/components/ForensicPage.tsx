@@ -278,7 +278,7 @@ export const ForensicPage: React.FC = () => {
                   {data.storageStateHealth.length === 0 ? (
                     <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
                   ) : data.storageStateHealth.map((s, i) => (
-                    <tr key={i} className={`border-b border-gray-50 transition-colors ${s.isEligible ? 'hover:bg-gray-50/50' : 'opacity-40 bg-slate-50/60'}`}>
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-3 font-semibold text-slate-700 text-xs">{s.extractionPc}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.chatgptAccount}</td>
                       <td className="px-4 py-3">
