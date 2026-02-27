@@ -66,10 +66,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavi
         }
 
         if (data && data.length > 0) {
-          const points: TrendDataPoint[] = data.map((row: any) => ({
-            date: new Date(row.report_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            score: parseFloat(row.visibility_score) || 0,
-          }));
+          // Deduplicate by report_date — keep the row with the highest visibility_score
+          // (duplicate rows can appear if the end-of-day processor ran on the same date twice)
+          const bestByDate = new Map<string, number>();
+          data.forEach((row: any) => {
+            const score = parseFloat(row.visibility_score) || 0;
+            if (score > (bestByDate.get(row.report_date) ?? -1)) {
+              bestByDate.set(row.report_date, score);
+            }
+          });
+
+          const points: TrendDataPoint[] = Array.from(bestByDate.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([reportDate, score]) => ({
+              date: new Date(reportDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              score,
+            }));
 
           setVisibilityData(points);
 

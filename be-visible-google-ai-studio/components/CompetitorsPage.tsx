@@ -163,8 +163,23 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
           return;
         }
 
+        // Deduplicate by report_date — keep the row with the highest brand_visibility_score
+        // (duplicate rows can appear if the end-of-day processor ran on the same date twice)
+        const bestByDate = new Map<string, any>();
+        for (const r of reports) {
+          const cm = r.competitor_metrics as any;
+          const score = cm?.brand_visibility_score ?? -1;
+          const existing = bestByDate.get(r.report_date);
+          const existingScore = (existing?.competitor_metrics as any)?.brand_visibility_score ?? -1;
+          if (score > existingScore) {
+            bestByDate.set(r.report_date, r);
+          }
+        }
+        const dedupedReports = Array.from(bestByDate.values())
+          .sort((a, b) => a.report_date.localeCompare(b.report_date));
+
         // Extract brand name and competitor names from first report
-        const firstMetrics = reports[0].competitor_metrics as any;
+        const firstMetrics = dedupedReports[0].competitor_metrics as any;
         const compNames = (firstMetrics.competitors || []).map((c: any) => c.name);
         setCompetitorNames(compNames);
 
@@ -178,7 +193,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
         setBrandName(bName);
 
         // Build trend data (one point per day)
-        const trend: any[] = reports.map(r => {
+        const trend: any[] = dedupedReports.map(r => {
           const cm = r.competitor_metrics as any;
           const dateLabel = new Date(r.report_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           const point: any = { date: dateLabel };
@@ -202,7 +217,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
           citationAgg[name] = { totalShare: 0, count: 0 };
         }
 
-        for (const r of reports) {
+        for (const r of dedupedReports) {
           const cm = r.competitor_metrics as any;
 
           // Brand
