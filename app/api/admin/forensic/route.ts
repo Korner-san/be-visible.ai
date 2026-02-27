@@ -395,15 +395,15 @@ export async function GET(request: NextRequest) {
           }
 
           return {
-            extractionPc: 'Koren-laptop',
-            pcAccess: '',
+            extractionPc: account.source_pc || '-',
             chatgptAccount: account.email,
+            role: account.role || 'daily_report',
+            isEligible: account.is_eligible === true && account.status === 'active',
             proxy: `${account.proxy_host}:${account.proxy_port}`,
             age: ageInDays,
             status,
             lastSuccess: lastSuccessData?.timestamp || null,
             visualStateTrend,
-            actionNeeded: ''
           }
         })
       )
