@@ -151,7 +151,7 @@ export const ForensicPage: React.FC = () => {
       }
 
       const json = await res.json();
-      setData(json);
+      setData(json.data);
       setLastRefresh(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
