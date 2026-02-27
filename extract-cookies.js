@@ -135,7 +135,17 @@ async function extractCookies() {
     }
   }
 
-  // ── 3. Launch Edge browser ──────────────────────────────────────────────
+  // ── 3. Ask which PC this extraction is running on ───────────────────────
+  console.log('\n' + '─'.repeat(70));
+  console.log('💻  PC IDENTIFICATION');
+  console.log('─'.repeat(70));
+  const sourcePc = await ask('Name of this PC (e.g., Koren-Laptop, Koren-Stationary-PC): ');
+  if (!sourcePc) {
+    console.error('❌  PC name cannot be empty.');
+    process.exit(1);
+  }
+
+  // ── 4. Launch Edge browser ──────────────────────────────────────────────
   console.log('\n' + '─'.repeat(70));
   console.log('🌐  Launching Microsoft Edge...');
   console.log('─'.repeat(70));
@@ -256,6 +266,7 @@ async function extractCookies() {
     cookies_created_at:                 new Date().toISOString(),
     updated_at:                         new Date().toISOString(),
     consecutive_errors:                 0,  // reset error counter on fresh cookies
+    source_pc:                          sourcePc,
   };
   if (sessionTokenValue) cookieFields['__Secure-next-auth.session-token'] = sessionTokenValue;
   if (csrfTokenValue)    cookieFields['__Host-next-auth.csrf-token']       = csrfTokenValue;
