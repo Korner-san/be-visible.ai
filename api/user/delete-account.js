@@ -97,6 +97,7 @@ module.exports = async function handler(req, res) {
       if (schedErr) throw new Error(`Failed to fetch daily_schedules: ${schedErr.message}`);
 
       const promptIdSet = new Set(promptIds);
+      console.log(`[delete-account] Checking ${(schedules || []).length} pending schedules against ${promptIds.length} prompt IDs`);
 
       for (const schedule of (schedules || [])) {
         const existing = schedule.prompt_ids || [];
@@ -104,6 +105,7 @@ module.exports = async function handler(req, res) {
         if (!overlaps) continue;
 
         const remaining = existing.filter(id => !promptIdSet.has(id));
+        console.log(`[delete-account] Schedule ${schedule.id}: ${existing.length} prompts → ${remaining.length} remaining`);
 
         if (remaining.length === 0) {
           // No prompts left — delete the entire batch
@@ -112,13 +114,15 @@ module.exports = async function handler(req, res) {
             .delete()
             .eq('id', schedule.id);
           if (delErr) throw new Error(`Failed to delete schedule ${schedule.id}: ${delErr.message}`);
+          console.log(`[delete-account] Deleted schedule ${schedule.id} (empty batch)`);
         } else {
-          // Shrink the batch
+          // Shrink the batch — only remove this user's prompts, keep others
           const { error: updErr } = await supabase
             .from('daily_schedules')
             .update({ prompt_ids: remaining, batch_size: remaining.length })
             .eq('id', schedule.id);
           if (updErr) throw new Error(`Failed to update schedule ${schedule.id}: ${updErr.message}`);
+          console.log(`[delete-account] Shrunk schedule ${schedule.id}: ${existing.length} → ${remaining.length} prompts`);
         }
       }
     }
