@@ -7,8 +7,8 @@
     "extract": "node extract-cookies.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "dotenv": "^16.4.1",
-    "playwright": "^1.41.0"
+    "@supabase/supabase-js": "^2.87.1",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.57.0"
   }
 }
