@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     if (!table || table === 'storage_state' || table === 'all') {
       const { data: accounts, error: accountsError } = await supabase
         .from('chatgpt_accounts')
-        .select('email, proxy_host, proxy_port, cookies_created_at')
+        .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, role, source_pc, status')
         .order('email')
 
       if (accountsError && table === 'storage_state') {
@@ -88,15 +88,15 @@ export async function GET(request: NextRequest) {
           }
 
           return {
-            extractionPc: 'Koren-laptop', // Hardcoded for now
-            pcAccess: '', // Blank for now
+            extractionPc: account.source_pc || '-',
             chatgptAccount: account.email,
+            role: account.role || 'daily_report',
+            isEligible: account.is_eligible === true && account.status === 'active',
             proxy: `${account.proxy_host}:${account.proxy_port}`,
             age: ageInDays,
             status,
             lastSuccess: lastSuccessData?.timestamp || null,
             visualStateTrend,
-            actionNeeded: '' // Blank for now
           }
         })
       )
@@ -318,7 +318,7 @@ export async function GET(request: NextRequest) {
       const [accountsResult, sessionsResult, citationsResult] = await Promise.all([
         supabase
           .from('chatgpt_accounts')
-          .select('email, proxy_host, proxy_port, cookies_created_at')
+          .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, role, source_pc, status')
           .order('email'),
 
         supabase

@@ -51,14 +51,14 @@ interface ScheduleItem {
 
 interface StorageStateHealth {
   extractionPc: string;
-  pcAccess: string;
   chatgptAccount: string;
+  role: string;
+  isEligible: boolean;
   proxy: string;
   age: number | null;
   status: string;
   lastSuccess: string | null;
   visualStateTrend: string;
-  actionNeeded: string;
 }
 
 interface ForensicData {
@@ -269,7 +269,7 @@ export const ForensicPage: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Extraction PC', 'PC Access', 'ChatGPT Account', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State Trend', 'Action Needed'].map(h => (
+                    {['Extraction PC', 'ChatGPT Account', 'Role', 'Eligible', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
@@ -278,10 +278,19 @@ export const ForensicPage: React.FC = () => {
                   {data.storageStateHealth.length === 0 ? (
                     <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
                   ) : data.storageStateHealth.map((s, i) => (
-                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <tr key={i} className={`border-b border-gray-50 transition-colors ${s.isEligible ? 'hover:bg-gray-50/50' : 'opacity-40 bg-slate-50/60'}`}>
                       <td className="px-4 py-3 font-semibold text-slate-700 text-xs">{s.extractionPc}</td>
-                      <td className="px-4 py-3 text-slate-400 text-xs">{s.pcAccess || '-'}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.chatgptAccount}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.role === 'onboarding' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {s.role === 'onboarding' ? 'Onboarding' : 'Daily Report'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.isEligible
+                          ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">Eligible</span>
+                          : <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-500">Not Eligible</span>}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-500">{s.proxy}</td>
                       <td className="px-4 py-3 text-center">
                         {s.age !== null ? (
@@ -299,7 +308,6 @@ export const ForensicPage: React.FC = () => {
                         {s.lastSuccess ? fmt(s.lastSuccess) : <span className="text-slate-300">No success</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">{s.visualStateTrend}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400">{s.actionNeeded || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
