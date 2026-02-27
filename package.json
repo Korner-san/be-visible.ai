@@ -1,0 +1,14 @@
+{
+  "name": "be-visible-cookie-extractor",
+  "version": "1.0.0",
+  "description": "Standalone ChatGPT cookie extractor for be-visible.ai",
+  "main": "extract-cookies.js",
+  "scripts": {
+    "extract": "node extract-cookies.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.4.1",
+    "playwright": "^1.41.0"
+  }
+}
