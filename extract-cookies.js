@@ -282,6 +282,7 @@ async function extractCookies() {
     const insertData = {
       email:          targetEmail,
       display_name:   targetEmail.split('@')[0],
+      auth_info:      '',
       role,
       status:         'active',
       is_eligible:    false,   // set to true manually after Browserless session is initialized
