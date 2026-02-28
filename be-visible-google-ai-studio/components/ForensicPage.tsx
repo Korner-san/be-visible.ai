@@ -165,7 +165,7 @@ export const ForensicPage: React.FC = () => {
     try {
       setReinitializing(accountEmail);
       setError(null);
-      const res = await fetch('/api/admin/forensic/initialize-session', {
+      const res = await fetch('/api/admin/reinit-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountEmail }),
