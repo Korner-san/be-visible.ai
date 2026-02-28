@@ -326,7 +326,7 @@ export const ForensicPage: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Timestamp', 'Account', 'Session ID', 'Proxy', 'Connection', 'Visual State', 'Operation', 'Batch ID', 'Error', 'Action'].map(h => (
+                    {['Batch ID', 'Timestamp', 'Account', 'Session ID', 'Proxy', 'Connection', 'Visual State', 'Operation', 'Error', 'Action'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
@@ -336,7 +336,10 @@ export const ForensicPage: React.FC = () => {
                     <tr><td colSpan={10} className="text-center px-4 py-8 text-sm text-slate-400">No session attempts in last 24 hours</td></tr>
                   ) : data.sessionMatrix.map((session, i) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400 whitespace-nowrap">
+                        {session.batch_id ? session.batch_id.substring(0, 8) : '-'}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
                         {new Date(session.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600">{session.chatgpt_account_email}</td>
@@ -347,11 +350,10 @@ export const ForensicPage: React.FC = () => {
                       <td className="px-4 py-3"><StatusBadge status={session.connection_status} /></td>
                       <td className="px-4 py-3"><VisualStateBadge state={session.visual_state} /></td>
                       <td className="px-4 py-3 text-xs text-slate-500">{session.operation_type}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{session.batch_id || '-'}</td>
                       <td className="px-4 py-3 text-xs text-slate-400 max-w-[180px] truncate" title={session.connection_error_raw || ''}>
                         {session.connection_error_raw || '-'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <button
                           onClick={() => handleReinitialize(session.chatgpt_account_email)}
                           disabled={reinitializing === session.chatgpt_account_email}
