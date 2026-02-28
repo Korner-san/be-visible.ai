@@ -346,7 +346,9 @@ export const ForensicPage: React.FC = () => {
                       <td className="px-4 py-3 font-mono text-xs text-slate-500 max-w-[120px] truncate" title={session.browserless_session_id || ''}>
                         {session.browserless_session_id ? session.browserless_session_id.substring(0, 12) + '…' : 'N/A'}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{session.proxy_used || 'N/A'}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500" title={session.proxy_used || ''}>
+                        {session.proxy_used ? session.proxy_used.substring(0, 4) + '…' + session.proxy_used.substring(session.proxy_used.length - 4) : 'N/A'}
+                      </td>
                       <td className="px-4 py-3"><StatusBadge status={session.connection_status} /></td>
                       <td className="px-4 py-3"><VisualStateBadge state={session.visual_state} /></td>
                       <td className="px-4 py-3 text-xs text-slate-500">{session.operation_type}</td>
