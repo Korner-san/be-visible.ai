@@ -28,3 +28,24 @@ next-env.d.ts
 # Exclude old browserless reference files
 old browserless file/
 _reference-browserless-integration/
+
+# Local diagnostic / debug scripts (never commit these)
+diag-*.js
+diagnose-*.js
+check-*.js
+analyze-*.js
+query-*.js
+test-*.js
+patch_*.py
+*.code-workspace
+nul
+
+# Screenshots and debug images at root
+captcha-screenshot.png
+diag-*.png
+
+# Supabase local temp files
+supabase/.temp/
+
+# Worker scripts that live on Hetzner (kept in /worker/ folder only)
+tests/

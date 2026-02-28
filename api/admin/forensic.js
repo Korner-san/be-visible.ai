@@ -43,7 +43,7 @@ module.exports = async function handler(req, res) {
     // ── Table A: Storage State Health ─────────────────────────────────────────
     const { data: accounts } = await supabase
       .from('chatgpt_accounts')
-      .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, role, source_pc, status')
+      .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, source_pc, status')
       .order('email');
 
     const storageStateHealth = await Promise.all(
@@ -87,7 +87,6 @@ module.exports = async function handler(req, res) {
         return {
           extractionPc: account.source_pc || '-',
           chatgptAccount: account.email,
-          role: account.role || 'daily_report',
           isEligible: account.is_eligible === true && account.status === 'active',
           proxy: `${account.proxy_host}:${account.proxy_port}`,
           age: ageInDays,
