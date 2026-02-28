@@ -69,11 +69,28 @@ interface StorageStateHealth {
   actionNeeded: string
 }
 
+interface AccountCapacityState {
+  id: string
+  email: string
+  state: 'FREE' | 'RESERVED' | 'BUSY:daily' | 'BUSY:onboarding'
+  estimatedFreeAt: string | null
+  nextBatchAt?: string
+}
+
+interface SystemCapacity {
+  freeSlots: number
+  totalAccounts: number
+  canAcceptOnboarding: boolean
+  estimatedWaitMinutes: number
+  accounts: AccountCapacityState[]
+}
+
 interface ForensicData {
   storageStateHealth: StorageStateHealth[]
   sessionMatrix: SessionAttempt[]
   citationTrace: CitationTrace[]
   schedulingQueue: ScheduleItem[]
+  systemCapacity?: SystemCapacity
 }
 
 const getStatusBadge = (status: string) => {
@@ -295,6 +312,64 @@ export default function ForensicPage() {
       {/* Data Tables */}
       {data && (
         <div className="space-y-8">
+
+          {/* System Capacity Panel */}
+          {data.systemCapacity && (
+            <Card>
+              <CardHeader>
+                <CardTitle>System Capacity</CardTitle>
+                <CardDescription>
+                  Real-time availability of ChatGPT accounts for onboarding and batch execution
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex items-center gap-2">
+                    {data.systemCapacity.canAcceptOnboarding ? (
+                      <Badge className="bg-green-500 text-base px-3 py-1">
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Can accept new onboarding
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-base px-3 py-1">
+                        <Clock className="w-4 h-4 mr-2" />
+                        System busy — ~{data.systemCapacity.estimatedWaitMinutes} min wait
+                      </Badge>
+                    )}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {data.systemCapacity.freeSlots} of {data.systemCapacity.totalAccounts} accounts free
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {data.systemCapacity.accounts.map((account) => (
+                    <div key={account.id} className="flex items-center gap-3 rounded-lg border p-3">
+                      <span className="font-mono text-xs flex-1">{account.email}</span>
+                      <Badge
+                        className={
+                          account.state === 'FREE' ? 'bg-green-500' :
+                          account.state === 'RESERVED' ? 'bg-yellow-500' :
+                          'bg-red-500'
+                        }
+                      >
+                        {account.state}
+                      </Badge>
+                      {account.estimatedFreeAt && account.state !== 'FREE' && (
+                        <span className="text-xs text-muted-foreground">
+                          free ~{new Date(account.estimatedFreeAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      {account.state === 'RESERVED' && account.nextBatchAt && (
+                        <span className="text-xs text-muted-foreground">
+                          batch at {new Date(account.nextBatchAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Table A: Storage State Health Monitor */}
           <Card>

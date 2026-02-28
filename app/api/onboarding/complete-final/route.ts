@@ -32,6 +32,67 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ [COMPLETE-FINAL API] User authenticated:', user.id)
     
+    // ── CAPACITY CHECK ────────────────────────────────────────────────────────
+    const adminSupabaseForCapacity = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    const now = new Date()
+    const reserveWindowEnd = new Date(now.getTime() + 15 * 60 * 1000)
+
+    const [
+      { data: eligibleAccounts },
+      { data: runningBatches },
+      { data: reservedBatches },
+      { data: runningOnboardings }
+    ] = await Promise.all([
+      adminSupabaseForCapacity.from('chatgpt_accounts').select('id, email, last_connection_at').eq('is_eligible', true).eq('status', 'active').not('proxy_host', 'is', null),
+      adminSupabaseForCapacity.from('daily_schedules').select('chatgpt_account_id, batch_size, execution_time').eq('status', 'running'),
+      adminSupabaseForCapacity.from('daily_schedules').select('chatgpt_account_id, batch_size, execution_time').eq('status', 'pending').gte('execution_time', now.toISOString()).lte('execution_time', reserveWindowEnd.toISOString()),
+      adminSupabaseForCapacity.from('brands').select('chatgpt_account_id, onboarding_prompts_sent').eq('first_report_status', 'running').not('chatgpt_account_id', 'is', null)
+    ])
+
+    const freeAccounts = (eligibleAccounts || []).filter((account: any) => {
+      const busyDaily = (runningBatches || []).some((b: any) => b.chatgpt_account_id === account.id)
+      const busyOnboarding = (runningOnboardings || []).some((b: any) => b.chatgpt_account_id === account.id)
+      const reserved = (reservedBatches || []).some((b: any) => b.chatgpt_account_id === account.id)
+      return !busyDaily && !busyOnboarding && !reserved
+    })
+
+    if (freeAccounts.length === 0) {
+      // Estimate wait time from busy accounts
+      const allAccountStates = (eligibleAccounts || []).map((account: any) => {
+        const dailyBatch = (runningBatches || []).find((b: any) => b.chatgpt_account_id === account.id) as any
+        const reserved = (reservedBatches || []).find((b: any) => b.chatgpt_account_id === account.id) as any
+        const onboarding = (runningOnboardings || []).find((b: any) => b.chatgpt_account_id === account.id) as any
+        if (dailyBatch) {
+          return new Date(dailyBatch.execution_time).getTime() + (dailyBatch.batch_size || 3) * 2.5 * 60 * 1000
+        }
+        if (onboarding) {
+          return now.getTime() + Math.max(1, 30 - (onboarding.onboarding_prompts_sent || 0)) * 2.5 * 60 * 1000
+        }
+        if (reserved) {
+          return new Date(reserved.execution_time).getTime() + (reserved.batch_size || 3) * 2.5 * 60 * 1000
+        }
+        return now.getTime() + 15 * 60 * 1000
+      })
+      const estimatedWaitMinutes = allAccountStates.length > 0
+        ? Math.max(1, Math.ceil((Math.min(...allAccountStates) - now.getTime()) / 60000))
+        : 15
+
+      console.log('⏳ [COMPLETE-FINAL API] System at capacity, estimated wait:', estimatedWaitMinutes, 'min')
+      return NextResponse.json({ success: false, busy: true, waitMinutes: estimatedWaitMinutes }, { status: 409 })
+    }
+
+    // Select best free account (least recently used)
+    const selectedAccount = freeAccounts.sort((a: any, b: any) => {
+      const aTime = a.last_connection_at ? new Date(a.last_connection_at).getTime() : 0
+      const bTime = b.last_connection_at ? new Date(b.last_connection_at).getTime() : 0
+      return aTime - bTime
+    })[0] as any
+    console.log('✅ [COMPLETE-FINAL API] Selected account for onboarding:', selectedAccount.email)
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Find user's pending brand
     const { data: brands, error: brandsError } = await supabase
       .from('brands')
@@ -69,14 +130,15 @@ export async function POST(request: NextRequest) {
     
     console.log('🔍 [COMPLETE-FINAL API] About to update brand:', brand.id, 'for user:', user.id)
     
-    // Update brand to complete onboarding
+    // Update brand to complete onboarding, assign selected ChatGPT account
     const { data: updatedBrand, error: updateError } = await supabase
       .from('brands')
       .update({
         name: onboardingAnswers.brandName || brand.name,
         domain: normalizedDomain,
         onboarding_completed: true,
-        first_report_status: 'queued'
+        first_report_status: 'queued',
+        chatgpt_account_id: selectedAccount.id
       })
       .eq('id', brand.id)
       .select('id, name, domain, onboarding_completed, first_report_status')
@@ -145,23 +207,23 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Trigger the Hetzner worker to run the onboarding batch
-    console.log('🚀 [COMPLETE-FINAL API] Calling Hetzner webhook for brand:', updatedBrand.id)
+    // Trigger the Hetzner queue-checker to immediately process this brand's onboarding queue
+    console.log('🚀 [COMPLETE-FINAL API] Triggering queue-checker for brand:', updatedBrand.id)
     try {
-      const webhookUrl = process.env.WEBHOOK_SERVER_URL || 'http://135.181.203.202:3001/run-onboarding-batch'
+      const baseUrl = process.env.WEBHOOK_BASE_URL || 'http://135.181.203.202:3001'
       const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here'
-      const webhookRes = await fetch(webhookUrl, {
+      const webhookRes = await fetch(`${baseUrl}/run-queue-checker`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId: updatedBrand.id, secret: webhookSecret }),
+        body: JSON.stringify({ secret: webhookSecret }),
       })
       if (webhookRes.ok) {
-        console.log('✅ [COMPLETE-FINAL API] Webhook triggered successfully')
+        console.log('✅ [COMPLETE-FINAL API] Queue-checker triggered successfully')
       } else {
-        console.warn('⚠️ [COMPLETE-FINAL API] Webhook returned', webhookRes.status)
+        console.warn('⚠️ [COMPLETE-FINAL API] Queue-checker webhook returned', webhookRes.status)
       }
     } catch (webhookErr) {
-      console.error('❌ [COMPLETE-FINAL API] Webhook call failed (non-fatal):', webhookErr instanceof Error ? webhookErr.message : webhookErr)
+      console.error('❌ [COMPLETE-FINAL API] Queue-checker webhook failed (non-fatal):', webhookErr instanceof Error ? webhookErr.message : webhookErr)
     }
     
     console.log('✅ [COMPLETE-FINAL API] COMPLETION SUCCESS - Brand ready for finishing page')

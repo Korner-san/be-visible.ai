@@ -5,7 +5,7 @@ const path = require('path');
 const PORT = 3001;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-key-here';
 
-const ALLOWED_URLS = ['/initialize-session', '/run-onboarding-prompts', '/run-onboarding-batch'];
+const ALLOWED_URLS = ['/initialize-session', '/run-onboarding-prompts', '/run-onboarding-batch', '/run-queue-checker'];
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,7 +32,25 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // ── /run-onboarding-batch ──────────────────────────────────────────────
+      // ── /run-queue-checker ────────────────────────────────────────────────
+      // Triggered by complete-final when a user finishes onboarding.
+      // Immediately runs the queue-checker to start processing pending prompts
+      // without waiting for the 2-minute cron cycle.
+      if (req.url === '/run-queue-checker') {
+        console.log('[WEBHOOK] /run-queue-checker triggered');
+        const proc = spawn('node', [path.join(__dirname, 'worker/queue-checker.js')], {
+          env: { ...process.env },
+          cwd: path.join(__dirname, 'worker'),
+          detached: true,
+          stdio: 'ignore',
+        });
+        proc.unref();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'Queue checker triggered' }));
+        return;
+      }
+
+      // ── /run-onboarding-batch (legacy — kept for backwards compatibility) ─
       if (req.url === '/run-onboarding-batch') {
         const { brandId } = payload;
         if (!brandId) {
@@ -112,5 +130,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Webhook server listening on port', PORT);
-  console.log('Endpoints: /initialize-session, /run-onboarding-prompts, /run-onboarding-batch');
+  console.log('Endpoints: /initialize-session, /run-onboarding-prompts, /run-onboarding-batch, /run-queue-checker');
 });

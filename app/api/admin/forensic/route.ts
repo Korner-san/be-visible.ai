@@ -7,6 +7,64 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+const RESERVE_WINDOW_MINUTES = 15
+const MINUTES_PER_PROMPT = 2.5
+
+async function getSystemCapacity(db: ReturnType<typeof createClient>) {
+  const now = new Date()
+  const reserveWindowEnd = new Date(now.getTime() + RESERVE_WINDOW_MINUTES * 60 * 1000)
+
+  const [
+    { data: accounts },
+    { data: runningBatches },
+    { data: reservedBatches },
+    { data: runningOnboardings }
+  ] = await Promise.all([
+    db.from('chatgpt_accounts').select('id, email, last_connection_at').eq('is_eligible', true).eq('status', 'active').not('proxy_host', 'is', null),
+    db.from('daily_schedules').select('chatgpt_account_id, batch_size, execution_time').eq('status', 'running'),
+    db.from('daily_schedules').select('chatgpt_account_id, batch_size, execution_time').eq('status', 'pending').gte('execution_time', now.toISOString()).lte('execution_time', reserveWindowEnd.toISOString()),
+    db.from('brands').select('chatgpt_account_id, onboarding_prompts_sent').eq('first_report_status', 'running').not('chatgpt_account_id', 'is', null)
+  ])
+
+  const accountStates = (accounts || []).map((account: any) => {
+    const dailyBatch = (runningBatches || [] as any[]).find((b: any) => b.chatgpt_account_id === account.id)
+    const reserved = (reservedBatches || [] as any[]).find((b: any) => b.chatgpt_account_id === account.id)
+    const onboarding = (runningOnboardings || [] as any[]).find((b: any) => b.chatgpt_account_id === account.id)
+
+    if (dailyBatch) {
+      const batchStart = new Date(dailyBatch.execution_time)
+      const estimatedFreeAt = new Date(batchStart.getTime() + (dailyBatch.batch_size || 3) * MINUTES_PER_PROMPT * 60 * 1000)
+      return { id: account.id, email: account.email, state: 'BUSY:daily', estimatedFreeAt: estimatedFreeAt.toISOString() }
+    }
+    if (onboarding) {
+      const remaining = Math.max(1, 30 - (onboarding.onboarding_prompts_sent || 0))
+      const estimatedFreeAt = new Date(now.getTime() + remaining * MINUTES_PER_PROMPT * 60 * 1000)
+      return { id: account.id, email: account.email, state: 'BUSY:onboarding', estimatedFreeAt: estimatedFreeAt.toISOString() }
+    }
+    if (reserved) {
+      const batchStart = new Date(reserved.execution_time)
+      const estimatedFreeAt = new Date(batchStart.getTime() + (reserved.batch_size || 3) * MINUTES_PER_PROMPT * 60 * 1000)
+      return { id: account.id, email: account.email, state: 'RESERVED', nextBatchAt: reserved.execution_time, estimatedFreeAt: estimatedFreeAt.toISOString() }
+    }
+    return { id: account.id, email: account.email, state: 'FREE', estimatedFreeAt: null }
+  })
+
+  const freeSlots = accountStates.filter((a: any) => a.state === 'FREE').length
+  const canAcceptOnboarding = freeSlots > 0
+
+  let estimatedWaitMinutes = 0
+  if (!canAcceptOnboarding) {
+    const futureTimes = accountStates.filter((a: any) => a.estimatedFreeAt).map((a: any) => new Date(a.estimatedFreeAt).getTime())
+    if (futureTimes.length > 0) {
+      estimatedWaitMinutes = Math.max(1, Math.ceil((Math.min(...futureTimes) - now.getTime()) / 60000))
+    } else {
+      estimatedWaitMinutes = 15
+    }
+  }
+
+  return { freeSlots, totalAccounts: accountStates.length, canAcceptOnboarding, estimatedWaitMinutes, accounts: accountStates }
+}
+
 /**
  * GET /api/admin/forensic
  *
@@ -25,7 +83,7 @@ export async function GET(request: NextRequest) {
     if (!table || table === 'storage_state' || table === 'all') {
       const { data: accounts, error: accountsError } = await supabase
         .from('chatgpt_accounts')
-        .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, role, source_pc, status')
+        .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, source_pc, status')
         .order('email')
 
       if (accountsError && table === 'storage_state') {
@@ -90,7 +148,6 @@ export async function GET(request: NextRequest) {
           return {
             extractionPc: account.source_pc || '-',
             chatgptAccount: account.email,
-            role: account.role || 'daily_report',
             isEligible: account.is_eligible === true && account.status === 'active',
             proxy: `${account.proxy_host}:${account.proxy_port}`,
             age: ageInDays,
@@ -318,7 +375,7 @@ export async function GET(request: NextRequest) {
       const [accountsResult, sessionsResult, citationsResult] = await Promise.all([
         supabase
           .from('chatgpt_accounts')
-          .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, role, source_pc, status')
+          .select('email, proxy_host, proxy_port, cookies_created_at, is_eligible, source_pc, status')
           .order('email'),
 
         supabase
@@ -397,7 +454,6 @@ export async function GET(request: NextRequest) {
           return {
             extractionPc: account.source_pc || '-',
             chatgptAccount: account.email,
-            role: account.role || 'daily_report',
             isEligible: account.is_eligible === true && account.status === 'active',
             proxy: `${account.proxy_host}:${account.proxy_port}`,
             age: ageInDays,
@@ -439,22 +495,31 @@ export async function GET(request: NextRequest) {
         citationRate: citationRatesAll[row.brand_prompt_id] || 0
       })) || []
 
+      const systemCapacity = await getSystemCapacity(supabase)
+
       return NextResponse.json({
         success: true,
         data: {
           storageStateHealth: storageStateHealthAll || [],
           sessionMatrix: sessionsResult.data || [],
           citationTrace: transformedCitations,
-          schedulingQueue: enrichedQueue || []
+          schedulingQueue: enrichedQueue || [],
+          systemCapacity
         }
       })
+    }
+
+    // Table E: System Capacity
+    if (table === 'capacity') {
+      const capacityData = await getSystemCapacity(supabase)
+      return NextResponse.json({ success: true, data: capacityData })
     }
 
     // Invalid table parameter
     return NextResponse.json({
       success: false,
       error: 'Invalid table parameter',
-      message: 'Use ?table=storage_state, ?table=sessions, ?table=citations, ?table=schedule, or ?table=all'
+      message: 'Use ?table=storage_state, ?table=sessions, ?table=citations, ?table=schedule, ?table=capacity, or ?table=all'
     }, { status: 400 })
 
   } catch (error) {

@@ -38,6 +38,8 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
   const [saving, setSaving] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [lastClickTime, setLastClickTime] = useState(0)
+  const [systemBusy, setSystemBusy] = useState(false)
+  const [busyWaitMinutes, setBusyWaitMinutes] = useState(0)
   const [generatingPrompts, setGeneratingPrompts] = useState(false)
   const [improvingPrompts, setImprovingPrompts] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
@@ -306,7 +308,14 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
       
       const completeResult = await completeResponse.json()
       console.log('🔄 [CLIENT] Completion API result:', completeResult)
-      
+
+      if (completeResponse.status === 409 && completeResult.busy) {
+        setSystemBusy(true)
+        setBusyWaitMinutes(completeResult.waitMinutes || 15)
+        setCompleting(false)
+        return
+      }
+
       if (completeResult.success) {
         console.log('✅ [CLIENT] Onboarding completed successfully, redirecting...')
         window.location.href = '/finishing'
@@ -539,7 +548,13 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
         </div>
 
         {/* Complete Onboarding */}
-        <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-3">
+          {systemBusy && (
+            <div className="w-full max-w-lg rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+              <p className="font-semibold mb-1">Our system is currently busy processing other requests.</p>
+              <p>Please try again in approximately <strong>{busyWaitMinutes} minutes</strong>. Your progress is saved.</p>
+            </div>
+          )}
           <Button
             onClick={completeOnboarding}
             disabled={completing || selectedPrompts.size < 10}
@@ -551,7 +566,7 @@ export function PromptReviewClient({ userState }: PromptReviewClientProps) {
             ) : (
               <CheckCircle className="h-4 w-4 mr-2" />
             )}
-            Complete Onboarding ({selectedPrompts.size} selected)
+            {systemBusy ? 'Try Again' : `Complete Onboarding (${selectedPrompts.size} selected)`}
           </Button>
         </div>
       </div>
