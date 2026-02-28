@@ -83,9 +83,9 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         console.log('[WEBHOOK] /initialize-session for:', accountEmail);
-        const scriptPath = path.join(__dirname, 'initialize-persistent-session-INSTRUMENTED.js');
+        const scriptPath = path.join(__dirname, 'worker/initialize-persistent-session-db-driven.js');
         const initProcess = spawn('node', [scriptPath], {
-          env: { ...process.env, CHATGPT_ACCOUNT_EMAIL: accountEmail },
+          env: { ...process.env, CHATGPT_EMAIL: accountEmail },
           cwd: __dirname,
         });
         let stdout = '', stderr = '';
