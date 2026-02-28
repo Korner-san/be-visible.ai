@@ -165,10 +165,10 @@ export const ForensicPage: React.FC = () => {
     try {
       setReinitializing(accountEmail);
       setError(null);
-      const res = await fetch('http://135.181.203.202:3001/initialize-session', {
+      const res = await fetch('/api/admin/forensic/initialize-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountEmail, secret: 'your-secret-key-here' }),
+        body: JSON.stringify({ accountEmail }),
       });
       if (!res.ok) throw new Error(`Webhook returned ${res.status}`);
       await fetchData();
