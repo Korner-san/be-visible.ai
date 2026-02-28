@@ -14,6 +14,7 @@ interface SessionAttempt {
   connection_status: string;
   visual_state: string | null;
   operation_type: string;
+  batch_id: string | null;
   connection_error_raw: string | null;
 }
 
@@ -318,21 +319,21 @@ export const ForensicPage: React.FC = () => {
           {/* ── Table B: Session Matrix ── */}
           <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-8 py-6 border-b border-gray-100">
-              <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table B: Active/Recent Session Matrix</h2>
-              <p className="text-xs text-slate-400 mt-1">Last 24 hours of Browserless session connection attempts</p>
+              <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table B: Batch Sessions Connections Matrix</h2>
+              <p className="text-xs text-slate-400 mt-1">Last 24 hours of batch connection events</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Timestamp', 'Account', 'Session ID', 'Proxy', 'Connection', 'Visual State', 'Operation', 'Error', 'Action'].map(h => (
+                    {['Timestamp', 'Account', 'Session ID', 'Proxy', 'Connection', 'Visual State', 'Operation', 'Batch ID', 'Error', 'Action'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {data.sessionMatrix.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No session attempts in last 24 hours</td></tr>
+                    <tr><td colSpan={10} className="text-center px-4 py-8 text-sm text-slate-400">No session attempts in last 24 hours</td></tr>
                   ) : data.sessionMatrix.map((session, i) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs text-slate-500">
@@ -346,6 +347,7 @@ export const ForensicPage: React.FC = () => {
                       <td className="px-4 py-3"><StatusBadge status={session.connection_status} /></td>
                       <td className="px-4 py-3"><VisualStateBadge state={session.visual_state} /></td>
                       <td className="px-4 py-3 text-xs text-slate-500">{session.operation_type}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{session.batch_id || '-'}</td>
                       <td className="px-4 py-3 text-xs text-slate-400 max-w-[180px] truncate" title={session.connection_error_raw || ''}>
                         {session.connection_error_raw || '-'}
                       </td>
