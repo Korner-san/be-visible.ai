@@ -53,7 +53,6 @@ interface ScheduleItem {
 interface StorageStateHealth {
   extractionPc: string;
   chatgptAccount: string;
-  role: string;
   isEligible: boolean;
   proxy: string;
   age: number | null;
@@ -152,7 +151,7 @@ export const ForensicPage: React.FC = () => {
       }
 
       const json = await res.json();
-      setData(json);
+      setData(json.data ?? json);
       setLastRefresh(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -270,23 +269,18 @@ export const ForensicPage: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Extraction PC', 'ChatGPT Account', 'Role', 'Eligible', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State'].map(h => (
+                    {['Extraction PC', 'ChatGPT Account', 'Eligible', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {data.storageStateHealth.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
+                    <tr><td colSpan={8} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
                   ) : data.storageStateHealth.map((s, i) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-3 font-semibold text-slate-700 text-xs">{s.extractionPc}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.chatgptAccount}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.role === 'onboarding' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {s.role === 'onboarding' ? 'Onboarding' : 'Daily Report'}
-                        </span>
-                      </td>
                       <td className="px-4 py-3">
                         {s.isEligible
                           ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">Eligible</span>
@@ -461,27 +455,35 @@ export const ForensicPage: React.FC = () => {
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
                     <th className="w-8"></th>
-                    {['Execution Time', 'Batch #', 'Prompts', 'Status', 'Account', 'Proxy', 'State'].map(h => (
+                    {['Done', 'Execution Time', 'Batch #', 'Prompts', 'Status', 'Account', 'Proxy', 'State'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {data.schedulingQueue.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
+                    <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
                   ) : data.schedulingQueue.map(schedule => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
+                    const isDone = schedule.status === 'completed' || schedule.status === 'failed';
                     return (
                       <Fragment key={schedule.id}>
                         <tr
-                          className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer transition-colors"
+                          className={`border-b border-gray-50 cursor-pointer transition-colors ${isDone ? 'opacity-50 bg-slate-50/80' : 'hover:bg-gray-50/50'}`}
                           onClick={() => toggleBatch(schedule.id)}
                         >
                           <td className="px-3 py-3">
                             {isExpanded
                               ? <ChevronDown size={14} className="text-slate-400" />
                               : <ChevronRight size={14} className="text-slate-400" />}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {schedule.status === 'completed'
+                              ? <CheckCircle size={14} className="text-emerald-500 mx-auto" />
+                              : schedule.status === 'failed'
+                              ? <AlertCircle size={14} className="text-red-400 mx-auto" />
+                              : <span className="text-slate-200">—</span>}
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{fmt(schedule.execution_time)}</td>
                           <td className="px-4 py-3">
@@ -513,7 +515,7 @@ export const ForensicPage: React.FC = () => {
                         {isExpanded && schedule.prompts.map((prompt, idx) => (
                           <tr key={`${schedule.id}-${prompt.id}`} className="bg-slate-50/70 border-b border-slate-100">
                             <td className="px-3 py-2"></td>
-                            <td className="px-4 py-2 pl-8" colSpan={2}>
+                            <td className="px-4 py-2 pl-8" colSpan={3}>
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px] text-slate-400">#{idx + 1}</span>
                                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">{prompt.brand_name}</span>
