@@ -424,7 +424,7 @@ export const ForensicPage: React.FC = () => {
             {/* Summary bar */}
             {(() => {
               const q = data.schedulingQueue;
-              const pendingQ = q.filter(s => s.status !== 'completed');
+              const pendingQ = q.filter(s => s.status !== 'completed' && s.status !== 'failed');
               const totalPrompts = pendingQ.reduce((sum, s) => sum + (s.batch_size || 0), 0);
               const uniqueAccounts = new Set(q.map(s => s.account_assigned).filter(Boolean));
               const uniqueProxies = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
@@ -464,12 +464,28 @@ export const ForensicPage: React.FC = () => {
                 <tbody>
                   {data.schedulingQueue.length === 0 ? (
                     <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
-                  ) : data.schedulingQueue.map(schedule => {
+                  ) : data.schedulingQueue.map((schedule, idx) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
                     const isDone = schedule.status === 'completed' || schedule.status === 'failed';
+                    const todayDate = new Date().toISOString().split('T')[0];
+                    const prevDate = idx > 0 ? data.schedulingQueue[idx - 1].schedule_date : null;
+                    const showDateSeparator = prevDate !== null && prevDate !== schedule.schedule_date && schedule.schedule_date === todayDate;
                     return (
                       <Fragment key={schedule.id}>
+                        {showDateSeparator && (
+                          <tr>
+                            <td colSpan={9} className="px-4 py-3 bg-blue-50/70 border-y border-blue-100">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-px bg-blue-200" />
+                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">
+                                  Today's Report &mdash; {new Date(todayDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                </span>
+                                <div className="flex-1 h-px bg-blue-200" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                         <tr
                           className={`border-b border-gray-50 cursor-pointer transition-colors ${isDone ? 'opacity-50 bg-slate-50/80' : 'hover:bg-gray-50/50'}`}
                           onClick={() => toggleBatch(schedule.id)}
