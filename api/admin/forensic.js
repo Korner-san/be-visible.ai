@@ -154,7 +154,6 @@ module.exports = async function handler(req, res) {
       `)
       .gte('schedule_date', yesterday)
       .lte('schedule_date', today)
-      .neq('status', 'completed')
       .order('execution_time', { ascending: true });
 
     const schedulingQueue = await Promise.all(

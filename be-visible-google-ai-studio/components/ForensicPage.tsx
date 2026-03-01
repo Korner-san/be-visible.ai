@@ -424,7 +424,8 @@ export const ForensicPage: React.FC = () => {
             {/* Summary bar */}
             {(() => {
               const q = data.schedulingQueue;
-              const totalPrompts = q.reduce((sum, s) => sum + (s.batch_size || 0), 0);
+              const pendingQ = q.filter(s => s.status !== 'completed');
+              const totalPrompts = pendingQ.reduce((sum, s) => sum + (s.batch_size || 0), 0);
               const uniqueAccounts = new Set(q.map(s => s.account_assigned).filter(Boolean));
               const uniqueProxies = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
               return (
@@ -432,7 +433,7 @@ export const ForensicPage: React.FC = () => {
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Prompts</span>
                     <span className="text-2xl font-black text-slate-800">{totalPrompts}</span>
-                    <span className="text-[10px] text-slate-400">across {q.length} {q.length === 1 ? 'batch' : 'batches'}</span>
+                    <span className="text-[10px] text-slate-400">across {pendingQ.length} {pendingQ.length === 1 ? 'batch' : 'batches'}</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
                   <div className="flex flex-col">
