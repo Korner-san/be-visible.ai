@@ -143,8 +143,8 @@ module.exports = async function handler(req, res) {
     }));
 
     // ── Table D: Scheduling Queue (global — service role bypasses brand_prompts RLS) ──
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const { data: schedules } = await supabase
       .from('daily_schedules')
@@ -152,8 +152,8 @@ module.exports = async function handler(req, res) {
         id, schedule_date, batch_number, execution_time, status, batch_size, prompt_ids,
         chatgpt_accounts(email, proxy_host, proxy_port, last_visual_state, browserless_session_id)
       `)
-      .gte('schedule_date', today)
-      .lte('schedule_date', tomorrow)
+      .gte('schedule_date', yesterday)
+      .lte('schedule_date', today)
       .order('execution_time', { ascending: true });
 
     const schedulingQueue = await Promise.all(

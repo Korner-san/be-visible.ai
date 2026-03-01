@@ -285,8 +285,8 @@ export async function GET(request: NextRequest) {
             browserless_session_id
           )
         `)
-        .gte('schedule_date', new Date().toISOString().split('T')[0])
-        .lte('schedule_date', new Date(Date.now() + 86400000).toISOString().split('T')[0])
+        .gte('schedule_date', new Date(Date.now() - 86400000).toISOString().split('T')[0])
+        .lte('schedule_date', new Date().toISOString().split('T')[0])
         .order('execution_time', { ascending: true })
 
       if (scheduleError && table === 'schedule') {
