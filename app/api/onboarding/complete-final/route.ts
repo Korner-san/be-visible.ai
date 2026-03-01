@@ -156,6 +156,27 @@ export async function POST(request: NextRequest) {
     console.log('✅ [COMPLETE-FINAL API] onboarding_completed AFTER:', updatedBrand.onboarding_completed)
     console.log('✅ [COMPLETE-FINAL API] first_report_status AFTER:', updatedBrand.first_report_status)
 
+    // Save competitors to brand_competitors table
+    const competitors: string[] = onboardingAnswers.competitors || []
+    if (competitors.length > 0) {
+      // Delete existing first (idempotent — safe if called twice)
+      await adminSupabaseForCapacity.from('brand_competitors').delete().eq('brand_id', updatedBrand.id)
+      const competitorRows = competitors.map((name: string, idx: number) => ({
+        brand_id: updatedBrand.id,
+        competitor_name: name,
+        is_active: true,
+        display_order: idx + 1,
+      }))
+      const { error: competitorError } = await adminSupabaseForCapacity
+        .from('brand_competitors')
+        .insert(competitorRows)
+      if (competitorError) {
+        console.warn('⚠️ [COMPLETE-FINAL API] Could not save competitors:', competitorError.message)
+      } else {
+        console.log('✅ [COMPLETE-FINAL API] Saved', competitors.length, 'competitors for brand:', updatedBrand.id)
+      }
+    }
+
     // Ensure user has a row in the users table
     const adminSupabase = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
