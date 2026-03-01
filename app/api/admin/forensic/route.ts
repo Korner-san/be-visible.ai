@@ -287,6 +287,7 @@ export async function GET(request: NextRequest) {
         `)
         .gte('schedule_date', new Date(Date.now() - 86400000).toISOString().split('T')[0])
         .lte('schedule_date', new Date().toISOString().split('T')[0])
+        .neq('status', 'completed')
         .order('execution_time', { ascending: true })
 
       if (scheduleError && table === 'schedule') {
