@@ -227,7 +227,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       const res = await fetch('/api/onboarding/create-brand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, brandName, website }),
+        body: JSON.stringify({ userId: user.id, email: user.email, brandName, website }),
       });
 
       let result: any;

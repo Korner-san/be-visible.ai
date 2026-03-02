@@ -18,7 +18,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const { userId, brandName, website } = req.body || {};
+  const { userId, email, brandName, website } = req.body || {};
 
   if (!userId) {
     return res.status(400).json({ success: false, error: 'Missing userId' });
@@ -65,13 +65,11 @@ module.exports = async function handler(req, res) {
     }
 
     // Ensure user row exists in public.users before inserting brand (FK constraint)
-    // email is NOT NULL in public.users, so we must fetch it from auth first
-    const { data: authData } = await supabase.auth.admin.getUserById(userId);
-    const email = authData?.user?.email || '';
+    // email is NOT NULL in public.users — client sends it from the session
     const { error: upsertError } = await supabase
       .from('users')
       .upsert(
-        { id: userId, email, subscription_plan: 'free_trial', reports_enabled: true },
+        { id: userId, email: email || '', subscription_plan: 'free_trial', reports_enabled: true },
         { onConflict: 'id', ignoreDuplicates: true }
       );
     if (upsertError) {
