@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getUserState } from '@/lib/supabase/user-state'
+import { PartialReportBanner } from '@/components/PartialReportBanner'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -31,5 +32,10 @@ export default async function ReportsLayout({
 
   // Allow access for users who have completed onboarding
   // (AUTHENTICATED_ONBOARDING_DONE_NO_REPORT and AUTHENTICATED_READY)
-  return <>{children}</>
+  return (
+    <>
+      <PartialReportBanner />
+      {children}
+    </>
+  )
 }

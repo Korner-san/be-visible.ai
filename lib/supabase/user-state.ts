@@ -145,8 +145,10 @@ export async function getUserState(): Promise<UserStateResult> {
       console.log('🔍 [getUserState] Found completed brands - proceeding with completion logic')
       
       // Check report status of completed brands
-      const brandsWithReports = completedBrands.filter(brand => 
-        brand.first_report_status === 'succeeded'
+      // phase1_complete = partial but real data exists (Phase 1 EOD done, visibility score written)
+      // succeeded = full data available
+      const brandsWithReports = completedBrands.filter(brand =>
+        brand.first_report_status === 'succeeded' || brand.first_report_status === 'phase1_complete'
       )
 
       const brandsWithPendingReports = completedBrands.filter(brand =>

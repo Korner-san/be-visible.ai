@@ -156,6 +156,64 @@ export async function POST(request: NextRequest) {
     console.log('✅ [COMPLETE-FINAL API] onboarding_completed AFTER:', updatedBrand.onboarding_completed)
     console.log('✅ [COMPLETE-FINAL API] first_report_status AFTER:', updatedBrand.first_report_status)
 
+    // ── WAVE ASSIGNMENT ───────────────────────────────────────────────────────
+    // Assign wave 1 to first 6 prompts (Phase 1 — gets dashboard access fast)
+    // Assign wave 2 to remaining prompts (Phase 2 — background processing)
+    console.log('🌊 [COMPLETE-FINAL API] Assigning onboarding waves to brand_prompts...')
+    const { data: allPrompts } = await adminSupabaseForCapacity
+      .from('brand_prompts')
+      .select('id')
+      .eq('brand_id', updatedBrand.id)
+      .in('status', ['active', 'inactive'])
+      .order('created_at', { ascending: true })
+
+    if (allPrompts && allPrompts.length > 0) {
+      const wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
+      const wave2Ids = allPrompts.slice(6).map((p: any) => p.id)
+
+      await Promise.all([
+        wave1Ids.length > 0 && adminSupabaseForCapacity
+          .from('brand_prompts')
+          .update({ onboarding_wave: 1 })
+          .in('id', wave1Ids),
+        wave2Ids.length > 0 && adminSupabaseForCapacity
+          .from('brand_prompts')
+          .update({ onboarding_wave: 2 })
+          .in('id', wave2Ids),
+      ])
+      console.log('✅ [COMPLETE-FINAL API] Waves assigned: wave1=' + wave1Ids.length + ', wave2=' + wave2Ids.length)
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── PRE-CREATE DAILY REPORT ───────────────────────────────────────────────
+    // Create the Phase 1 daily report now so its report_date is anchored to today
+    // (Phase 2 may finish the next day but will still use this same report)
+    const today = new Date().toISOString().split('T')[0]
+    console.log('📅 [COMPLETE-FINAL API] Pre-creating Phase 1 daily report for date:', today)
+    const { data: newReport, error: reportError } = await adminSupabaseForCapacity
+      .from('daily_reports')
+      .insert({
+        brand_id: updatedBrand.id,
+        report_date: today,
+        status: 'running',
+        total_prompts: 6,
+        is_partial: true,
+      })
+      .select('id')
+      .single()
+
+    if (reportError || !newReport) {
+      console.warn('⚠️ [COMPLETE-FINAL API] Could not pre-create daily_report (non-fatal):', reportError?.message)
+    } else {
+      // Anchor the report to the brand — Phase 2 will use the same report ID
+      await adminSupabaseForCapacity
+        .from('brands')
+        .update({ onboarding_daily_report_id: newReport.id, onboarding_phase: 1 })
+        .eq('id', updatedBrand.id)
+      console.log('✅ [COMPLETE-FINAL API] Daily report pre-created and anchored:', newReport.id)
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Save competitors to brand_competitors table
     const competitors: string[] = onboardingAnswers.competitors || []
     if (competitors.length > 0) {
