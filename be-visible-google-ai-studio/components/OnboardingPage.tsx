@@ -940,7 +940,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-start justify-center py-8 px-4">
       <div className="w-full max-w-4xl onboarding-container">
         <div className="bg-white rounded-[32px] border border-[#E2E8F0] shadow-2xl overflow-visible flex flex-col min-h-[600px]">
           <div className="p-12">
