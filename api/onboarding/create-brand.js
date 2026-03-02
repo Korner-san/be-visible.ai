@@ -65,12 +65,19 @@ module.exports = async function handler(req, res) {
     }
 
     // Ensure user row exists in public.users before inserting brand (FK constraint)
-    await supabase
+    // email is NOT NULL in public.users, so we must fetch it from auth first
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const email = authData?.user?.email || '';
+    const { error: upsertError } = await supabase
       .from('users')
       .upsert(
-        { id: userId, subscription_plan: 'free_trial', reports_enabled: true },
+        { id: userId, email, subscription_plan: 'free_trial', reports_enabled: true },
         { onConflict: 'id', ignoreDuplicates: true }
       );
+    if (upsertError) {
+      console.error('[create-brand] Users upsert error:', upsertError.message);
+      return res.status(500).json({ success: false, error: 'Failed to ensure user row: ' + upsertError.message });
+    }
 
     // Create new brand
     const { data: created, error: insertError } = await supabase
