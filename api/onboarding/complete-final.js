@@ -97,7 +97,6 @@ module.exports = async function handler(req, res) {
       .from('brand_prompts')
       .select('id')
       .eq('brand_id', brandId)
-      .eq('status', 'active')
       .order('created_at', { ascending: true });
 
     if (allPrompts && allPrompts.length > 0) {
@@ -179,7 +178,7 @@ module.exports = async function handler(req, res) {
     const { error: upsertUserError } = await supabase
       .from('users')
       .upsert(
-        { id: brand.owner_user_id, subscription_plan: 'free_trial', reports_enabled: true },
+        { id: brand.owner_user_id, subscription_plan: 'corporate', reports_enabled: true },
         { onConflict: 'id', ignoreDuplicates: true }
       );
     if (upsertUserError) {

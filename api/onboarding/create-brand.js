@@ -69,7 +69,7 @@ module.exports = async function handler(req, res) {
     const { error: upsertError } = await supabase
       .from('users')
       .upsert(
-        { id: userId, email: email || '', subscription_plan: 'free_trial', reports_enabled: true },
+        { id: userId, email: email || '', subscription_plan: 'corporate', reports_enabled: true },
         { onConflict: 'id', ignoreDuplicates: true }
       );
     if (upsertError) {
