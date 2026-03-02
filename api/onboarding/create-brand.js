@@ -64,6 +64,14 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, brandId: id, existing: true });
     }
 
+    // Ensure user row exists in public.users before inserting brand (FK constraint)
+    await supabase
+      .from('users')
+      .upsert(
+        { id: userId, subscription_plan: 'free_trial', reports_enabled: true },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+
     // Create new brand
     const { data: created, error: insertError } = await supabase
       .from('brands')
