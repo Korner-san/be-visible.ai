@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, Loader2, Zap, ArrowRight, LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AlertCircle, LogOut } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -10,172 +10,173 @@ interface OnboardingProgressScreenProps {
   onComplete: () => void;
 }
 
-const TOTAL = 30;
-const POLL_MS = 5_000;
-const TIMEOUT_MS = 60 * 60 * 1_000; // 1 hour max
+const POLL_MS = 10_000;
+const TIMEOUT_MS = 25 * 60 * 1_000; // 25 min
+
+type Status = 'working' | 'almost' | 'redirecting' | 'timeout';
 
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
   brandId,
   brandName,
-  initialCount = 0,
   onComplete,
 }) => {
   const { signOut } = useAuth();
-  const [sent, setSent] = useState(initialCount);
-  const [phase, setPhase] = useState<'running' | 'complete' | 'timeout'>('running');
+  const [status, setStatus] = useState<Status>('working');
+  const startRef = useRef(Date.now());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const redirectedRef = useRef(false);
 
   const poll = useCallback(async () => {
+    if (Date.now() - startRef.current > TIMEOUT_MS) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      setStatus('timeout');
+      return;
+    }
+
     const { data } = await supabase
       .from('brands')
-      .select('onboarding_prompts_sent, first_report_status')
+      .select('first_report_status, onboarding_prompts_sent')
       .eq('id', brandId)
       .single();
 
     if (!data) return;
 
-    const count = data.onboarding_prompts_sent ?? 0;
-    setSent(count);
+    const s = data.first_report_status;
+    const sent = data.onboarding_prompts_sent ?? 0;
 
-    if (data.first_report_status === 'succeeded' || count >= TOTAL) {
-      setPhase('complete');
-      setTimeout(onComplete, 2500);
+    if (!redirectedRef.current && (s === 'phase1_complete' || s === 'succeeded')) {
+      redirectedRef.current = true;
+      setStatus('redirecting');
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      setTimeout(onComplete, 1500);
+      return;
     }
+
+    setStatus(sent >= 6 ? 'almost' : 'working');
   }, [brandId, onComplete]);
 
   useEffect(() => {
     poll();
-    const interval = setInterval(poll, POLL_MS);
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      setPhase('timeout');
-    }, TIMEOUT_MS);
-    return () => { clearInterval(interval); clearTimeout(timeout); };
+    intervalRef.current = setInterval(poll, POLL_MS);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [poll]);
 
-  const milestones = [10, 20, 30];
-  const pct = Math.min((sent / TOTAL) * 100, 100);
+  const handleRetry = () => {
+    setStatus('working');
+    startRef.current = Date.now();
+    redirectedRef.current = false;
+    intervalRef.current = setInterval(poll, POLL_MS);
+    poll();
+  };
 
-  if (phase === 'complete') {
+  // ── Timeout screen ────────────────────────────────────────────────────────
+  if (status === 'timeout') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 w-full max-w-md text-center space-y-6">
-          <div className="flex justify-end -mt-4 -mr-4">
-            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
-              <LogOut size={13} /> Sign out
-            </button>
-          </div>
-          <div className="mx-auto w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center">
-            <CheckCircle size={36} className="text-emerald-500" />
+      <div className="min-h-screen bg-white flex items-center justify-center p-6">
+        <div className="text-center max-w-sm space-y-6">
+          <div className="mx-auto w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center">
+            <AlertCircle size={28} className="text-amber-500" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-gray-900">Your report is ready!</h2>
-            <p className="text-sm text-gray-500">All 30 prompts have been processed. Taking you to your dashboard…</p>
+            <h1 className="text-xl font-semibold text-gray-900">Still working on it</h1>
+            <p className="text-gray-500 text-sm">
+              This is taking a bit longer than usual. Your report is still being prepared — click below to keep waiting.
+            </p>
           </div>
-          <div className="w-8 h-8 border-4 border-gray-200 border-t-brand-brown rounded-full animate-spin mx-auto" />
-        </div>
-      </div>
-    );
-  }
-
-  if (phase === 'timeout') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 w-full max-w-md text-center space-y-6">
-          <div className="flex justify-end -mt-4 -mr-4">
-            <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
-              <LogOut size={13} /> Sign out
-            </button>
-          </div>
-          <p className="text-sm text-gray-500">
-            This is taking longer than expected. Your report will be ready soon — check back in a few minutes.
-          </p>
           <button
-            onClick={onComplete}
-            className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-brand-brown text-white rounded-xl font-semibold text-sm hover:brightness-110 transition-all"
+            onClick={handleRetry}
+            className="w-full py-3 px-6 bg-brand-brown text-white rounded-xl font-semibold text-sm hover:brightness-110 transition-all"
           >
-            Go to dashboard <ArrowRight size={16} />
+            Keep waiting
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 w-full max-w-md space-y-8">
-
-        {/* Header */}
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 bg-brand-brown/10 rounded-full flex items-center justify-center mx-auto">
-            <Zap size={28} className="text-brand-brown" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Running your visibility scan</h1>
-          <p className="text-sm text-gray-500 leading-relaxed">
-            We're sending your 30 prompts through AI and extracting visibility data in real time.
-          </p>
-        </div>
-
-        {/* Live counter */}
-        <div className="text-center">
-          <span className="text-5xl font-black text-brand-brown tabular-nums">{sent}</span>
-          <span className="text-2xl font-bold text-gray-300"> / {TOTAL}</span>
-          <p className="text-xs text-gray-400 mt-1">prompts extracted</p>
-        </div>
-
-        {/* Progress bar */}
-        <div className="space-y-2">
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-brand-brown rounded-full transition-all duration-1000"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          {/* Milestones */}
-          <div className="flex justify-between text-xs text-gray-400 px-0.5">
-            {milestones.map(m => (
-              <div key={m} className="flex items-center gap-1">
-                {sent >= m
-                  ? <CheckCircle size={11} className="text-emerald-500" />
-                  : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />
-                }
-                <span className={sent >= m ? 'text-emerald-600 font-semibold' : ''}>{m}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Status rows */}
-        <div className="space-y-3">
-          {[
-            { label: 'Onboarding completed', done: true },
-            { label: 'Prompts generated and saved', done: true },
-            { label: `Visibility scan running (${sent}/${TOTAL})`, done: false },
-          ].map((s, i) => (
-            <div key={i} className="flex items-center gap-3">
-              {s.done ? (
-                <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                  <CheckCircle size={14} className="text-emerald-600" />
-                </div>
-              ) : (
-                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                  <Loader2 size={14} className="text-blue-500 animate-spin" />
-                </div>
-              )}
-              <span className={`text-sm ${s.done ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>
-                {s.label}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-xs text-gray-400">
-            Brand: <strong className="text-gray-600">{brandName}</strong> — updating every 5s
-          </p>
-          <button onClick={signOut} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={signOut} className="flex items-center justify-center gap-1.5 w-full text-xs text-gray-400 hover:text-gray-600 transition-colors">
             <LogOut size={13} /> Sign out
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // ── Content per status ────────────────────────────────────────────────────
+  const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
+    working: {
+      heading: `We're working on your report`,
+      sub: `This usually takes a few minutes. We'll take you straight to your dashboard when it's ready.`,
+    },
+    almost: {
+      heading: `Almost there`,
+      sub: `We're putting the finishing touches on your report — won't be long now.`,
+    },
+    redirecting: {
+      heading: `Your report is ready!`,
+      sub: `Taking you to your dashboard…`,
+    },
+  };
+
+  const { heading, sub } = content[status];
+
+  return (
+    <div className="min-h-screen bg-white flex items-center justify-center p-6">
+      <div className="text-center max-w-sm space-y-8">
+
+        {/* Animated loader */}
+        <div className="flex justify-center">
+          {status === 'redirecting' ? (
+            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          ) : (
+            <div className="relative w-16 h-16">
+              <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="#e5e7eb" strokeWidth="4" />
+                <circle
+                  cx="32" cy="32" r="28"
+                  fill="none"
+                  stroke={status === 'almost' ? '#f59e0b' : '#2C1308'}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="175.9"
+                  strokeDashoffset={status === 'almost' ? '44' : '110'}
+                  style={{ transition: 'all 0.7s ease' }}
+                />
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {/* Text */}
+        <div className="space-y-3">
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">{heading}</h1>
+          <p className="text-gray-500 text-sm leading-relaxed">{sub}</p>
+          {status !== 'redirecting' && (
+            <p className="text-xs text-gray-400 pt-1">
+              for <span className="font-medium text-gray-500">{brandName}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Pulsing dots */}
+        {(status === 'working' || status === 'almost') && (
+          <div className="flex justify-center gap-1.5">
+            {[0, 1, 2].map(i => (
+              <span
+                key={i}
+                className="w-2 h-2 rounded-full bg-gray-300 animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Sign out */}
+        {status !== 'redirecting' && (
+          <button onClick={signOut} className="flex items-center justify-center gap-1.5 w-full text-xs text-gray-400 hover:text-gray-600 transition-colors pt-2">
+            <LogOut size={13} /> Sign out
+          </button>
+        )}
+
       </div>
     </div>
   );
