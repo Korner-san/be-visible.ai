@@ -172,16 +172,18 @@ export async function POST(request: NextRequest) {
       const wave2Ids = allPrompts.slice(6).map((p: any) => p.id)
 
       await Promise.all([
+        // Wave 1 (first 6): active — these run immediately in Phase 1
         wave1Ids.length > 0 && adminSupabaseForCapacity
           .from('brand_prompts')
-          .update({ onboarding_wave: 1 })
+          .update({ onboarding_wave: 1, onboarding_status: 'pending', status: 'active', is_active: true })
           .in('id', wave1Ids),
+        // Wave 2 (remaining 24): inactive — queue-organizer activates these when Phase 2 begins
         wave2Ids.length > 0 && adminSupabaseForCapacity
           .from('brand_prompts')
-          .update({ onboarding_wave: 2 })
+          .update({ onboarding_wave: 2, onboarding_status: 'pending', status: 'inactive', is_active: false })
           .in('id', wave2Ids),
       ])
-      console.log('✅ [COMPLETE-FINAL API] Waves assigned: wave1=' + wave1Ids.length + ', wave2=' + wave2Ids.length)
+      console.log('✅ [COMPLETE-FINAL API] Waves assigned: wave1=' + wave1Ids.length + ' (active), wave2=' + wave2Ids.length + ' (inactive)')
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -196,7 +198,7 @@ export async function POST(request: NextRequest) {
         brand_id: updatedBrand.id,
         report_date: today,
         status: 'running',
-        total_prompts: 6,
+        total_prompts: 30,
         is_partial: true,
       })
       .select('id')

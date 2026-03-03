@@ -5,7 +5,14 @@ const path = require('path');
 const PORT = 3001;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-key-here';
 
-const ALLOWED_URLS = ['/initialize-session', '/run-onboarding-prompts', '/run-onboarding-batch', '/run-queue-checker'];
+const ALLOWED_URLS = [
+  '/initialize-session',
+  '/run-onboarding-prompts',   // legacy
+  '/run-onboarding-batch',     // legacy
+  '/run-queue-checker',        // legacy alias → same as run-queue-organizer
+  '/run-queue-organizer',      // new
+  '/chunk-complete',           // new: called by run-onboarding-chunk.js when a chunk finishes
+];
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,13 +39,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // ── /run-queue-checker ────────────────────────────────────────────────
+      // ── /run-queue-organizer (and legacy /run-queue-checker) ──────────────
       // Triggered by complete-final when a user finishes onboarding.
-      // Immediately runs the queue-checker to start processing pending prompts
-      // without waiting for the 2-minute cron cycle.
-      if (req.url === '/run-queue-checker') {
-        console.log('[WEBHOOK] /run-queue-checker triggered');
-        const proc = spawn('node', [path.join(__dirname, 'worker/queue-checker.js')], {
+      // Immediately runs the queue-organizer to start processing pending prompts.
+      if (req.url === '/run-queue-organizer' || req.url === '/run-queue-checker') {
+        console.log('[WEBHOOK]', req.url, 'triggered');
+        const proc = spawn('node', [path.join(__dirname, 'worker/queue-organizer.js')], {
           env: { ...process.env },
           cwd: path.join(__dirname, 'worker'),
           detached: true,
@@ -46,7 +52,25 @@ const server = http.createServer(async (req, res) => {
         });
         proc.unref();
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: 'Queue checker triggered' }));
+        res.end(JSON.stringify({ success: true, message: 'Queue organizer triggered' }));
+        return;
+      }
+
+      // ── /chunk-complete ───────────────────────────────────────────────────
+      // Called by run-onboarding-chunk.js when a chunk finishes (success or failure).
+      // Immediately re-triggers queue-organizer to dispatch next wave or finalize.
+      if (req.url === '/chunk-complete') {
+        const { brandId, wave } = payload;
+        console.log('[WEBHOOK] /chunk-complete for brand:', brandId, 'wave:', wave);
+        const proc = spawn('node', [path.join(__dirname, 'worker/queue-organizer.js')], {
+          env: { ...process.env },
+          cwd: path.join(__dirname, 'worker'),
+          detached: true,
+          stdio: 'ignore',
+        });
+        proc.unref();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'Queue organizer triggered by chunk-complete' }));
         return;
       }
 
@@ -58,7 +82,7 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false, error: 'Missing brandId' }));
           return;
         }
-        console.log('[WEBHOOK] /run-onboarding-batch for brand:', brandId);
+        console.log('[WEBHOOK] /run-onboarding-batch (legacy) for brand:', brandId);
         const proc = spawn('node', [path.join(__dirname, 'worker/run-onboarding-batch.js')], {
           env: { ...process.env, BRAND_ID: brandId },
           cwd: path.join(__dirname, 'worker'),
@@ -79,7 +103,7 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false, error: 'Missing brandId' }));
           return;
         }
-        console.log('[WEBHOOK] /run-onboarding-prompts for brand:', brandId);
+        console.log('[WEBHOOK] /run-onboarding-prompts (legacy) for brand:', brandId);
         const proc = spawn('node', [path.join(__dirname, 'run-onboarding-prompts.js')], {
           env: { ...process.env, BRAND_ID: brandId },
           cwd: __dirname,
@@ -130,5 +154,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('Webhook server listening on port', PORT);
-  console.log('Endpoints: /initialize-session, /run-onboarding-prompts, /run-onboarding-batch, /run-queue-checker');
+  console.log('Endpoints:', ALLOWED_URLS.join(', '));
 });

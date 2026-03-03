@@ -95,7 +95,15 @@ module.exports = async function handler(req, res) {
     // brand_prompts by the time we compute what's left in each batch.
 
     if (brandIds.length > 0) {
-      // a. daily_reports (cascades: prompt_results → citation_details,
+      // a. Clear onboarding_daily_report_id FK reference on brands first —
+      //    otherwise Postgres blocks the daily_reports delete with a FK violation.
+      const { error: clearFkErr } = await supabase
+        .from('brands')
+        .update({ onboarding_daily_report_id: null })
+        .in('id', brandIds);
+      if (clearFkErr) throw new Error(`Failed to clear onboarding_daily_report_id: ${clearFkErr.message}`);
+
+      // b. daily_reports (cascades: prompt_results → citation_details,
       //    url_citations; prompt_intent_classifications)
       const { error: drErr } = await supabase
         .from('daily_reports')
@@ -103,14 +111,14 @@ module.exports = async function handler(req, res) {
         .in('brand_id', brandIds);
       if (drErr) throw new Error(`Failed to delete daily_reports: ${drErr.message}`);
 
-      // b. brand_prompts — deleted BEFORE schedule cleanup (race-condition fix)
+      // c. brand_prompts — deleted BEFORE schedule cleanup (race-condition fix)
       const { error: bpErr } = await supabase
         .from('brand_prompts')
         .delete()
         .in('brand_id', brandIds);
       if (bpErr) throw new Error(`Failed to delete brand_prompts: ${bpErr.message}`);
 
-      // c. brands
+      // d. brands
       const { error: brErr } = await supabase
         .from('brands')
         .delete()
@@ -118,7 +126,7 @@ module.exports = async function handler(req, res) {
       if (brErr) throw new Error(`Failed to delete brands: ${brErr.message}`);
     }
 
-    // d. users (public profile row)
+    // e. users (public profile row)
     const { error: usersErr } = await supabase
       .from('users')
       .delete()

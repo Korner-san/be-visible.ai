@@ -25,6 +25,7 @@ import { SupportPage } from './components/SupportPage';
 import { UserSettingsPage } from './components/UserSettingsPage';
 import { ForensicPage } from './components/ForensicPage';
 import { ContentPage } from './components/ContentPage';
+import { PartialReportBanner } from './components/PartialReportBanner';
 import { TimeRange, PromptStats, Competitor } from './types';
 import { supabase } from './lib/supabase';
 
@@ -238,12 +239,24 @@ function AppContent() {
   }, [user]);
 
   // ── Callback: report ready → move to dashboard ───────────────────────────
-  const handleReportReady = useCallback(() => {
-    if (activeBrand) {
-      setActiveBrand(prev => prev ? { ...prev, first_report_status: 'succeeded' } : prev);
+  // Re-fetch brand to get actual status — onComplete fires on phase1_complete too,
+  // so we must not assume 'succeeded' here.
+  const handleReportReady = useCallback(async () => {
+    if (activeBrandId) {
+      const { data } = await supabase
+        .from('brands')
+        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
+        .eq('id', activeBrandId)
+        .single();
+      if (data) setActiveBrand(data);
     }
     setAppView('AUTHENTICATED_READY');
-  }, [activeBrand]);
+  }, [activeBrandId]);
+
+  // ── Callback: wave-2 background processing complete ──────────────────────
+  const handleWave2Complete = useCallback(() => {
+    setActiveBrand(prev => prev ? { ...prev, first_report_status: 'succeeded' } : prev);
+  }, []);
 
   // ────────────────────────────────────────────────────────────────────────
   // RENDER TREE
@@ -403,6 +416,12 @@ function AppContent() {
           onScroll={handleScroll}
         >
           <div className="max-w-[1280px] mx-auto">
+            {activeBrand?.first_report_status === 'phase1_complete' && activeBrandId && (
+              <PartialReportBanner
+                brandId={activeBrandId}
+                onWave2Complete={handleWave2Complete}
+              />
+            )}
             {renderContent()}
           </div>
         </main>

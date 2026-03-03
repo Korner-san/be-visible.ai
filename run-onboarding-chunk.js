@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+/**
+ * run-onboarding-chunk.js
+ *
+ * Child process that runs a pre-claimed chunk of onboarding prompts for one account.
+ * Called by queue-organizer.js with specific prompt IDs already atomically claimed
+ * in the brand_prompts.onboarding_status column.
+ *
+ * Each prompt is marked completed/failed individually.
+ * After completion, calls /chunk-complete webhook to trigger the next organizer run.
+ * Does NOT run processEndOfDay — that's handled by queue-organizer after all chunks finish.
+ *
+ * Env vars (set by queue-organizer.js):
+ *   BRAND_ID
+ *   DAILY_REPORT_ID
+ *   REPORT_DATE
+ *   PROMPTS_JSON         (JSON array of {id, raw_prompt, improved_prompt})
+ *   OWNER_USER_ID
+ *   CHATGPT_ACCOUNT_EMAIL
+ *   CHATGPT_ACCOUNT_ID
+ *   TOTAL_PROMPTS        (total brand prompts, for progress display)
+ *   ONBOARDING_WAVE      (1 or 2)
+ */
+
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
+const chatgptExecutor = require('./executors/chatgpt-executor');
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+const PROMPT_TIMEOUT_MS = 2.5 * 60 * 1000; // 2.5 min per prompt — agent owns the timeout
+
+const BRAND_ID        = process.env.BRAND_ID;
+const DAILY_REPORT_ID = process.env.DAILY_REPORT_ID;
+const REPORT_DATE     = process.env.REPORT_DATE;
+const OWNER_USER_ID   = process.env.OWNER_USER_ID || '';
+const TOTAL_PROMPTS   = parseInt(process.env.TOTAL_PROMPTS || '30', 10);
+const ONBOARDING_WAVE = parseInt(process.env.ONBOARDING_WAVE || '1', 10);
+
+let chunkPrompts;
+try {
+  chunkPrompts = JSON.parse(process.env.PROMPTS_JSON);
+} catch (e) {
+  console.error('[CHUNK] Failed to parse PROMPTS_JSON:', e.message);
+  process.exit(1);
+}
+
+if (!BRAND_ID || !DAILY_REPORT_ID || !REPORT_DATE || !Array.isArray(chunkPrompts) || chunkPrompts.length === 0) {
+  console.error('[CHUNK] Missing required env vars');
+  process.exit(1);
+}
+
+async function markRemainingFailed() {
+  const promptIds = chunkPrompts.map(p => p.id);
+  await supabase
+    .from('brand_prompts')
+    .update({ onboarding_status: 'failed', onboarding_claimed_account_id: null, onboarding_claimed_at: null })
+    .in('id', promptIds)
+    .eq('onboarding_status', 'claimed'); // only ones still claimed — completed ones are untouched
+}
+
+async function runChunk() {
+  const chunkTimeoutMs = chunkPrompts.length * PROMPT_TIMEOUT_MS;
+
+  console.log('='.repeat(60));
+  console.log('[CHUNK] Account:', process.env.CHATGPT_ACCOUNT_EMAIL);
+  console.log('[CHUNK] Brand:', BRAND_ID, '— Wave:', ONBOARDING_WAVE, '— Prompts:', chunkPrompts.length);
+  console.log('[CHUNK] Timeout:', (chunkTimeoutMs / 60000).toFixed(1) + ' min for this chunk');
+  console.log('[CHUNK] Prompt IDs:', chunkPrompts.map(p => p.id.substring(0, 8)).join(', '));
+  console.log('='.repeat(60));
+
+  const executeBatchPromise = chatgptExecutor.executeBatch({
+    scheduleId: 'onboarding-' + BRAND_ID,
+    userId: OWNER_USER_ID,
+    brandId: BRAND_ID,
+    reportDate: REPORT_DATE,
+    prompts: chunkPrompts.map(p => ({
+      promptId: p.id,
+      promptText: p.improved_prompt || p.raw_prompt,
+      brandId: BRAND_ID,
+    })),
+    onPromptComplete: async (promptIndexInBatch, success) => {
+      const prompt = chunkPrompts[promptIndexInBatch];
+      if (!prompt) return;
+
+      // Mark this prompt's onboarding status.
+      // Guard: only update if still 'claimed' — prevents stomping a prompt released/re-claimed elsewhere.
+      await supabase
+        .from('brand_prompts')
+        .update({
+          onboarding_status: success ? 'completed' : 'failed',
+          onboarding_claimed_account_id: null,
+          onboarding_claimed_at: null,
+        })
+        .eq('id', prompt.id)
+        .eq('onboarding_status', 'claimed');
+
+      // Update progress counter using actual count of completed prompts
+      const { count } = await supabase
+        .from('brand_prompts')
+        .select('id', { count: 'exact', head: true })
+        .eq('brand_id', BRAND_ID)
+        .eq('onboarding_status', 'completed');
+
+      if (count !== null) {
+        await supabase
+          .from('brands')
+          .update({ onboarding_prompts_sent: count })
+          .eq('id', BRAND_ID);
+        console.log('[CHUNK] Progress:', count + '/' + TOTAL_PROMPTS, success ? 'OK' : 'FAIL', '(wave ' + ONBOARDING_WAVE + ')');
+      }
+    },
+  });
+
+  // Agent-owned timeout: if executeBatch doesn't finish in chunkSize * 2.5 min, we give up
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('CHUNK_TIMEOUT')), chunkTimeoutMs)
+  );
+
+  await Promise.race([executeBatchPromise, timeoutPromise]).catch(async (err) => {
+    if (err.message === 'CHUNK_TIMEOUT') {
+      console.error('[CHUNK] TIMED OUT after', (chunkTimeoutMs / 60000).toFixed(1), 'min — marking remaining claimed prompts as failed');
+      await markRemainingFailed();
+      await notifyChunkComplete();
+      process.exit(1);
+    }
+    throw err; // re-throw non-timeout errors to outer catch
+  });
+
+  console.log('[CHUNK] Batch complete. Notifying queue-organizer via /chunk-complete webhook.');
+}
+
+async function notifyChunkComplete() {
+  const baseUrl = process.env.WEBHOOK_BASE_URL || 'http://135.181.203.202:3001';
+  const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here';
+  try {
+    const res = await fetch(`${baseUrl}/chunk-complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: webhookSecret,
+        brandId: BRAND_ID,
+        dailyReportId: DAILY_REPORT_ID,
+        wave: ONBOARDING_WAVE,
+      }),
+    });
+    if (res.ok) {
+      console.log('[CHUNK] /chunk-complete webhook fired successfully');
+    } else {
+      console.warn('[CHUNK] /chunk-complete webhook returned', res.status);
+    }
+  } catch (err) {
+    console.warn('[CHUNK] /chunk-complete webhook failed (non-fatal):', err.message);
+  }
+}
+
+runChunk()
+  .then(async () => {
+    await notifyChunkComplete();
+    process.exit(0);
+  })
+  .catch(async err => {
+    console.error('[CHUNK] Fatal error:', err.message);
+    // Mark remaining claimed prompts as failed (not pending) so they show in monitoring
+    await markRemainingFailed();
+    // Still notify so organizer can pick up failed prompts
+    await notifyChunkComplete();
+    process.exit(1);
+  });
