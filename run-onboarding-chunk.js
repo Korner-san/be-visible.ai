@@ -92,8 +92,13 @@ async function runChunk() {
         .from('brand_prompts')
         .update({
           onboarding_status: success ? 'completed' : 'failed',
-          onboarding_claimed_account_id: null,
-          onboarding_claimed_at: null,
+          // On success: preserve claimed_account_id and claimed_at so the monitor
+          // can show which agent processed each prompt and calculate actual duration.
+          // On failure: clear both so the stale-claim reset works cleanly on retry.
+          ...(success ? {} : {
+            onboarding_claimed_account_id: null,
+            onboarding_claimed_at: null,
+          }),
         })
         .eq('id', prompt.id)
         .eq('onboarding_status', 'claimed');
