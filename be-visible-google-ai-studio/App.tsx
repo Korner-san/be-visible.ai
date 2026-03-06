@@ -73,6 +73,7 @@ function AppContent() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [prompts, setPrompts] = useState<PromptStats[]>([]);
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
+  const [dashboardKey, setDashboardKey] = useState(0);
 
   // ── Detect auth callback (email confirmation) ────────────────────────────
   useEffect(() => {
@@ -256,6 +257,7 @@ function AppContent() {
   // ── Callback: wave-2 background processing complete ──────────────────────
   const handleWave2Complete = useCallback(() => {
     setActiveBrand(prev => prev ? { ...prev, first_report_status: 'succeeded' } : prev);
+    setDashboardKey(k => k + 1); // force Dashboard re-mount → re-fetches all data
   }, []);
 
   // ────────────────────────────────────────────────────────────────────────
@@ -396,7 +398,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:
-        return <Dashboard timeRange={timeRange} brandId={activeBrandId} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
+        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
     }
   };
 
