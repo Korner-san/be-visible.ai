@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, LogOut } from 'lucide-react';
+import { AlertCircle, LogOut, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -11,23 +11,35 @@ interface OnboardingProgressScreenProps {
 }
 
 const POLL_MS = 10_000;
-const TIMEOUT_MS = 25 * 60 * 1_000; // 25 min
+const TIMEOUT_MS = 25 * 60 * 1_000;
 
 type Status = 'working' | 'almost' | 'redirecting' | 'timeout';
 
-const PHASE_TEXTS = [
-  'Connecting to premium AI models...',
-  'Deploying AI agents to run your prompts.',
-  'Mapping high-impact citations and ranking-critical URL content.',
-  'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
+const STEPS = [
+  {
+    short: 'Connecting',
+    full: 'Connecting to premium AI models...',
+  },
+  {
+    short: 'Deploying',
+    full: 'Deploying AI agents to run your prompts.',
+  },
+  {
+    short: 'Extracting',
+    full: 'Mapping high-impact citations and ranking-critical URL content.',
+  },
+  {
+    short: 'Generating',
+    full: 'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
+  },
 ];
 
-// eodElapsed = seconds since the 6th prompt was sent (EOD processor started)
-function getPhaseText(elapsedSeconds: number, sent: number, eodElapsed: number): string {
-  if (elapsedSeconds < 10) return PHASE_TEXTS[0];  // first 10s: still connecting
-  if (sent < 6)            return PHASE_TEXTS[1];  // prompts still running
-  if (eodElapsed < 90)     return PHASE_TEXTS[2];  // EOD started: citation extraction first
-  return PHASE_TEXTS[3];                           // citations done: dashboard generation
+// Returns 1–4 based on real backend signals
+function getCurrentStep(elapsedSeconds: number, sent: number, eodElapsed: number): number {
+  if (elapsedSeconds < 10) return 1;  // first 10s: connecting
+  if (sent < 6)            return 2;  // agents deployed, prompts running
+  if (eodElapsed < 90)     return 3;  // EOD started: citation extraction
+  return 4;                           // citations done: dashboard generation
 }
 
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
@@ -102,6 +114,8 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     poll();
   };
 
+  const currentStep = getCurrentStep(elapsedSeconds, sentCount, eodElapsed);
+
   // ── Timeout screen ────────────────────────────────────────────────────────
   if (status === 'timeout') {
     return (
@@ -130,85 +144,123 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     );
   }
 
-  // ── Content per status ────────────────────────────────────────────────────
-  const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
-    working: {
-      heading: `Building your Visibility Intelligence report`,
-      sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
-    },
-    almost: {
-      heading: `Finalizing your report`,
-      sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
-    },
-    redirecting: {
-      heading: `Your report is ready!`,
-      sub: `Taking you to your dashboard…`,
-    },
-  };
+  // ── Redirecting screen ────────────────────────────────────────────────────
+  if (status === 'redirecting') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-6">
+        <div className="text-center max-w-sm space-y-6">
+          <div className="mx-auto w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Your report is ready!</h1>
+            <p className="text-gray-500 text-sm mt-2">Taking you to your dashboard…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const { heading, sub } = content[status];
-
+  // ── Main working screen — Stepper ─────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
-      <div className="text-center max-w-sm space-y-8">
+      <div className="w-full max-w-lg space-y-10">
 
-        {/* Animated loader */}
-        <div className="flex justify-center">
-          {status === 'redirecting' ? (
-            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          ) : (
-            <div className="relative w-16 h-16">
-              <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="#e5e7eb" strokeWidth="4" />
-                <circle
-                  cx="32" cy="32" r="28"
-                  fill="none"
-                  stroke={status === 'almost' ? '#f59e0b' : '#2C1308'}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="175.9"
-                  strokeDashoffset={status === 'almost' ? '44' : '110'}
-                  style={{ transition: 'all 0.7s ease' }}
-                />
-              </svg>
-            </div>
-          )}
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 bg-brand-brown rounded-xl flex items-center justify-center mx-auto shadow-sm mb-4">
+            <span className="text-white font-bold text-xl">B</span>
+          </div>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+            {status === 'almost'
+              ? 'Finalizing your report'
+              : 'Building your Visibility Intelligence report'}
+          </h1>
+          <p className="text-sm text-gray-400">
+            for <span className="font-medium text-gray-600">{brandName}</span>
+          </p>
         </div>
 
-        {/* Text */}
-        <div className="space-y-3">
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">{heading}</h1>
-          <p className="text-gray-500 text-sm leading-relaxed">{sub}</p>
-          {status !== 'redirecting' && (
-            <p className="text-xs text-gray-400 pt-1">
-              for <span className="font-medium text-gray-500">{brandName}</span>
+        {/* Stepper */}
+        <div className="w-full">
+          {/* Circles + connector lines */}
+          <div className="flex items-start">
+            {STEPS.map((step, idx) => {
+              const stepNum = idx + 1;
+              const isCompleted = currentStep > stepNum;
+              const isActive = currentStep === stepNum;
+
+              return (
+                <React.Fragment key={idx}>
+                  {/* Step node */}
+                  <div className="flex flex-col items-center gap-2" style={{ minWidth: 0, flex: '0 0 auto' }}>
+                    {/* Circle */}
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-500 ${
+                        isCompleted
+                          ? 'bg-brand-brown text-white'
+                          : isActive
+                          ? 'bg-brand-brown text-white ring-4 ring-brand-brown/20'
+                          : 'bg-white border-2 border-gray-200 text-gray-400'
+                      }`}
+                    >
+                      {isCompleted ? <Check size={16} /> : stepNum}
+                    </div>
+                    {/* Short label */}
+                    <span
+                      className={`text-[10px] font-semibold text-center leading-tight transition-colors duration-300 ${
+                        isActive ? 'text-brand-brown' : isCompleted ? 'text-gray-400' : 'text-gray-300'
+                      }`}
+                      style={{ width: '64px' }}
+                    >
+                      {step.short}
+                    </span>
+                  </div>
+
+                  {/* Connector line */}
+                  {idx < STEPS.length - 1 && (
+                    <div className="flex-1 mx-1" style={{ paddingBottom: '28px', paddingTop: '20px' }}>
+                      <div className="h-0.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-brand-brown rounded-full transition-all duration-700"
+                          style={{ width: currentStep > idx + 1 ? '100%' : '0%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Current step description card */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-100 min-h-[64px] flex items-center justify-center">
+            <p className="text-sm text-gray-700 leading-relaxed text-center font-medium">
+              {STEPS[currentStep - 1].full}
             </p>
-          )}
+          </div>
         </div>
 
         {/* Pulsing dots */}
-        {(status === 'working' || status === 'almost') && (
-          <div className="flex justify-center gap-1.5">
-            {[0, 1, 2].map(i => (
-              <span
-                key={i}
-                className="w-2 h-2 rounded-full bg-gray-300 animate-bounce"
-                style={{ animationDelay: `${i * 0.15}s` }}
-              />
-            ))}
-          </div>
-        )}
+        <div className="flex justify-center gap-1.5">
+          {[0, 1, 2].map(i => (
+            <span
+              key={i}
+              className="w-2 h-2 rounded-full bg-brand-brown/40 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
 
         {/* Sign out */}
-        {status !== 'redirecting' && (
-          <button onClick={signOut} className="flex items-center justify-center gap-1.5 w-full text-xs text-gray-400 hover:text-gray-600 transition-colors pt-2">
-            <LogOut size={13} /> Sign out
-          </button>
-        )}
+        <button
+          onClick={signOut}
+          className="flex items-center justify-center gap-1.5 w-full text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <LogOut size={13} /> Sign out
+        </button>
 
       </div>
     </div>
