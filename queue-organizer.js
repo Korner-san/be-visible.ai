@@ -11,12 +11,19 @@
  *   - Cron fallback every 5 min (safety net only)
  *
  * Two-phase design:
- *   Phase 1: Dispatch wave-1 prompts (first 6) → partial EOD → user gets dashboard
- *   Phase 2: Dispatch wave-2 prompts (remaining 24) → full EOD → complete results
+ *   Phase 1: Dispatch wave-1 prompts (first 6, status=active) → partial EOD → user gets dashboard
+ *   Phase 2: Dispatch wave-2 prompts (remaining 24, switched to active) → full EOD → complete results
+ *
+ * Prompt status lifecycle:
+ *   complete-final sets: wave-1 → status='active', wave-2 → status='inactive'
+ *   finalizePhase(wave=1) flips: wave-2 prompts → status='active' before Phase 2 dispatch
+ *   Only status='active' prompts are ever claimed and dispatched.
  *
  * Key behaviors:
  *   - Wave-aware: only dispatches prompts for the current phase
- *   - Dynamic chunk sizing: min(5, floor(availableMinutes / 2.5))
+ *   - Only claims status='active' prompts — inactive prompts are never touched
+ *   - Balanced chunk sizing: ceil(pendingCount / availableAgents) so work splits evenly
+ *     e.g. 6 wave-1 prompts × 2 agents → 3 each (not 5+1)
  *   - Timeout owned by agent (run-onboarding-chunk.js): 2.5 min/prompt
  *   - No concurrent daily+onboarding: skips accounts with active daily batches
  *   - failed prompts = retriable (same as pending)
@@ -27,6 +34,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,11 +46,74 @@ const SESSION_MAX_PROMPTS = 5;       // Browserless 15-min session cap
 const SAFETY_BUFFER_MINUTES = 1.5;   // Reserve before next daily batch
 const MAX_ACCOUNTS_PER_BRAND = 3;    // Cap parallelism per brand
 const RESERVE_WINDOW_MINUTES = 15;   // Block accounts with batch within 15 min
+const STALE_CLAIM_MINUTES = 15;      // Reset claimed prompts older than this
 
 const chunkScript = path.join(__dirname, 'run-onboarding-chunk.js');
 
 async function runQueueOrganizer() {
   console.log('[QUEUE-ORG] Starting at', new Date().toISOString());
+
+  // 0. Reset stale claimed prompts (agent crashed or hard-timed-out without DB cleanup)
+  //    Any prompt claimed >15 min ago with no completion = stuck. Reset to 'failed' so it retries.
+  const staleClaimCutoff = new Date(Date.now() - STALE_CLAIM_MINUTES * 60 * 1000).toISOString();
+  const { data: staleReset } = await supabase
+    .from('brand_prompts')
+    .update({
+      onboarding_status: 'failed',
+      onboarding_claimed_account_id: null,
+      onboarding_claimed_at: null,
+    })
+    .eq('onboarding_status', 'claimed')
+    .lt('onboarding_claimed_at', staleClaimCutoff)
+    .select('id, brand_id');
+
+  if (staleReset && staleReset.length > 0) {
+    console.log('[QUEUE-ORG] Reset', staleReset.length, 'stale claimed prompt(s) to failed:', staleReset.map(p => p.id.substring(0, 8)).join(', '));
+  }
+
+  // 0b. Safety sweep: catch brands stuck in phase1_complete where all wave-2 prompts completed
+  //     but Phase 2 EOD was never triggered (last chunk's webhook failed, organizer crashed, etc.)
+  //     Also catches: report already is_partial=false but brand status was not updated.
+  {
+    const { data: p1cBrands } = await supabase
+      .from('brands')
+      .select('id, owner_user_id, onboarding_daily_report_id')
+      .eq('first_report_status', 'phase1_complete')
+      .eq('onboarding_completed', true);
+
+    for (const brand of (p1cBrands || [])) {
+      if (!brand.onboarding_daily_report_id) continue;
+
+      const { data: rep } = await supabase
+        .from('daily_reports')
+        .select('status, is_partial')
+        .eq('id', brand.onboarding_daily_report_id)
+        .single();
+
+      // Case A: EOD already ran (is_partial=false) but brand status not updated → just fix brand
+      if (rep && rep.status === 'completed' && rep.is_partial === false) {
+        console.log('[QUEUE-ORG] SAFETY: brand', brand.id.substring(0, 8), 'report complete+is_partial=false but brand still phase1_complete — setting succeeded');
+        await supabase.from('brands').update({ first_report_status: 'succeeded' }).eq('id', brand.id);
+        continue;
+      }
+
+      // Case B: All wave-2 prompts completed but Phase 2 EOD never ran → trigger it now
+      const [{ count: incomplete }, { count: completed }] = await Promise.all([
+        supabase.from('brand_prompts').select('id', { count: 'exact', head: true })
+          .eq('brand_id', brand.id).eq('onboarding_wave', 2)
+          .in('onboarding_status', ['pending', 'claimed', 'failed']),
+        supabase.from('brand_prompts').select('id', { count: 'exact', head: true })
+          .eq('brand_id', brand.id).eq('onboarding_wave', 2)
+          .eq('onboarding_status', 'completed'),
+      ]);
+
+      if (incomplete === 0 && completed > 0) {
+        console.log('[QUEUE-ORG] SAFETY SWEEP: brand', brand.id.substring(0, 8),
+          'phase1_complete + all', completed, 'wave-2 prompts done, Phase 2 EOD never triggered — running now');
+        await finalizePhase(brand, 2);
+      }
+    }
+  }
 
   // 1. Find brands with active onboarding (Phase 1 or Phase 2)
   const { data: activeBrands } = await supabase
@@ -59,6 +130,8 @@ async function runQueueOrganizer() {
   console.log('[QUEUE-ORG] Active brands:', activeBrands.map(b => `${b.id.substring(0, 8)}(phase${b.onboarding_phase})`).join(', '));
 
   // 2. For each brand, check pending/failed prompts for current wave
+  //    Only status='active' prompts are dispatched — wave-2 prompts start as 'inactive'
+  //    and are flipped to 'active' by finalizePhase(wave=1) before Phase 2 begins.
   const brandsWithWork = [];
   for (const brand of activeBrands) {
     const currentWave = brand.onboarding_phase || 1;
@@ -67,12 +140,13 @@ async function runQueueOrganizer() {
       .select('id', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
       .eq('onboarding_wave', currentWave)
+      .eq('status', 'active')
       .in('onboarding_status', ['pending', 'failed']);
 
     if (count > 0) {
       brandsWithWork.push({ ...brand, currentWave, pendingCount: count });
     } else {
-      // Wave has no pending/failed — check if it also has no claimed (might be done)
+      // Wave has no active pending/failed — check if it also has no claimed (might be done)
       const { count: claimedCount } = await supabase
         .from('brand_prompts')
         .select('id', { count: 'exact', head: true })
@@ -107,29 +181,55 @@ async function runQueueOrganizer() {
   console.log('[QUEUE-ORG] Dispatchable accounts:', dispatchableAccounts.map(a => `${a.email.split('@')[0]}(${a.state})`).join(', '));
 
   // 4. Dispatch: pair accounts with brands, claim prompts, spawn chunks
+  //
+  //    KEY: Balanced chunk sizing — divide work evenly across all available agents.
+  //    e.g. 6 wave-1 prompts × 2 agents → ceil(6/2) = 3 each (not 5+1).
+  //    This ensures full parallelism from the first organizer run.
   const childPromises = [];
   const brandDailyReportMap = new Map();
   let accountsUsedForBrand = 0;
 
   const targetBrand = brandsWithWork[0]; // Process one brand at a time (simplest)
 
+  // Calculate how many agents we'll actually use, then set target chunk per agent
+  const maxAgentsForBrand = Math.min(dispatchableAccounts.length, MAX_ACCOUNTS_PER_BRAND);
+  const targetChunkSize = Math.ceil(targetBrand.pendingCount / maxAgentsForBrand);
+  console.log('[QUEUE-ORG] Brand', targetBrand.id.substring(0, 8), ':', targetBrand.pendingCount,
+    'pending → target', targetChunkSize, 'per agent across', maxAgentsForBrand, 'agent(s)');
+
   for (const accountState of dispatchableAccounts) {
     if (accountsUsedForBrand >= MAX_ACCOUNTS_PER_BRAND) break;
+    if (targetBrand.pendingCount === 0) break;
 
-    const remainingWavePrompts = targetBrand.pendingCount - (accountsUsedForBrand * SESSION_MAX_PROMPTS);
-    if (remainingWavePrompts <= 0) break;
+    // How many this agent can handle based on its schedule window
+    const agentMax = calculatePromptsForAccount(accountState);
+    if (agentMax === 0) continue;
 
-    const promptsCanDo = calculatePromptsForAccount(accountState, remainingWavePrompts);
-    if (promptsCanDo === 0) continue;
+    // Give this agent min(agentCapacity, balancedChunk, remaining)
+    const promptsToGive = Math.min(agentMax, targetChunkSize, targetBrand.pendingCount);
+    if (promptsToGive === 0) continue;
 
-    // Claim prompts atomically
-    const claimedPrompts = await claimPrompts(accountState.id, targetBrand.id, targetBrand.currentWave, promptsCanDo);
+    // Claim prompts atomically (only status='active' prompts)
+    const claimedPrompts = await claimPrompts(accountState.id, targetBrand.id, targetBrand.currentWave, promptsToGive);
     if (claimedPrompts.length === 0) {
       console.log('[QUEUE-ORG] Account', accountState.email, '— no prompts claimed (race), skipping');
       continue;
     }
 
     console.log('[QUEUE-ORG] Account', accountState.email, '— claimed', claimedPrompts.length, 'wave-' + targetBrand.currentWave + ' prompts for brand', targetBrand.id.substring(0, 8));
+
+    // Auto-reinit: if this account previously failed prompts for this brand+wave,
+    // its ChatGPT session is likely stale/broken — reinitialize before dispatching again.
+    const hasPreviousFailures = await accountHasFailedPrompts(accountState.id, targetBrand.id, targetBrand.currentWave);
+    if (hasPreviousFailures) {
+      console.log('[QUEUE-ORG] Account', accountState.email, 'has prior failed prompts — triggering session reinit before dispatch');
+      const reinitOk = await reinitializeSession(accountState.email);
+      if (!reinitOk) {
+        console.warn('[QUEUE-ORG] Reinit failed for', accountState.email, '— releasing claims, will retry on next organizer run');
+        await releasePrompts(claimedPrompts.map(p => p.id));
+        continue;
+      }
+    }
 
     // Flip brand to 'running' on first dispatch (idempotent — only if still 'queued')
     if (accountsUsedForBrand === 0) {
@@ -141,9 +241,10 @@ async function runQueueOrganizer() {
     }
 
     // Get or create daily report (using anchored ID if available)
+    // total_prompts is always 30 — both phases write to the same report row
     const today = new Date().toISOString().split('T')[0];
     const dailyReportId = targetBrand.onboarding_daily_report_id
-      || await getOrCreateDailyReport(targetBrand.id, today, targetBrand.currentWave === 1 ? 6 : 30);
+      || await getOrCreateDailyReport(targetBrand.id, today);
 
     if (!dailyReportId) {
       await releasePrompts(claimedPrompts.map(p => p.id));
@@ -160,9 +261,15 @@ async function runQueueOrganizer() {
       .in('status', ['active', 'inactive']);
 
     // Spawn chunk child process — timeout is owned by the agent itself
+    // Log output to /tmp so we can diagnose failures (previously stdio:'inherit' → no logs via webhook)
+    const agentSlug = accountState.email.split('@')[0];
+    const chunkLogPath = `/tmp/chunk-${targetBrand.id.substring(0, 8)}-${agentSlug}-${Date.now()}.log`;
+    const chunkLogFd = fs.openSync(chunkLogPath, 'w');
+    console.log('[QUEUE-ORG] Chunk log →', chunkLogPath);
+
     const childPromise = new Promise((resolve) => {
       const child = spawn('node', [chunkScript], {
-        stdio: 'inherit',
+        stdio: ['ignore', chunkLogFd, chunkLogFd],
         cwd: __dirname,
         env: {
           ...process.env,
@@ -178,15 +285,18 @@ async function runQueueOrganizer() {
         },
       });
 
+      // Parent closes its copy of the fd immediately — child still holds its own inherited copy
+      try { fs.closeSync(chunkLogFd); } catch (e) {}
+
       child.on('close', async (code) => {
         if (code !== 0) {
           // Agent handles its own timeout — just clean up any still-claimed prompts (e.g. hard crash)
-          console.error('[QUEUE-ORG] Chunk exited with code', code, '— marking any remaining claimed prompts as failed');
+          console.error('[QUEUE-ORG] Chunk exited with code', code, '— log:', chunkLogPath, '— marking any remaining claimed prompts as failed');
           await supabase
             .from('brand_prompts')
             .update({ onboarding_status: 'failed', onboarding_claimed_account_id: null, onboarding_claimed_at: null })
             .in('id', claimedPrompts.map(p => p.id))
-            .eq('onboarding_status', 'claimed'); // only ones still claimed — don't overwrite completed/failed set by agent
+            .eq('onboarding_status', 'claimed');
         }
         resolve(code);
       });
@@ -195,13 +305,12 @@ async function runQueueOrganizer() {
     childPromises.push(childPromise);
     accountsUsedForBrand++;
 
-    // Update pending count estimate for next account
+    // Decrement remaining so next agent gets a fair share of what's left
     targetBrand.pendingCount = Math.max(0, targetBrand.pendingCount - claimedPrompts.length);
-    if (targetBrand.pendingCount === 0) break;
   }
 
   if (childPromises.length > 0) {
-    console.log('[QUEUE-ORG] Waiting for', childPromises.length, 'chunk(s)...');
+    console.log('[QUEUE-ORG] Waiting for', childPromises.length, 'chunk(s) running in parallel...');
     await Promise.all(childPromises);
     console.log('[QUEUE-ORG] All chunks complete.');
 
@@ -216,14 +325,13 @@ async function runQueueOrganizer() {
         .select('id', { count: 'exact', head: true })
         .eq('brand_id', brandId)
         .eq('onboarding_wave', currentWave)
+        .eq('status', 'active')
         .in('onboarding_status', ['pending', 'claimed', 'failed']);
 
       if (remaining === 0) {
         console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), 'wave', currentWave, 'complete — finalizing phase');
         await finalizePhase({ ...brand, onboarding_daily_report_id: dailyReportId }, currentWave);
       } else {
-        // Agent already called /chunk-complete webhook which triggers a fresh organizer run.
-        // That fresh run will see the failed prompts and re-dispatch. Nothing to do here.
         console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), 'still has', remaining, 'failed/pending prompts — fresh organizer run already triggered by agent webhook');
       }
     }
@@ -234,7 +342,7 @@ async function runQueueOrganizer() {
 
 /**
  * Finalize a phase after all its wave prompts complete.
- * Phase 1: run partial EOD, flip to phase1_complete
+ * Phase 1: flip wave-2 prompts to active, run partial EOD, flip to phase1_complete + phase=2
  * Phase 2: run full EOD, flip to succeeded
  */
 async function finalizePhase(brand, completedWave) {
@@ -261,6 +369,16 @@ async function finalizePhase(brand, completedWave) {
 
     console.log('[QUEUE-ORG] Finalizing Phase 1 for brand', brandId.substring(0, 8));
 
+    // Flip wave-2 prompts from inactive → active so Phase 2 can dispatch them
+    const { count: activated } = await supabase
+      .from('brand_prompts')
+      .update({ status: 'active', is_active: true })
+      .eq('brand_id', brandId)
+      .eq('onboarding_wave', 2)
+      .eq('status', 'inactive')
+      .select('id', { count: 'exact', head: true });
+    console.log('[QUEUE-ORG] Activated', activated || 0, 'wave-2 prompts for Phase 2 dispatch');
+
     // Run partial EOD (brand analysis + visibility score only — no Tavily)
     try {
       const { processEndOfDay } = require('./end-of-day-processor');
@@ -284,20 +402,31 @@ async function finalizePhase(brand, completedWave) {
       .eq('onboarding_wave', 1)
       .eq('onboarding_status', 'completed');
 
-    // Advance brand to phase1_complete (Phase 2 dispatch added later)
+    // Advance brand to phase1_complete, set phase=2 so next organizer run dispatches wave-2
     await supabase
       .from('brands')
       .update({
         first_report_status: 'phase1_complete',
         onboarding_prompts_sent: wave1Completed || 6,
+        onboarding_phase: 2,
       })
       .eq('id', brandId)
-      .in('first_report_status', ['queued', 'running']); // idempotent guard
+      .in('first_report_status', ['queued', 'running']);
 
-    console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), '→ phase1_complete.');
+    console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), '→ phase1_complete. Phase set to 2. Wave-2 prompts now active.');
 
-    // Ensure user is in users table (Phase 1 dashboard requires it)
     await ensureUserInTable(brand.owner_user_id);
+
+    // Immediately dispatch wave-2 — don't wait for the next cron cycle (up to 5 min delay).
+    // Wave-2 prompts are now active; spawn a fresh organizer instance to pick them up right now.
+    console.log('[QUEUE-ORG] Spawning fresh organizer for immediate wave-2 dispatch...');
+    const wave2Org = spawn('node', [__filename], {
+      stdio: 'ignore',
+      cwd: __dirname,
+      env: process.env,
+      detached: true,
+    });
+    wave2Org.unref();
 
   } else if (completedWave === 2) {
     if (currentBrand?.first_report_status === 'succeeded') {
@@ -319,7 +448,7 @@ async function finalizePhase(brand, completedWave) {
     // Mark daily_report as fully complete
     await supabase
       .from('daily_reports')
-      .update({ status: 'completed', completed_at: new Date().toISOString(), is_partial: false })
+      .update({ status: 'completed', completed_at: new Date().toISOString(), is_partial: false, total_prompts: 30 })
       .eq('id', dailyReportId);
 
     // Count all completed prompts
@@ -338,9 +467,8 @@ async function finalizePhase(brand, completedWave) {
         onboarding_prompts_sent: totalCompleted || 30,
       })
       .eq('id', brandId)
-      .in('first_report_status', ['phase1_complete', 'running']); // idempotent guard
+      .in('first_report_status', ['phase1_complete', 'running']);
 
-    // Ensure user is in users table
     await ensureUserInTable(brand.owner_user_id);
 
     console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), '→ succeeded. Onboarding complete!');
@@ -365,11 +493,6 @@ async function ensureUserInTable(userId) {
   }
 }
 
-/**
- * Get account states: classifies each eligible account as FREE, RESERVED, BUSY:daily, or BUSY:onboarding.
- * BUSY:onboarding now detected via brand_prompts (not brands.first_report_status)
- * so it works for both Phase 1 and Phase 2.
- */
 async function getAccountStates() {
   const now = new Date();
   const reserveWindowEnd = new Date(now.getTime() + RESERVE_WINDOW_MINUTES * 60 * 1000);
@@ -393,7 +516,6 @@ async function getAccountStates() {
       .eq('status', 'pending')
       .gte('execution_time', now.toISOString())
       .lte('execution_time', reserveWindowEnd.toISOString()),
-    // Detect active onboarding via claimed prompts (works for Phase 1 AND Phase 2)
     supabase.from('brand_prompts')
       .select('onboarding_claimed_account_id')
       .eq('onboarding_status', 'claimed')
@@ -402,7 +524,6 @@ async function getAccountStates() {
 
   if (!accounts || accounts.length === 0) return [];
 
-  // Build set of accounts with active onboarding claims
   const onboardingAccountIds = new Set(
     (claimedOnboardingPrompts || []).map(p => p.onboarding_claimed_account_id)
   );
@@ -433,34 +554,32 @@ async function getAccountStates() {
 }
 
 /**
- * Dynamic chunk sizing.
- * FREE: full 5-prompt session (15 min Browserless limit)
- * RESERVED: floor((minutesUntilBatch - safetyBuffer) / 2.5), capped at 5
- * Also capped by remainingWavePrompts so we don't over-claim.
+ * Returns the max prompts this account can handle right now.
+ * FREE → SESSION_MAX_PROMPTS (5)
+ * RESERVED → based on minutes until next batch minus safety buffer
+ * BUSY → 0 (skip)
  */
-function calculatePromptsForAccount(accountState, remainingWavePrompts = SESSION_MAX_PROMPTS) {
-  let maxByTime;
-  if (accountState.state === 'FREE') {
-    maxByTime = SESSION_MAX_PROMPTS;
-  } else if (accountState.state === 'RESERVED') {
+function calculatePromptsForAccount(accountState) {
+  if (accountState.state === 'FREE') return SESSION_MAX_PROMPTS;
+  if (accountState.state === 'RESERVED') {
     const minutesUntilBatch = (new Date(accountState.nextBatchAt).getTime() - Date.now()) / 60000;
     const available = minutesUntilBatch - SAFETY_BUFFER_MINUTES;
     if (available < MINUTES_PER_PROMPT) return 0;
-    maxByTime = Math.floor(available / MINUTES_PER_PROMPT);
-  } else {
-    return 0; // BUSY states cannot take any prompts
+    return Math.min(SESSION_MAX_PROMPTS, Math.floor(available / MINUTES_PER_PROMPT));
   }
-  return Math.min(SESSION_MAX_PROMPTS, maxByTime, remainingWavePrompts);
+  return 0; // BUSY:daily or BUSY:onboarding
 }
 
 async function claimPrompts(accountId, brandId, wave, count) {
+  // Only claim status='active' prompts — wave-2 prompts start as 'inactive' and
+  // are flipped to 'active' by finalizePhase(wave=1) before Phase 2 begins.
   const { data: pendingPrompts } = await supabase
     .from('brand_prompts')
     .select('id, raw_prompt, improved_prompt')
     .eq('brand_id', brandId)
     .eq('onboarding_wave', wave)
+    .eq('status', 'active')
     .in('onboarding_status', ['pending', 'failed'])
-    .in('status', ['active', 'inactive'])
     .order('created_at')
     .limit(count);
 
@@ -470,7 +589,6 @@ async function claimPrompts(accountId, brandId, wave, count) {
   const now = new Date().toISOString();
 
   for (const prompt of pendingPrompts) {
-    // Atomic optimistic lock: only claim if still pending or failed
     const { data: updated } = await supabase
       .from('brand_prompts')
       .update({
@@ -479,7 +597,7 @@ async function claimPrompts(accountId, brandId, wave, count) {
         onboarding_claimed_at: now,
       })
       .eq('id', prompt.id)
-      .in('onboarding_status', ['pending', 'failed']) // atomic guard
+      .in('onboarding_status', ['pending', 'failed'])
       .select('id, raw_prompt, improved_prompt');
 
     if (updated && updated.length > 0) {
@@ -498,7 +616,8 @@ async function releasePrompts(promptIds) {
     .in('id', promptIds);
 }
 
-async function getOrCreateDailyReport(brandId, today, totalPrompts) {
+// Always creates with total_prompts=30 since both phases write to the same report row
+async function getOrCreateDailyReport(brandId, today) {
   const { data: existing } = await supabase
     .from('daily_reports')
     .select('id')
@@ -514,7 +633,7 @@ async function getOrCreateDailyReport(brandId, today, totalPrompts) {
       brand_id: brandId,
       report_date: today,
       status: 'running',
-      total_prompts: totalPrompts,
+      total_prompts: 30,
       is_partial: true,
     })
     .select('id')
@@ -525,15 +644,67 @@ async function getOrCreateDailyReport(brandId, today, totalPrompts) {
     return null;
   }
 
-  // Anchor report to brand if not already set
   await supabase
     .from('brands')
     .update({ onboarding_daily_report_id: newReport.id })
     .eq('id', brandId)
-    .is('onboarding_daily_report_id', null); // only if not already set
+    .is('onboarding_daily_report_id', null);
 
   return newReport.id;
 }
+
+// ── Auto-reinit helpers ───────────────────────────────────────────────────────
+
+/**
+ * Returns true if this account has any failed prompts for this brand+wave.
+ * A failed prompt means the account's previous chunk timed out or crashed
+ * without completing it — indicating a stale/broken session.
+ */
+async function accountHasFailedPrompts(accountId, brandId, wave) {
+  const { count } = await supabase
+    .from('brand_prompts')
+    .select('id', { count: 'exact', head: true })
+    .eq('brand_id', brandId)
+    .eq('onboarding_wave', wave)
+    .eq('onboarding_claimed_account_id', accountId)
+    .eq('onboarding_status', 'failed');
+  return (count || 0) > 0;
+}
+
+/**
+ * Calls /initialize-session for the given account and waits for it to complete.
+ * The webhook handler blocks until the session script exits (success or failure).
+ * Times out after 5 minutes to prevent queue-organizer from hanging forever.
+ * Returns true on success, false on failure/timeout.
+ */
+async function reinitializeSession(accountEmail) {
+  const baseUrl = process.env.WEBHOOK_BASE_URL || 'http://135.181.203.202:3001';
+  const webhookSecret = process.env.WEBHOOK_SECRET || 'forensic-reinit-secret-2024';
+  const REINIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 min max
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), REINIT_TIMEOUT_MS);
+    const res = await fetch(`${baseUrl}/initialize-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: webhookSecret, accountEmail }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      console.log('[QUEUE-ORG] Session reinit OK for', accountEmail);
+      return true;
+    }
+    console.warn('[QUEUE-ORG] Session reinit failed for', accountEmail, '— HTTP', res.status);
+    return false;
+  } catch (err) {
+    console.error('[QUEUE-ORG] Session reinit error for', accountEmail, ':', err.message);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 runQueueOrganizer().catch(err => {
   console.error('[QUEUE-ORG] Fatal error:', err.message, err.stack);

@@ -1,18 +1,21 @@
 /**
  * stress-test-monitor.js  —  Two-Phase Onboarding Edition
  *
- * Real-time monitor for the event-driven two-phase onboarding system.
- * Shows: wave 1/2 progress, Phase 1/2 EOD status, anchored daily_report,
- * live claimed prompts, concurrent safety, timing analysis, target user.
+ * Real-time monitor with:
+ *   - Onboarding start time shown on EVERY output
+ *   - Cumulative growing event log (full history from DB, no limit)
+ *   - Per-agent occupation: CHUNK(Np,wN) | DAILY_BATCH(Np) | REINIT | IDLE
+ *   - Inline connection errors / forensic failures per agent
+ *   - Per-prompt estimated state (connecting / queued / executing / overdue)
  *
  * Run on Hetzner in /root/be-visible.ai/worker/
  *
  * Usage:
- *   node stress-test-monitor.js                        → single snapshot
- *   node stress-test-monitor.js --watch                → refresh every 20s
- *   node stress-test-monitor.js --watch 10             → refresh every 10s
- *   node stress-test-monitor.js user@email.com         → pin a target user
- *   node stress-test-monitor.js user@email.com --watch 15
+ *   node stress-test-monitor.js                          → single snapshot
+ *   node stress-test-monitor.js --watch                  → refresh every 20s
+ *   node stress-test-monitor.js --watch 30               → refresh every 30s
+ *   node stress-test-monitor.js user@email.com           → pin a target user
+ *   node stress-test-monitor.js user@email.com --watch 30
  */
 
 require('dotenv').config({ path: '/root/be-visible.ai/worker/.env' });
@@ -29,14 +32,18 @@ const args = process.argv.slice(2);
 const watchIdx = args.indexOf('--watch');
 const watchMode = watchIdx !== -1;
 const watchInterval = watchMode ? (parseInt(args[watchIdx + 1]) || 20) : null;
-const targetEmail = args.find(a => a.includes('@')) || 'bluecjamie1@gmail.com';
+const targetEmail = args.find(a => a.includes('@')) || null;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TIMEOUT_PER_PROMPT_MS = 2.5 * 60 * 1000;
+const CONNECT_TIME_MS       = 90 * 1000; // ~90s to reconnect browserless session
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 function il(dateStr) {
   if (!dateStr) return '--:--:--';
   return new Date(dateStr).toLocaleString('en-IL', {
     timeZone: 'Asia/Jerusalem',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
 }
 function dur(ms) {
@@ -55,46 +62,269 @@ function minsUntil(dateStr) {
   const ms = new Date(dateStr).getTime() - Date.now();
   return ms <= 0 ? 0 : Math.round(ms / 60000);
 }
-function bar(used, total, width = 20) {
-  const capped = Math.min(used, total);
-  const filled = total > 0 ? Math.round((capped / total) * width) : 0;
-  const pct = total > 0 ? Math.round((capped / total) * 100) : 0;
+function bar(used, total, width) {
+  width = width || 20;
+  const capped  = Math.min(used, total);
+  const filled  = total > 0 ? Math.round((capped / total) * width) : 0;
+  const pct     = total > 0 ? Math.round((capped / total) * 100) : 0;
   return '[' + '█'.repeat(filled) + '░'.repeat(width - filled) + '] ' + capped + '/' + total + ' (' + pct + '%)';
 }
 function sep(label) {
-  const line = '─'.repeat(70);
+  const line = '─'.repeat(72);
   console.log('\n' + line);
   console.log('  ' + label);
   console.log(line);
 }
 function statusIcon(s) {
   const icons = {
-    queued: '🟡 queued',
-    running: '🔵 running (Phase 1)',
-    phase1_complete: '🟠 phase1_complete (wave 2 not yet enabled)',
-    succeeded: '🟢 succeeded',
-    failed: '🔴 failed',
+    queued:         '🟡 queued',
+    running:        '🔵 running (Phase 1)',
+    phase1_complete:'🟠 phase1_complete → wave-2 running',
+    succeeded:      '🟢 succeeded',
+    failed:         '🔴 failed',
   };
   return icons[s] || ('❓ ' + s);
+}
+function shortEmail(email) {
+  if (!email) return '?';
+  return email.includes('@') ? email.split('@')[0].toUpperCase() : email.substring(0, 12).toUpperCase();
+}
+function padR(str, len) { return String(str || '').padEnd(len).substring(0, len); }
+function padL(str, len) { return String(str || '').padStart(len).substring(0, len); }
+
+// ── Group completed/failed/claimed prompts into dispatch chunks ───────────────
+// Prompts in the same chunk share an account and are claimed within a 5-min window.
+function groupIntoChunks(prompts) {
+  const sorted = [...prompts]
+    .filter(p => p.onboarding_claimed_at || p.updated_at)
+    .sort((a, b) => {
+      const ta = new Date(a.onboarding_claimed_at || a.updated_at).getTime();
+      const tb = new Date(b.onboarding_claimed_at || b.updated_at).getTime();
+      return ta - tb;
+    });
+
+  const chunks = [];
+  sorted.forEach(p => {
+    const email    = p.chatgpt_accounts?.email || '(unknown)';
+    const claimedMs = new Date(p.onboarding_claimed_at || p.updated_at).getTime();
+    const existing  = chunks.find(c =>
+      c.email === email &&
+      claimedMs >= c.startMs &&
+      claimedMs - c.lastClaimedMs < 5 * 60 * 1000
+    );
+    if (existing) {
+      existing.prompts.push(p);
+      existing.lastClaimedMs = Math.max(existing.lastClaimedMs, claimedMs);
+      if (p.updated_at) existing.endMs = Math.max(existing.endMs, new Date(p.updated_at).getTime());
+      if (p.onboarding_wave && !existing.waves.includes(p.onboarding_wave)) existing.waves.push(p.onboarding_wave);
+    } else {
+      chunks.push({
+        email,
+        short:        shortEmail(email),
+        prompts:      [p],
+        startMs:      claimedMs,
+        lastClaimedMs: claimedMs,
+        endMs:        p.updated_at ? new Date(p.updated_at).getTime() : Date.now(),
+        waves:        p.onboarding_wave ? [p.onboarding_wave] : [],
+      });
+    }
+  });
+
+  // Mark in-progress chunks (contain at least one claimed prompt with no updated_at finalization)
+  chunks.forEach(c => {
+    c.inProgress = c.prompts.some(p => p.onboarding_status === 'claimed');
+    if (c.inProgress) c.endMs = Date.now();
+  });
+
+  return chunks;
+}
+
+// ── Build cumulative event log from DB state ──────────────────────────────────
+function buildEventLog(brand, allPrompts, forensics) {
+  const events = [];
+
+  // 1. Onboarding start
+  events.push({
+    ms:     new Date(brand.created_at).getTime(),
+    time:   brand.created_at,
+    agent:  '—',
+    type:   'ONBOARDING_START',
+    details: '"' + brand.name + '" submitted',
+    live:   false,
+  });
+
+  // 2. Group ALL prompts (done + failed + claimed) into chunks
+  const claimedOrDone = allPrompts.filter(p =>
+    p.onboarding_status === 'completed' ||
+    p.onboarding_status === 'failed'    ||
+    p.onboarding_status === 'claimed'
+  );
+  const chunks = groupIntoChunks(claimedOrDone);
+
+  chunks.sort((a, b) => a.startMs - b.startMs);
+
+  chunks.forEach(chunk => {
+    const waveStr = chunk.waves.length ? 'w' + chunk.waves.sort((a,b)=>a-b).join('+') : '?';
+
+    // CHUNK_START
+    events.push({
+      ms:      chunk.startMs,
+      time:    new Date(chunk.startMs).toISOString(),
+      agent:   chunk.short,
+      type:    chunk.inProgress ? 'CHUNK_START 🔄' : 'CHUNK_START',
+      details: chunk.prompts.length + 'p ' + waveStr + ' claimed',
+      live:    chunk.inProgress,
+    });
+
+    // Individual prompt completions/failures (sorted by updated_at)
+    const finalized = chunk.prompts
+      .filter(p => (p.onboarding_status === 'completed' || p.onboarding_status === 'failed') && p.updated_at)
+      .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at));
+
+    finalized.forEach((p, idx) => {
+      const prevMs = idx === 0
+        ? chunk.startMs
+        : new Date(finalized[idx - 1].updated_at).getTime();
+      const execMs = new Date(p.updated_at).getTime() - prevMs;
+      const isDone = p.onboarding_status === 'completed';
+      events.push({
+        ms:      new Date(p.updated_at).getTime(),
+        time:    p.updated_at,
+        agent:   chunk.short,
+        type:    isDone ? 'PROMPT_DONE  ✅' : 'PROMPT_FAIL  ❌',
+        details: 'w' + (p.onboarding_wave || '?') + ' #' + (idx + 1) + ' in ' + dur(execMs),
+        live:    false,
+      });
+    });
+
+    // CHUNK_COMPLETE (only if fully done)
+    if (!chunk.inProgress && finalized.length > 0) {
+      const doneCount = finalized.filter(p => p.onboarding_status === 'completed').length;
+      events.push({
+        ms:      chunk.endMs,
+        time:    new Date(chunk.endMs).toISOString(),
+        agent:   chunk.short,
+        type:    'CHUNK_DONE   ✅',
+        details: doneCount + '/' + chunk.prompts.length + ' prompts in ' + dur(chunk.endMs - chunk.startMs),
+        live:    false,
+      });
+    }
+
+    // Live in-progress claimed prompts
+    if (chunk.inProgress) {
+      const chunkAgeMs   = Date.now() - chunk.startMs;
+      const doneInChunk  = finalized.length;
+      const claimedNow   = chunk.prompts.filter(p => p.onboarding_status === 'claimed');
+      claimedNow.forEach((p, i) => {
+        const posInChunk          = doneInChunk + i;
+        const promptExpectedStart = CONNECT_TIME_MS + (posInChunk * TIMEOUT_PER_PROMPT_MS);
+        const promptExpectedEnd   = promptExpectedStart + TIMEOUT_PER_PROMPT_MS;
+        let state;
+        if      (chunkAgeMs < CONNECT_TIME_MS)       state = i === 0 ? '⏳ connecting...' : '⌚ queued';
+        else if (chunkAgeMs < promptExpectedStart)   state = '⌚ queued';
+        else if (chunkAgeMs < promptExpectedEnd)     state = '⚙️  executing';
+        else                                          state = '⚠️  overdue';
+        const elapsed = chunkAgeMs >= CONNECT_TIME_MS && chunkAgeMs >= promptExpectedStart
+          ? '  +' + dur(chunkAgeMs - promptExpectedStart)
+          : '';
+        events.push({
+          ms:      Date.now() + i, // keep ordering stable
+          time:    new Date().toISOString(),
+          agent:   chunk.short,
+          type:    '  > LIVE',
+          details: 'w' + (p.onboarding_wave || '?') + ' prompt #' + (posInChunk + 1) + '  ' + state + elapsed,
+          live:    true,
+        });
+      });
+    }
+  });
+
+  // 3. Forensics events — errors and reinits only (filter noise)
+  (forensics || []).forEach(f => {
+    const isError  = f.connection_status && f.connection_status !== 'Connected';
+    const isReinit = (f.event_type || '').toLowerCase().includes('init') ||
+                     (f.notes || '').toLowerCase().includes('reinit') ||
+                     (f.notes || '').toLowerCase().includes('session_init');
+    const isStateChange = f.event_type && !isReinit;
+
+    if (!isError && !isReinit && !isStateChange) return;
+
+    const typeStr = isReinit
+      ? 'REINIT       🔄'
+      : isError
+      ? 'CONN_ERROR   ⚠️ '
+      : 'STATE_CHANGE   ';
+
+    const noteStr = [f.visual_state, f.notes ? f.notes.substring(0, 50) : '']
+      .filter(Boolean).join('  ').trim();
+
+    events.push({
+      ms:      new Date(f.timestamp).getTime(),
+      time:    f.timestamp,
+      agent:   shortEmail(f.chatgpt_account_email),
+      type:    typeStr,
+      details: noteStr || f.connection_status || '',
+      live:    false,
+    });
+  });
+
+  // Sort chronologically
+  events.sort((a, b) => a.ms - b.ms);
+  return events;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  const now = new Date();
+  const now   = new Date();
   const today = now.toISOString().split('T')[0];
 
-  console.log('\n' + '═'.repeat(70));
-  console.log('  TWO-PHASE ONBOARDING MONITOR  —  ' + il(now) + ' IL  —  ' + today);
-  if (watchMode) console.log('  Auto-refresh every ' + watchInterval + 's  |  target: ' + targetEmail + '  |  Ctrl+C to stop');
-  console.log('═'.repeat(70));
+  // ── Resolve target user (early, needed for header) ─────────────────────────
+  let authUser    = null;
+  let targetBrand = null;
+  let allTargetPrompts = [];
+  let targetForensics  = [];
 
-  // ── Parallel fetch ────────────────────────────────────────────────────────
+  const resolvedEmail = targetEmail || 'bluecjamie1@gmail.com';
+  const { data: authList } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  authUser = (authList?.users || []).find(u => u.email === resolvedEmail);
+
+  if (authUser) {
+    const { data: targetBrands } = await supabase.from('brands')
+      .select('id, name, first_report_status, onboarding_phase, onboarding_prompts_sent, onboarding_daily_report_id, chatgpt_account_id, chatgpt_accounts(email, id), created_at, updated_at')
+      .eq('owner_user_id', authUser.id)
+      .eq('is_demo', false)
+      .order('created_at', { ascending: false });
+
+    // Prefer in-progress brand; fallback to most recent
+    targetBrand = (targetBrands || []).find(b =>
+      ['queued','running','phase1_complete'].includes(b.first_report_status)
+    ) || (targetBrands || [])[0] || null;
+
+    if (targetBrand) {
+      // Fetch ALL prompts for this brand — NO LIMIT — to build full event log
+      const [{ data: allPrompts }, { data: forensicsData }] = await Promise.all([
+        supabase.from('brand_prompts')
+          .select('id, onboarding_claimed_at, updated_at, onboarding_wave, onboarding_status, onboarding_claimed_account_id, chatgpt_accounts!brand_prompts_onboarding_claimed_account_id_fkey(email), raw_prompt, improved_prompt')
+          .eq('brand_id', targetBrand.id)
+          .order('updated_at', { ascending: true }),
+        targetBrand.chatgpt_accounts?.email
+          ? supabase.from('automation_forensics')
+              .select('timestamp, chatgpt_account_email, connection_status, visual_state, event_type, notes')
+              .eq('chatgpt_account_email', targetBrand.chatgpt_accounts.email)
+              .gte('timestamp', targetBrand.created_at)
+              .order('timestamp', { ascending: true })
+          : Promise.resolve({ data: [] }),
+      ]);
+      allTargetPrompts = allPrompts || [];
+      targetForensics  = forensicsData || [];
+    }
+  }
+
+  // ── Parallel global fetch ──────────────────────────────────────────────────
   const [
     capacityResult,
     { data: schedulesToday },
     { data: claimedPrompts },
-    { data: recentCompleted },
-    { data: recentForensics },
     { data: activeBrands },
   ] = await Promise.all([
     getSystemCapacity(),
@@ -105,18 +335,6 @@ async function main() {
     supabase.from('brand_prompts')
       .select('id, onboarding_claimed_at, onboarding_claimed_account_id, onboarding_wave, brand_id, raw_prompt, improved_prompt, brands(name), chatgpt_accounts!brand_prompts_onboarding_claimed_account_id_fkey(email)')
       .eq('onboarding_status', 'claimed'),
-    // Include account email for timeline grouping; fetch last 60 for full history
-    supabase.from('brand_prompts')
-      .select('id, onboarding_claimed_at, updated_at, brand_id, onboarding_wave, onboarding_claimed_account_id, brands(name), chatgpt_accounts!brand_prompts_onboarding_claimed_account_id_fkey(email)')
-      .eq('onboarding_status', 'completed')
-      .not('onboarding_claimed_at', 'is', null)
-      .order('updated_at', { ascending: false })
-      .limit(60),
-    supabase.from('automation_forensics')
-      .select('timestamp, chatgpt_account_email, connection_status, visual_state, event_type, notes')
-      .gte('timestamp', new Date(Date.now() - 60 * 60 * 1000).toISOString())
-      .order('timestamp', { ascending: false })
-      .limit(80),
     supabase.from('brands')
       .select('id, name, first_report_status, onboarding_phase, onboarding_prompts_sent, onboarding_daily_report_id, chatgpt_account_id, chatgpt_accounts(email), updated_at, created_at')
       .in('first_report_status', ['queued', 'running', 'phase1_complete'])
@@ -125,12 +343,38 @@ async function main() {
 
   const capacity = capacityResult;
 
-  // ── SECTION 1: ONBOARDING PIPELINE ──────────────────────────────────────
-  sep('1. ONBOARDING PIPELINE  (wave 1 = 6 prompts → Phase 1 EOD → phase1_complete → wave 2 = 24 → Phase 2 EOD → succeeded)');
+  // ══════════════════════════════════════════════════════════════════════════
+  //  GLOBAL HEADER
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('\n' + '═'.repeat(72));
+  console.log('  ONBOARDING MONITOR  —  ' + il(now) + ' IL  —  ' + today);
+  if (watchMode) console.log('  Auto-refresh every ' + watchInterval + 's  |  Ctrl+C to stop');
+  console.log('  Target: ' + resolvedEmail);
+
+  if (targetBrand) {
+    const elapsedMs = Date.now() - new Date(targetBrand.created_at).getTime();
+    const sentCount = targetBrand.onboarding_prompts_sent || 0;
+    const completedCount = allTargetPrompts.filter(p => p.onboarding_status === 'completed').length;
+    const failedCount    = allTargetPrompts.filter(p => p.onboarding_status === 'failed').length;
+    const claimedCount   = allTargetPrompts.filter(p => p.onboarding_status === 'claimed').length;
+    console.log('═'.repeat(72));
+    console.log('  BRAND:    "' + targetBrand.name + '"');
+    console.log('  STARTED:  ' + il(targetBrand.created_at) + ' IL  (' + dur(elapsedMs) + ' total elapsed)');
+    console.log('  STATUS:   ' + statusIcon(targetBrand.first_report_status));
+    console.log('  PROMPTS:  ✅ ' + completedCount + ' done  |  🔄 ' + claimedCount + ' running  |  ❌ ' + failedCount + ' failed  |  ' + sentCount + '/30 sent');
+    if (targetBrand.chatgpt_accounts?.email) {
+      console.log('  AGENT:    ' + targetBrand.chatgpt_accounts.email);
+    }
+  }
+  console.log('═'.repeat(72));
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 1: ONBOARDING PIPELINE
+  // ══════════════════════════════════════════════════════════════════════════
+  sep('1. ONBOARDING PIPELINE');
 
   if (!activeBrands || activeBrands.length === 0) {
-    console.log('  No brands in the onboarding pipeline right now');
-    console.log('  (queued / running / phase1_complete  — will appear here when active)');
+    console.log('  No brands in pipeline (queued/running/phase1_complete)');
   }
 
   for (const brand of (activeBrands || [])) {
@@ -148,66 +392,40 @@ async function main() {
       supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 2).eq('onboarding_status', 'completed'),
       supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 2).eq('onboarding_status', 'failed'),
       brand.onboarding_daily_report_id
-        ? supabase.from('daily_reports').select('id, status, is_partial, report_date, visibility_score, completed_prompts_chatgpt, total_prompts').eq('id', brand.onboarding_daily_report_id).single()
+        ? supabase.from('daily_reports').select('id, status, is_partial, report_date, visibility_score').eq('id', brand.onboarding_daily_report_id).single()
         : Promise.resolve({ data: null }),
     ]);
 
-    const w1Total = (w1Pending||0) + (w1Claimed||0) + (w1Completed||0) + (w1Failed||0);
-    const w2Total = (w2Pending||0) + (w2Claimed||0) + (w2Completed||0) + (w2Failed||0);
-    const grandTotal = w1Total + w2Total;
+    const w1Total   = (w1Pending||0) + (w1Claimed||0) + (w1Completed||0) + (w1Failed||0);
+    const w2Total   = (w2Pending||0) + (w2Claimed||0) + (w2Completed||0) + (w2Failed||0);
     const grandDone = (w1Completed||0) + (w2Completed||0);
-    const timeSinceCreated = brand.created_at
-      ? dur(Date.now() - new Date(brand.created_at).getTime()) + ' since onboarding submitted'
-      : '';
+    const grandTotal = w1Total + w2Total;
+    const elapsed   = brand.created_at ? '  started ' + ago(brand.created_at) : '';
 
-    console.log('\n  ▶ ' + brand.name.toUpperCase() + '  [' + statusIcon(brand.first_report_status) + ']  phase=' + (brand.onboarding_phase || 1));
-    if (timeSinceCreated) console.log('    ' + timeSinceCreated);
-    console.log('\n    OVERALL : ' + bar(grandDone, grandTotal, 25));
+    console.log('\n  ▶ ' + brand.name.toUpperCase() + '  [' + statusIcon(brand.first_report_status) + ']  phase=' + (brand.onboarding_phase || 1) + elapsed);
+    console.log('    OVERALL : ' + bar(grandDone, grandTotal, 25));
 
-    const w1Active = (w1Claimed||0) > 0 ? ' 🔄' + (w1Claimed||0) + ' running' : '';
-    const w1PendStr = (w1Pending||0) > 0 ? ' ⏳' + (w1Pending||0) + ' pending' : '';
-    const w1FailStr = (w1Failed||0) > 0 ? ' ❌' + (w1Failed||0) + ' failed' : '';
-    const w1EODDone = brand.first_report_status === 'phase1_complete' || brand.first_report_status === 'succeeded';
-    const w1EODStr = w1EODDone ? '  ✅ Phase 1 EOD done' : ((w1Completed||0) >= 6 ? '  ⏳ Phase 1 EOD running...' : '');
-    console.log('    WAVE 1  : ' + bar(w1Completed||0, Math.max(w1Total, 6), 18) +
-      '  ✅' + (w1Completed||0) + ' done' + w1Active + w1PendStr + w1FailStr + w1EODStr);
+    const w1EODDone = ['phase1_complete','succeeded'].includes(brand.first_report_status);
+    const w1EODStr  = w1EODDone ? '  ✅ EOD done' : ((w1Completed||0) >= 6 ? '  ⏳ EOD pending...' : '');
+    console.log('    WAVE 1  : ' + bar(w1Completed||0, Math.max(w1Total,6), 18) +
+      '  ✅' + (w1Completed||0) + ' done  🔄' + (w1Claimed||0) + '  ⏳' + (w1Pending||0) + '  ❌' + (w1Failed||0) + w1EODStr);
 
-    const w2Active = (w2Claimed||0) > 0 ? ' 🔄' + (w2Claimed||0) + ' running' : '';
-    const w2PendStr = (w2Pending||0) > 0 ? ' ⏳' + (w2Pending||0) + ' pending' : '';
-    const w2FailStr = (w2Failed||0) > 0 ? ' ❌' + (w2Failed||0) + ' failed' : '';
-    const w2NotStarted = brand.first_report_status === 'running' || brand.first_report_status === 'queued';
-    const w2Suffix = w2NotStarted ? '  (starts after Phase 1 EOD)' : '';
-    const w2EODDone = brand.first_report_status === 'succeeded';
-    const w2EODStr = w2EODDone ? '  ✅ Phase 2 EOD done' : ((w2Completed||0) >= 24 && !w2EODDone ? '  ⏳ Phase 2 EOD running...' : '');
-    console.log('    WAVE 2  : ' + bar(w2Completed||0, Math.max(w2Total, 24), 18) +
-      '  ✅' + (w2Completed||0) + ' done' + w2Active + w2PendStr + w2FailStr + w2EODStr + w2Suffix);
-
-    const currentWave = (brand.onboarding_phase || 1);
-    const waveRemaining = currentWave === 1
-      ? (w1Pending||0) + (w1Claimed||0)
-      : (w2Pending||0) + (w2Claimed||0);
-    if (waveRemaining > 0) {
-      console.log('    ETA Wave ' + currentWave + ': ~' + Math.round(waveRemaining * 2.5) + ' min for remaining ' + waveRemaining + ' prompts');
-    }
+    const w2NotStarted = ['running','queued'].includes(brand.first_report_status);
+    const w2EODStr     = brand.first_report_status === 'succeeded' ? '  ✅ EOD done' : ((w2Completed||0) >= 24 ? '  ⏳ EOD pending...' : '');
+    console.log('    WAVE 2  : ' + bar(w2Completed||0, Math.max(w2Total,24), 18) +
+      '  ✅' + (w2Completed||0) + ' done  🔄' + (w2Claimed||0) + '  ⏳' + (w2Pending||0) + '  ❌' + (w2Failed||0) + w2EODStr +
+      (w2NotStarted ? '  (starts after Phase 1 EOD)' : ''));
 
     if (dailyReport) {
-      const drPartial = dailyReport.is_partial ? '⚠ PARTIAL' : '✅ COMPLETE';
-      const drScore = dailyReport.visibility_score != null ? '  Visibility: ' + dailyReport.visibility_score.toFixed(1) + '/100' : '  (score not yet written)';
-      const drStatus = dailyReport.status === 'completed' ? '✅ completed' : dailyReport.status === 'running' ? '🔵 running' : dailyReport.status;
-      console.log('    REPORT  : date=' + dailyReport.report_date + '  status=' + drStatus + '  ' + drPartial + drScore);
-      if (dailyReport.completed_prompts_chatgpt != null) {
-        console.log('               results=' + dailyReport.completed_prompts_chatgpt + '/' + dailyReport.total_prompts + ' prompt results in DB');
-      }
+      const score = dailyReport.visibility_score != null ? '  score=' + dailyReport.visibility_score.toFixed(1) : '';
+      console.log('    REPORT  : ' + dailyReport.report_date + '  ' + dailyReport.status + '  ' + (dailyReport.is_partial ? '⚠ PARTIAL' : '✅ COMPLETE') + score);
     } else {
-      console.log('    REPORT  : ❌ No anchored daily_report yet');
-    }
-    if (brand.chatgpt_accounts?.email) {
-      console.log('    Account : ' + brand.chatgpt_accounts.email);
+      console.log('    REPORT  : ❌ no anchored daily_report yet');
     }
   }
 
   const { data: recentSucceeded } = await supabase.from('brands')
-    .select('id, name, first_report_status, updated_at')
+    .select('id, name, updated_at')
     .eq('first_report_status', 'succeeded')
     .eq('is_demo', false)
     .gte('updated_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
@@ -215,251 +433,206 @@ async function main() {
     .limit(3);
   if (recentSucceeded && recentSucceeded.length > 0) {
     console.log('\n  Recently succeeded (last 30 min):');
-    for (const b of recentSucceeded) console.log('    🟢 ' + b.name + '  — completed ' + ago(b.updated_at));
+    for (const b of recentSucceeded) console.log('    🟢 ' + b.name + '  — ' + ago(b.updated_at));
   }
 
-  // ── SECTION 2: AGENT TIMELINE ─────────────────────────────────────────────
-  sep('2. AGENT TIMELINE  (chronological — what each agent did, oldest at top)');
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 2: CUMULATIVE EVENT LOG  (grows with each poll)
+  // ══════════════════════════════════════════════════════════════════════════
+  sep('2. CUMULATIVE EVENT LOG  ← grows with each poll  |  brand: "' + (targetBrand?.name || resolvedEmail) + '"');
 
-  // Group completed prompts into chunks: same account, claimed_at within 5-min window
-  const tlSorted = [...(recentCompleted || [])]
-    .filter(p => p.onboarding_claimed_at && p.updated_at)
-    .sort((a, b) => new Date(a.onboarding_claimed_at) - new Date(b.onboarding_claimed_at));
-
-  const chunks = [];
-  tlSorted.forEach(p => {
-    const email = p.chatgpt_accounts?.email || '(unknown)';
-    const claimedMs = new Date(p.onboarding_claimed_at).getTime();
-    const existing = chunks.find(c =>
-      c.email === email &&
-      claimedMs >= c.startMs &&
-      claimedMs - c.lastClaimedMs < 5 * 60 * 1000
-    );
-    if (existing) {
-      existing.prompts.push(p);
-      existing.lastClaimedMs = Math.max(existing.lastClaimedMs, claimedMs);
-      existing.endMs = Math.max(existing.endMs, new Date(p.updated_at).getTime());
-      if (!existing.waves.includes(p.onboarding_wave)) existing.waves.push(p.onboarding_wave);
-    } else {
-      chunks.push({
-        email,
-        short: email.includes('@') ? email.split('@')[0].toUpperCase() : email.substring(0, 12).toUpperCase(),
-        brand: p.brands?.name || '?',
-        prompts: [p],
-        startMs: claimedMs,
-        lastClaimedMs: claimedMs,
-        endMs: new Date(p.updated_at).getTime(),
-        waves: p.onboarding_wave ? [p.onboarding_wave] : [],
-        inProgress: false,
-      });
-    }
-  });
-
-  // Append currently in-progress claimed chunks
-  const inProgressByAcct = {};
-  (claimedPrompts || []).forEach(p => {
-    const email = p.chatgpt_accounts?.email || '(unknown)';
-    if (!inProgressByAcct[email]) inProgressByAcct[email] = [];
-    inProgressByAcct[email].push(p);
-  });
-  Object.entries(inProgressByAcct).forEach(([email, prompts]) => {
-    const startMs = Math.min(...prompts.map(p => new Date(p.onboarding_claimed_at).getTime()));
-    chunks.push({
-      email,
-      short: email.includes('@') ? email.split('@')[0].toUpperCase() : email.substring(0, 12).toUpperCase(),
-      brand: prompts[0]?.brands?.name || '?',
-      prompts,
-      startMs,
-      lastClaimedMs: startMs,
-      endMs: Date.now(),
-      waves: [...new Set(prompts.map(p => p.onboarding_wave).filter(Boolean))],
-      inProgress: true,
-    });
-  });
-
-  chunks.sort((a, b) => a.startMs - b.startMs);
-
-  if (chunks.length === 0) {
-    console.log('  No onboarding chunks yet — timeline will populate once agents start processing');
+  if (!targetBrand) {
+    console.log('  (no active/recent brand found for target user — event log unavailable)');
   } else {
-    // Header
-    console.log('  TIME      AGENT            PROMPTS  WAVE    DURATION   STATUS      BRAND');
-    console.log('  ' + '─'.repeat(67));
-    chunks.forEach(c => {
-      const waveTags = c.waves.length > 0 ? 'w' + c.waves.sort((a,b)=>a-b).join('+') : '?  ';
-      const durationMs = c.endMs - c.startMs;
-      const durationStr = c.inProgress
-        ? dur(durationMs) + '…'   // still running — show elapsed
-        : dur(durationMs);
-      const statusStr  = c.inProgress ? '🔄 IN PROGRESS' : '✅ done';
-      const startedAgo = ago(new Date(c.startMs).toISOString());
-      const brandShort = c.brand.substring(0, 12).padEnd(12);
-      console.log(
-        '  ' + il(new Date(c.startMs).toISOString()) +
-        '  ' + c.short.padEnd(15) +
-        '  ' + String(c.prompts.length).padStart(2) + 'p     ' +
-        waveTags.padEnd(6) +
-        '  ' + durationStr.padEnd(10) +
-        '  ' + statusStr.padEnd(14) +
-        '  ' + brandShort +
-        ' (' + startedAgo + ')'
-      );
+    const events = buildEventLog(targetBrand, allTargetPrompts, targetForensics);
+
+    // Column widths
+    const W_TIME  = 8;
+    const W_AGENT = 16;
+    const W_TYPE  = 16;
+    const header  = '  ' + padR('TIME', W_TIME) + '  ' + padR('AGENT', W_AGENT) + '  ' + padR('EVENT', W_TYPE) + '  DETAILS';
+    console.log(header);
+    console.log('  ' + '─'.repeat(70));
+
+    events.forEach(ev => {
+      // Strip emoji from type for width calc, then add it back
+      const timeStr  = il(ev.time);
+      const agentStr = padR(ev.agent, W_AGENT);
+      const typeStr  = padR(ev.type, W_TYPE + 3); // +3 for emoji bytes
+      const row = '  ' + timeStr + '  ' + agentStr + '  ' + typeStr + '  ' + ev.details;
+      if (ev.live) {
+        console.log('\x1b[36m' + row + '\x1b[0m'); // cyan for live
+      } else {
+        console.log(row);
+      }
     });
-    const doneCount = chunks.filter(c => !c.inProgress).length;
-    const activeCount = chunks.filter(c => c.inProgress).length;
-    const totalDonePrompts = chunks.filter(c => !c.inProgress).reduce((s, c) => s + c.prompts.length, 0);
-    console.log('\n  ' + doneCount + ' chunks done (' + totalDonePrompts + ' prompts)' +
-      (activeCount > 0 ? '  |  ' + activeCount + ' chunk(s) running now' : '  |  all agents idle'));
+
+    const totalEvents = events.filter(e => !e.live).length;
+    const liveEvents  = events.filter(e => e.live).length;
+    console.log('\n  Total: ' + totalEvents + ' historical events' + (liveEvents > 0 ? ' + ' + liveEvents + ' live (cyan)' : ''));
   }
 
-  // ── SECTION 3: LIVE AGENT ACTIVITY ──────────────────────────────────────
-  sep('3. LIVE AGENT ACTIVITY  (what each agent is doing right now)');
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 3: LIVE AGENT STATUS
+  // ══════════════════════════════════════════════════════════════════════════
+  sep('3. LIVE AGENT STATUS  (occupation + inline errors)');
 
-  const TIMEOUT_PER_PROMPT_MS = 2.5 * 60 * 1000;
+  const runningBatches = (schedulesToday || []).filter(s => s.status === 'running');
+  const pendingBatches = (schedulesToday || []).filter(s => s.status === 'pending');
+
+  // Build claimed map per account
   const claimedByAccount = {};
   (claimedPrompts || []).forEach(p => {
     const email = p.chatgpt_accounts?.email || p.onboarding_claimed_account_id || 'unknown';
-    const short = email.split('@')[0];
-    if (!claimedByAccount[short]) claimedByAccount[short] = [];
-    claimedByAccount[short].push(p);
+    if (!claimedByAccount[email]) claimedByAccount[email] = [];
+    claimedByAccount[email].push(p);
   });
 
-  const runningBatches = (schedulesToday || []).filter(s => s.status === 'running');
+  // Get recent forensics for error display (last 30 min per account)
+  const recentForensicsAll = {};
+  await Promise.all(capacity.accounts.map(async a => {
+    const { data: af } = await supabase.from('automation_forensics')
+      .select('timestamp, connection_status, visual_state, event_type, notes')
+      .eq('chatgpt_account_email', a.email)
+      .gte('timestamp', new Date(Date.now() - 30 * 60 * 1000).toISOString())
+      .order('timestamp', { ascending: false })
+      .limit(5);
+    recentForensicsAll[a.email] = af || [];
+  }));
+
   let anyConcurrent = false;
 
   capacity.accounts.forEach(a => {
-    const short = a.email.split('@')[0];
-    const myBatch = runningBatches.find(s => s.chatgpt_accounts?.email === a.email);
-    const myPrompts = claimedByAccount[short] || [];
-    const nextBatch = (schedulesToday || []).find(s =>
-      s.chatgpt_accounts?.email === a.email && s.status === 'pending'
+    const myBatch     = runningBatches.find(s => s.chatgpt_accounts?.email === a.email);
+    const nextBatch   = pendingBatches.find(s => s.chatgpt_accounts?.email === a.email);
+    const myPrompts   = claimedByAccount[a.email] || [];
+    const myForensics = recentForensicsAll[a.email] || [];
+    const errors      = myForensics.filter(f => f.connection_status && f.connection_status !== 'Connected');
+    const lastReinit  = myForensics.find(f =>
+      (f.event_type || '').toLowerCase().includes('init') ||
+      (f.notes || '').toLowerCase().includes('reinit')
     );
-    const nextBatchStr = nextBatch
-      ? 'next batch #' + nextBatch.batch_number + ' in ' + minsUntil(nextBatch.execution_time) + ' min  (' + nextBatch.batch_size + 'p @ ' + il(nextBatch.execution_time) + ')'
-      : 'no pending batches today';
 
-    const icon = a.state === 'FREE' ? '✅' : a.state === 'RESERVED' ? '⏳' : '🔴';
-    console.log('\n  ' + icon + ' ' + short.toUpperCase() + '  [' + a.state + ']  —  ' + nextBatchStr);
-
-    if (myBatch) {
-      const runningForMs = myBatch.execution_time ? Date.now() - new Date(myBatch.execution_time).getTime() : null;
-      console.log('    📋 DAILY BATCH #' + myBatch.batch_number + '  |  ' + myBatch.batch_size + ' prompts  |  running for ' + (runningForMs != null ? dur(runningForMs) : '?'));
-      if (myPrompts.length > 0) { anyConcurrent = true; console.log('    ⚡ CONCURRENT: daily batch + onboarding running simultaneously!'); }
+    // Determine occupation
+    let occupation;
+    if (myBatch && myPrompts.length > 0) {
+      occupation = 'DAILY_BATCH(' + myBatch.batch_size + 'p) + CHUNK(' + myPrompts.length + 'p,w' + ([...new Set(myPrompts.map(p => p.onboarding_wave))].sort().join('+') || '?') + ')';
+      anyConcurrent = true;
+    } else if (myBatch) {
+      const batchElapsedMs = myBatch.execution_time ? Date.now() - new Date(myBatch.execution_time).getTime() : null;
+      occupation = 'DAILY_BATCH(' + myBatch.batch_size + 'p)  running ' + (batchElapsedMs != null ? dur(batchElapsedMs) : '?');
+    } else if (myPrompts.length > 0) {
+      const waves = [...new Set(myPrompts.map(p => p.onboarding_wave))].sort().join('+');
+      const startMs = Math.min(...myPrompts.map(p => new Date(p.onboarding_claimed_at || Date.now()).getTime()));
+      const chunkAgeMs = Date.now() - startMs;
+      const chunkTimeoutMs = CONNECT_TIME_MS + (myPrompts.length * TIMEOUT_PER_PROMPT_MS);
+      const timeoutPct = Math.round((chunkAgeMs / chunkTimeoutMs) * 100);
+      const warn = timeoutPct >= 80 ? '  ⚠️ TIMEOUT IMMINENT' : timeoutPct >= 60 ? '  ⚠️ approaching timeout' : '';
+      occupation = 'CHUNK(' + myPrompts.length + 'p,w' + (waves||'?') + ')  ' + dur(chunkAgeMs) + ' / ' + dur(chunkTimeoutMs) + ' (' + timeoutPct + '%)' + warn;
+    } else if (lastReinit && (Date.now() - new Date(lastReinit.timestamp).getTime()) < 10 * 60 * 1000) {
+      occupation = 'REINIT  (session init ' + ago(lastReinit.timestamp) + ')';
+    } else {
+      occupation = 'IDLE';
     }
 
+    const icon = myPrompts.length > 0 || myBatch ? '🔵' : a.state === 'FREE' ? '✅' : '⏳';
+    const nextStr = nextBatch
+      ? '  |  next batch #' + nextBatch.batch_number + ' in ' + minsUntil(nextBatch.execution_time) + 'min'
+      : '';
+    console.log('\n  ' + icon + ' ' + a.email.split('@')[0].toUpperCase() + '  [' + a.state + ']  →  ' + occupation + nextStr);
+
+    // Per-prompt detail for onboarding chunks
     if (myPrompts.length > 0) {
-      const sorted = [...myPrompts].sort((a, b) => new Date(a.onboarding_claimed_at) - new Date(b.onboarding_claimed_at));
-      const chunkStartMs = new Date(sorted[0].onboarding_claimed_at).getTime();
-      const chunkAgeMs = Date.now() - chunkStartMs;
-      const chunkTimeoutMs = myPrompts.length * TIMEOUT_PER_PROMPT_MS;
-      const timeoutPct = Math.round((chunkAgeMs / chunkTimeoutMs) * 100);
-      const timeoutWarn = timeoutPct >= 80 ? '  ⚠️  TIMEOUT IMMINENT' : timeoutPct >= 60 ? '  ⚠️  approaching timeout' : '';
-      const brands = [...new Set(myPrompts.map(p => p.brands?.name || '?'))].join(', ');
-      console.log('    🧠 ONBOARDING CHUNK  |  brand: ' + brands +
-        '  |  ' + myPrompts.length + ' prompt' + (myPrompts.length > 1 ? 's' : '') +
-        '  |  chunk running ' + dur(chunkAgeMs) + '  /  timeout ' + dur(chunkTimeoutMs) + ' (' + timeoutPct + '%)' + timeoutWarn);
+      const sorted = [...myPrompts].sort((a, b) =>
+        new Date(a.onboarding_claimed_at || 0) - new Date(b.onboarding_claimed_at || 0)
+      );
+      const chunkStartMs = new Date(sorted[0].onboarding_claimed_at || Date.now()).getTime();
+      const chunkAgeMs   = Date.now() - chunkStartMs;
+
       sorted.forEach((p, i) => {
-        const promptAgeMs = Date.now() - new Date(p.onboarding_claimed_at).getTime();
-        const text = (p.improved_prompt || p.raw_prompt || '(no text)').substring(0, 65);
-        const ellipsis = (p.improved_prompt || p.raw_prompt || '').length > 65 ? '…' : '';
-        const waveTag = p.onboarding_wave ? ' [w' + p.onboarding_wave + ']' : '';
-        console.log('       #' + (i + 1) + waveTag + '  ' + dur(promptAgeMs) + '  "' + text + ellipsis + '"' + (promptAgeMs > TIMEOUT_PER_PROMPT_MS ? '  ⏱ OVER 2.5min' : ''));
+        const text     = (p.improved_prompt || p.raw_prompt || '(no text)').substring(0, 60);
+        const ellipsis = (p.improved_prompt || p.raw_prompt || '').length > 60 ? '…' : '';
+        const wTag     = p.onboarding_wave ? ' [w' + p.onboarding_wave + ']' : '';
+        const promptExpectedStart = CONNECT_TIME_MS + (i * TIMEOUT_PER_PROMPT_MS);
+        const promptExpectedEnd   = promptExpectedStart + TIMEOUT_PER_PROMPT_MS;
+        let state;
+        if      (chunkAgeMs < CONNECT_TIME_MS)         state = i === 0 ? '⏳ connecting...' : '⌚ queued';
+        else if (chunkAgeMs < promptExpectedStart)     state = '⌚ queued';
+        else if (chunkAgeMs < promptExpectedEnd)       state = '⚙️  executing';
+        else                                            state = '⚠️  overdue';
+        console.log('     #' + (i + 1) + wTag + '  ' + state + '  "' + text + ellipsis + '"');
       });
     }
 
-    if (!myBatch && myPrompts.length === 0) console.log('    💤 idle');
+    // Inline errors (last 30 min)
+    if (errors.length > 0) {
+      console.log('     🔴 Errors (last 30 min): ' + errors.length);
+      errors.slice(0, 3).forEach(f => {
+        console.log('       ' + il(f.timestamp) + '  ' + (f.visual_state || '').padEnd(14) + '  ' + (f.notes || f.connection_status || '').substring(0, 55));
+      });
+    }
+
+    if (!myBatch && myPrompts.length === 0 && errors.length === 0) {
+      console.log('     💤 idle — no errors in last 30 min');
+    }
   });
 
   if (anyConcurrent) console.log('\n  ⚡⚡⚡ WARNING: concurrent daily + onboarding detected!');
-  else if (capacity.accounts.length > 0) console.log('\n  ✅ No concurrent violations');
 
-  // ── SECTION 4: PHASE GATE CHECKS ────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 4: PHASE GATE CHECKS
+  // ══════════════════════════════════════════════════════════════════════════
   sep('4. PHASE GATE CHECKS');
 
   const { count: wave0Count } = await supabase.from('brand_prompts')
     .select('id', { count: 'exact', head: true })
     .is('onboarding_wave', null)
     .neq('onboarding_status', 'completed');
-  console.log('  Prompts with NULL wave (should be 0) : ' + (wave0Count || 0) + (wave0Count > 0 ? '  ⚠️  wave assignment may not have run!' : '  ✅'));
+  console.log('  NULL-wave prompts (should be 0): ' + (wave0Count || 0) + (wave0Count > 0 ? '  ⚠️  wave assignment may not have run!' : '  ✅'));
 
   for (const brand of (activeBrands || [])) {
     const { count: w1ClaimedCheck } = await supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 1).eq('onboarding_status', 'claimed');
     const { count: w1TotalCheck }   = await supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 1);
     if ((w1ClaimedCheck || 0) > 6) {
-      console.log('  ⚠️  ' + brand.name + ': wave-1 over-claimed! ' + w1ClaimedCheck + ' claimed (max 6)');
+      console.log('  ⚠️  ' + brand.name + ': wave-1 over-claimed! ' + w1ClaimedCheck + ' (max 6)');
     } else {
-      console.log('  Wave-1 claim check "' + brand.name + '": ' + (w1ClaimedCheck||0) + ' claimed  (total wave-1=' + (w1TotalCheck||0) + ')  ✅');
+      console.log('  Wave-1 "' + brand.name + '": ' + (w1ClaimedCheck||0) + ' claimed / ' + (w1TotalCheck||0) + ' total  ✅');
     }
-    if (brand.first_report_status === 'running' || brand.first_report_status === 'queued') {
-      const { count: w2ClaimedEarly } = await supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 2).eq('onboarding_status', 'claimed');
-      if ((w2ClaimedEarly || 0) > 0) {
-        console.log('  ⚠️  ' + brand.name + ': wave-2 prompts claimed during Phase 1! (' + w2ClaimedEarly + ' claimed — phase gate broken)');
+    if (['running','queued'].includes(brand.first_report_status)) {
+      const { count: w2Early } = await supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', brand.id).eq('onboarding_wave', 2).eq('onboarding_status', 'claimed');
+      if ((w2Early || 0) > 0) {
+        console.log('  ⚠️  ' + brand.name + ': wave-2 claimed during Phase 1! (' + w2Early + ') — gate broken');
       } else {
-        console.log('  Wave-2 gate "' + brand.name + '" (Phase 1): ' + (w2ClaimedEarly||0) + ' wave-2 claimed  ✅ gate holding');
+        console.log('  Wave-2 gate "' + brand.name + '" (Phase 1): 0 claimed  ✅ gate holding');
       }
     }
   }
 
-  // ── SECTION 5: TIMING ANALYSIS ──────────────────────────────────────────
-  sep('5. TIMING ANALYSIS  (actual vs assumed 2.5 min/prompt)');
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 5: TODAY BATCH OVERVIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  sep('5. TODAY BATCH OVERVIEW  (' + today + ')');
 
-  const timings = (recentCompleted || [])
-    .filter(p => p.onboarding_claimed_at && p.updated_at)
-    .map(p => ({
-      ms: new Date(p.updated_at).getTime() - new Date(p.onboarding_claimed_at).getTime(),
-      wave: p.onboarding_wave || '?',
-      brand: p.brands?.name || '?',
-    }))
-    .filter(t => t.ms > 0 && t.ms < 30 * 60 * 1000);
+  const totalDone    = (schedulesToday || []).filter(s => s.status === 'completed').reduce((s, b) => s + b.batch_size, 0);
+  const totalRunning = (schedulesToday || []).filter(s => s.status === 'running').reduce((s, b) => s + b.batch_size, 0);
+  const totalPending = (schedulesToday || []).filter(s => s.status === 'pending').reduce((s, b) => s + b.batch_size, 0);
+  console.log('  Batches: ' + (schedulesToday||[]).length + ' total  |  prompts: ✅' + totalDone + ' done  🔄' + totalRunning + ' running  ⏳' + totalPending + ' pending');
 
-  if (timings.length === 0) {
-    console.log('  No completed prompts with timing data yet');
-  } else {
-    const assumed = 2.5 * 60 * 1000;
-    const avgMs = timings.reduce((s, t) => s + t.ms, 0) / timings.length;
-    const minMs = Math.min(...timings.map(t => t.ms));
-    const maxMs = Math.max(...timings.map(t => t.ms));
-    const diff = avgMs - assumed;
-    const diffStr = Math.abs(diff) > 10000
-      ? '  ← ' + (diff > 0 ? '+' + dur(diff) + ' SLOWER' : dur(-diff) + ' FASTER') + ' than 2.5 min target'
-      : '  ← on target ✅';
-    const w1Timings = timings.filter(t => t.wave === 1);
-    const w2Timings = timings.filter(t => t.wave === 2);
-    console.log('  Total sample : ' + timings.length + ' prompts  (' + w1Timings.length + ' wave-1, ' + w2Timings.length + ' wave-2)');
-    console.log('  Average      : ' + dur(avgMs) + diffStr);
-    console.log('  Range        : ' + dur(minMs) + ' – ' + dur(maxMs));
-    if (w1Timings.length > 0) console.log('  Wave-1 avg   : ' + dur(w1Timings.reduce((s,t)=>s+t.ms,0)/w1Timings.length));
-    if (w2Timings.length > 0) console.log('  Wave-2 avg   : ' + dur(w2Timings.reduce((s,t)=>s+t.ms,0)/w2Timings.length));
-    console.log('\n  Last ' + Math.min(8, timings.length) + ' completed:');
-    timings.slice(0, 8).forEach((t, i) => {
-      const flag = t.ms > assumed * 1.4 ? ' ⚠️  SLOW' : t.ms < assumed * 0.6 ? ' ⚡ fast' : '';
-      console.log('    #' + (i+1) + ' wave' + t.wave + '  ' + t.brand.substring(0,14).padEnd(14) + '  ' + dur(t.ms) + flag);
+  const next5 = (schedulesToday || []).filter(s => ['pending','running'].includes(s.status)).slice(0, 5);
+  if (next5.length > 0) {
+    console.log('\n  Next 5:');
+    next5.forEach(s => {
+      const icon = s.status === 'running' ? '🔄' : '⏳';
+      const mins = minsUntil(s.execution_time);
+      const agent = (s.chatgpt_accounts?.email || '?').split('@')[0];
+      console.log('    ' + icon + ' #' + String(s.batch_number).padStart(2) + '  ' + il(s.execution_time) + '  (' + (mins === 0 ? 'NOW' : 'in ' + mins + 'min') + ')  ' + s.batch_size + 'p  →  ' + agent);
     });
   }
 
-  // ── SECTION 6: STATE TRANSITIONS ────────────────────────────────────────
-  sep('6. STATE TRANSITIONS  (last 60 min, per account)');
-
-  capacity.accounts.forEach(a => {
-    const short = a.email.split('@')[0];
-    const events = (recentForensics || []).filter(f => f.chatgpt_account_email === a.email).slice(0, 12).reverse();
-    if (events.length === 0) { console.log('\n  ' + short + ': no forensic events in last 60 min'); return; }
-    console.log('\n  ' + short + ':');
-    let prevTime = null;
-    events.forEach(f => {
-      const sinceLastMs = prevTime ? new Date(f.timestamp).getTime() - new Date(prevTime).getTime() : null;
-      const durStr = sinceLastMs !== null ? ' (+' + dur(sinceLastMs) + ')' : '';
-      const conn = f.connection_status === 'Connected' ? '🟢' : '🔴';
-      console.log('    ' + il(f.timestamp) + durStr + '  ' + conn + '  ' + (f.visual_state||'?').padEnd(16) + '  ' + (f.event_type||'').padEnd(22) + (f.notes ? f.notes.substring(0,35) : ''));
-      prevTime = f.timestamp;
-    });
-  });
-
-  // ── SECTION 7: TARGET USER ───────────────────────────────────────────────
-  sep('7. TARGET USER: ' + targetEmail);
-
-  const { data: authList } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  const authUser = (authList?.users || []).find(u => u.email === targetEmail);
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SECTION 6: TARGET USER DETAILS
+  // ══════════════════════════════════════════════════════════════════════════
+  sep('6. TARGET USER: ' + resolvedEmail);
 
   if (!authUser) {
     console.log('  ❌ Not found in auth.users');
@@ -467,24 +640,21 @@ async function main() {
     const [{ data: userRow }, { data: brands }] = await Promise.all([
       supabase.from('users').select('id, email, subscription_plan, reports_enabled').eq('id', authUser.id).single(),
       supabase.from('brands')
-        .select('id, name, first_report_status, onboarding_completed, onboarding_prompts_sent, onboarding_phase, onboarding_daily_report_id, chatgpt_account_id, chatgpt_accounts(email), created_at, updated_at')
+        .select('id, name, first_report_status, onboarding_completed, onboarding_prompts_sent, onboarding_phase, onboarding_daily_report_id, chatgpt_accounts(email), created_at, updated_at')
         .eq('owner_user_id', authUser.id).eq('is_demo', false).order('created_at', { ascending: false }),
     ]);
-    console.log('  Auth confirmed : ' + (authUser.email_confirmed_at ? '✅ yes  (' + il(authUser.email_confirmed_at) + ')' : '❌ NOT confirmed'));
-    console.log('  Users table    : ' + (userRow ? '✅ plan=' + userRow.subscription_plan + '  reports_enabled=' + userRow.reports_enabled : '❌ NOT IN TABLE'));
-    console.log('  Auth ID        : ' + authUser.id);
+    console.log('  Auth confirmed: ' + (authUser.email_confirmed_at ? '✅ ' + il(authUser.email_confirmed_at) : '❌ NOT confirmed'));
+    console.log('  Users table   : ' + (userRow ? '✅ plan=' + userRow.subscription_plan + '  reports_enabled=' + userRow.reports_enabled : '❌ NOT IN TABLE'));
+    console.log('  Auth ID       : ' + authUser.id);
 
     for (const b of (brands || [])) {
-      console.log('\n  Brand: "' + b.name + '"');
-      console.log('    id              : ' + b.id);
-      console.log('    onboarding done : ' + (b.onboarding_completed ? '✅ yes' : '❌ no'));
-      console.log('    first_report    : ' + statusIcon(b.first_report_status));
-      console.log('    onboarding_phase: ' + (b.onboarding_phase || '(null)'));
-      console.log('    prompts_sent    : ' + (b.onboarding_prompts_sent || 0) + ' / 30');
-      console.log('    account         : ' + (b.chatgpt_accounts?.email || '(none)'));
-      console.log('    daily_report_id : ' + (b.onboarding_daily_report_id || '(none)'));
-      console.log('    created         : ' + il(b.created_at) + '  (' + ago(b.created_at) + ')');
-      console.log('    updated         : ' + il(b.updated_at) + '  (' + ago(b.updated_at) + ')');
+      const elapsedMs = Date.now() - new Date(b.created_at).getTime();
+      console.log('\n  Brand: "' + b.name + '"  id=' + b.id);
+      console.log('    status  : ' + statusIcon(b.first_report_status));
+      console.log('    started : ' + il(b.created_at) + '  (' + dur(elapsedMs) + ' ago)');
+      console.log('    updated : ' + il(b.updated_at));
+      console.log('    phase   : ' + (b.onboarding_phase || '(null)') + '  |  sent=' + (b.onboarding_prompts_sent || 0) + '/30');
+      console.log('    account : ' + (b.chatgpt_accounts?.email || '(none)'));
 
       const [
         { count: w1p }, { count: w1cl }, { count: w1co }, { count: w1f },
@@ -499,41 +669,25 @@ async function main() {
         supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', b.id).eq('onboarding_wave', 2).eq('onboarding_status', 'completed'),
         supabase.from('brand_prompts').select('id', { count: 'exact', head: true }).eq('brand_id', b.id).eq('onboarding_wave', 2).eq('onboarding_status', 'failed'),
       ]);
-      console.log('    wave-1 prompts  : ✅' + (w1co||0) + ' done  🔄' + (w1cl||0) + ' claimed  ⏳' + (w1p||0) + ' pending  ❌' + (w1f||0) + ' failed');
-      console.log('    wave-2 prompts  : ✅' + (w2co||0) + ' done  🔄' + (w2cl||0) + ' claimed  ⏳' + (w2p||0) + ' pending  ❌' + (w2f||0) + ' failed');
+      console.log('    wave-1  : ✅' + (w1co||0) + ' done  🔄' + (w1cl||0) + ' claimed  ⏳' + (w1p||0) + ' pending  ❌' + (w1f||0) + ' failed');
+      console.log('    wave-2  : ✅' + (w2co||0) + ' done  🔄' + (w2cl||0) + ' claimed  ⏳' + (w2p||0) + ' pending  ❌' + (w2f||0) + ' failed');
 
       if (b.onboarding_daily_report_id) {
-        const { data: dr } = await supabase.from('daily_reports').select('id, status, is_partial, report_date, visibility_score, completed_prompts_chatgpt, total_prompts').eq('id', b.onboarding_daily_report_id).single();
+        const { data: dr } = await supabase.from('daily_reports').select('id, status, is_partial, report_date, visibility_score').eq('id', b.onboarding_daily_report_id).single();
         if (dr) {
-          console.log('    daily_report    : date=' + dr.report_date + '  status=' + dr.status + '  ' + (dr.is_partial ? '⚠ PARTIAL' : '✅ COMPLETE') + (dr.visibility_score != null ? '  score=' + dr.visibility_score.toFixed(1) : '  (no score yet)'));
+          const score = dr.visibility_score != null ? '  score=' + dr.visibility_score.toFixed(1) : '';
+          console.log('    report  : ' + dr.report_date + '  ' + dr.status + '  ' + (dr.is_partial ? '⚠ PARTIAL' : '✅ COMPLETE') + score);
         } else {
-          console.log('    daily_report    : ❌ ID set but row not found!');
+          console.log('    report  : ❌ ID set but row missing');
         }
+      } else {
+        console.log('    report  : (none)');
       }
     }
-    if (!brands || brands.length === 0) console.log('  No non-demo brands found for this user');
+    if (!brands || brands.length === 0) console.log('  No non-demo brands found');
   }
 
-  // ── SECTION 8: TODAY BATCH OVERVIEW ─────────────────────────────────────
-  sep('8. TODAY BATCH OVERVIEW  (' + today + ')');
-
-  const totalPending = (schedulesToday || []).filter(s => s.status === 'pending').reduce((sum, s) => sum + s.batch_size, 0);
-  const totalDone    = (schedulesToday || []).filter(s => s.status === 'completed').reduce((sum, s) => sum + s.batch_size, 0);
-  const totalRunning = (schedulesToday || []).filter(s => s.status === 'running').reduce((sum, s) => sum + s.batch_size, 0);
-  console.log('  ' + totalDone + ' prompts done  |  ' + totalRunning + ' running  |  ' + totalPending + ' pending  |  ' + (schedulesToday || []).length + ' total batches');
-
-  const next5 = (schedulesToday || []).filter(s => s.status === 'pending' || s.status === 'running').slice(0, 5);
-  if (next5.length > 0) {
-    console.log('\n  Next 5 batches:');
-    next5.forEach(s => {
-      const short = (s.chatgpt_accounts?.email || '?').split('@')[0];
-      const icon = s.status === 'running' ? '🔄' : '⏳';
-      const minsAway = minsUntil(s.execution_time);
-      console.log('    ' + icon + ' Batch #' + String(s.batch_number).padStart(2) + '  ' + il(s.execution_time) + '  (' + (minsAway === 0 ? 'NOW' : 'in ' + minsAway + 'min') + ')  ' + s.batch_size + 'p  →  ' + short);
-    });
-  }
-
-  console.log('\n' + '═'.repeat(70) + '\n');
+  console.log('\n' + '═'.repeat(72) + '\n');
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

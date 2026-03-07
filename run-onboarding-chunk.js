@@ -31,7 +31,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const PROMPT_TIMEOUT_MS = 2.5 * 60 * 1000; // 2.5 min per prompt — agent owns the timeout
+const PROMPT_TIMEOUT_MS = 2.5 * 60 * 1000; // 2.5 min per prompt
+const CONNECT_TIME_MS   = 90 * 1000;        // 90s connection overhead budget (added once per chunk)
 
 const BRAND_ID        = process.env.BRAND_ID;
 const DAILY_REPORT_ID = process.env.DAILY_REPORT_ID;
@@ -53,22 +54,36 @@ if (!BRAND_ID || !DAILY_REPORT_ID || !REPORT_DATE || !Array.isArray(chunkPrompts
   process.exit(1);
 }
 
+// Bug fix: retry 3x with 2s delay and log errors — previously silently swallowed errors
 async function markRemainingFailed() {
   const promptIds = chunkPrompts.map(p => p.id);
-  await supabase
-    .from('brand_prompts')
-    .update({ onboarding_status: 'failed', onboarding_claimed_account_id: null, onboarding_claimed_at: null })
-    .in('id', promptIds)
-    .eq('onboarding_status', 'claimed'); // only ones still claimed — completed ones are untouched
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await supabase
+      .from('brand_prompts')
+      .update({ onboarding_status: 'failed', onboarding_claimed_account_id: null, onboarding_claimed_at: null })
+      .in('id', promptIds)
+      .eq('onboarding_status', 'claimed') // only still-claimed ones — completed are untouched
+      .select('id');
+    if (!error) {
+      console.log('[CHUNK] markRemainingFailed: marked', data?.length ?? 0, 'prompt(s) as failed');
+      return;
+    }
+    console.error('[CHUNK] markRemainingFailed attempt', attempt, 'failed:', error.message);
+    if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+  }
+  console.error('[CHUNK] markRemainingFailed: all 3 attempts failed — prompts may stay stuck as claimed');
 }
 
 async function runChunk() {
-  const chunkTimeoutMs = chunkPrompts.length * PROMPT_TIMEOUT_MS;
+  // Bug fix: add CONNECT_TIME_MS so single-prompt chunks don't timeout before execution starts.
+  // Old: chunkPrompts.length * 2.5min  (e.g. 1 prompt = 2.5min — connection eats 1min, leaving 1.5min)
+  // New: 90s + chunkPrompts.length * 2.5min (e.g. 1 prompt = 4min — plenty of room)
+  const chunkTimeoutMs = CONNECT_TIME_MS + chunkPrompts.length * PROMPT_TIMEOUT_MS;
 
   console.log('='.repeat(60));
   console.log('[CHUNK] Account:', process.env.CHATGPT_ACCOUNT_EMAIL);
   console.log('[CHUNK] Brand:', BRAND_ID, '— Wave:', ONBOARDING_WAVE, '— Prompts:', chunkPrompts.length);
-  console.log('[CHUNK] Timeout:', (chunkTimeoutMs / 60000).toFixed(1) + ' min for this chunk');
+  console.log('[CHUNK] Timeout:', (chunkTimeoutMs / 60000).toFixed(1) + ' min (' + (CONNECT_TIME_MS/1000) + 's connect + ' + chunkPrompts.length + 'x' + (PROMPT_TIMEOUT_MS/60000) + 'min)');
   console.log('[CHUNK] Prompt IDs:', chunkPrompts.map(p => p.id.substring(0, 8)).join(', '));
   console.log('='.repeat(60));
 
@@ -120,7 +135,7 @@ async function runChunk() {
     },
   });
 
-  // Agent-owned timeout: if executeBatch doesn't finish in chunkSize * 2.5 min, we give up
+  // Agent-owned timeout: if executeBatch doesn't finish in time, we give up
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('CHUNK_TIMEOUT')), chunkTimeoutMs)
   );

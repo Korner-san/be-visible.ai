@@ -1,6 +1,7 @@
 const http = require('http');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const PORT = 3001;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-key-here';
@@ -44,13 +45,17 @@ const server = http.createServer(async (req, res) => {
       // Immediately runs the queue-organizer to start processing pending prompts.
       if (req.url === '/run-queue-organizer' || req.url === '/run-queue-checker') {
         console.log('[WEBHOOK]', req.url, 'triggered');
+        const orgLogPath2 = `/tmp/queue-org-${Date.now()}.log`;
+        const orgLogFd2 = fs.openSync(orgLogPath2, 'w');
         const proc = spawn('node', [path.join(__dirname, 'worker/queue-organizer.js')], {
           env: { ...process.env },
           cwd: path.join(__dirname, 'worker'),
           detached: true,
-          stdio: 'ignore',
+          stdio: ['ignore', orgLogFd2, orgLogFd2],
         });
+        try { fs.closeSync(orgLogFd2); } catch (e) {}
         proc.unref();
+        console.log('[WEBHOOK] Queue organizer log →', orgLogPath2);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Queue organizer triggered' }));
         return;
@@ -62,13 +67,17 @@ const server = http.createServer(async (req, res) => {
       if (req.url === '/chunk-complete') {
         const { brandId, wave } = payload;
         console.log('[WEBHOOK] /chunk-complete for brand:', brandId, 'wave:', wave);
+        const orgLogPath = `/tmp/queue-org-${Date.now()}.log`;
+        const orgLogFd = fs.openSync(orgLogPath, 'w');
         const proc = spawn('node', [path.join(__dirname, 'worker/queue-organizer.js')], {
           env: { ...process.env },
           cwd: path.join(__dirname, 'worker'),
           detached: true,
-          stdio: 'ignore',
+          stdio: ['ignore', orgLogFd, orgLogFd],
         });
+        try { fs.closeSync(orgLogFd); } catch (e) {}
         proc.unref();
+        console.log('[WEBHOOK] Queue organizer log →', orgLogPath);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Queue organizer triggered by chunk-complete' }));
         return;

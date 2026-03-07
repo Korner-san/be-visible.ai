@@ -6,17 +6,21 @@
  *
  * Responsibilities:
  * 1. Brand Analysis - Analyze ALL responses for brand mentions
- * 2. Citation Processing - Extract and classify ALL URLs with Tavily (Phase 2 only)
+ * 2. Citation Processing - Extract and classify ALL URLs with Tavily
  * 3. Report Aggregation - Calculate final stats
  * 4. Visibility Score
- * 5. Share of Voice (Phase 2 only)
- * 6. Citation Share (Phase 2 only)
- * 7. Competitor Metrics (Phase 2 only)
+ * 5. Share of Voice
+ * 6. Citation Share
+ * 7. Competitor Metrics
  * 8. Finalization
  *
  * options.phase:
- *   1 = Phase 1 partial (first 6 prompts) — runs phases 1+3+4 only, keeps is_partial=true
- *   2 = Full (all 30 prompts, default) — runs all phases, sets is_partial=false
+ *   1 = Phase 1 (first 6 prompts) — runs FULL pipeline, keeps is_partial=true
+ *   2 = Phase 2 / Full (all 30 prompts, default) — runs FULL pipeline, sets is_partial=false
+ *
+ * Both phases run the IDENTICAL pipeline. The only difference is:
+ *   Phase 1: is_partial=true  (partial banner shown, wave 2 still pending)
+ *   Phase 2: is_partial=false (report fully complete)
  */
 
 require('dotenv').config();
@@ -48,7 +52,7 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
   console.log('🌙 END-OF-DAY PROCESSOR' + (isPartialRun ? ' [PHASE 1 — PARTIAL]' : ' [PHASE 2 — FULL]'));
   console.log('='.repeat(70));
   console.log('Daily Report ID: ' + dailyReportId);
-  console.log('Phase: ' + phase + (isPartialRun ? ' (brand analysis + visibility score only)' : ' (full pipeline)'));
+  console.log('Phase: ' + phase + (isPartialRun ? ' (6 prompts — full pipeline, is_partial=true)' : ' (30 prompts — full pipeline, is_partial=false)'));
   console.log('Providers: ' + providers.join(', '));
   console.log('='.repeat(70) + '\n');
 
@@ -77,18 +81,14 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
     const analysisResult = await brandAnalyzer.analyzeResults(dailyReportId, providers);
     console.log('✅ Phase 1 complete: analyzed=' + analysisResult.analyzed + ', mentioned=' + analysisResult.brandMentioned);
 
-    // PHASE 2: CITATION PROCESSING (Phase 2 / full only)
-    if (!isPartialRun) {
-      console.log('\n🔗 PHASE 2: CITATION PROCESSING');
-      console.log('─'.repeat(70));
-      try {
-        const citationResult = await citationProcessor.processDailyReportCitations(dailyReportId);
-        console.log('✅ Phase 2 complete: citations=' + (citationResult.totalCitations || 0) + ', extracted=' + (citationResult.extracted || 0));
-      } catch (citationError) {
-        console.error('⚠️  Phase 2 failed (non-blocking):', citationError.message);
-      }
-    } else {
-      console.log('\n⏭️  PHASE 2: CITATION PROCESSING — skipped (Phase 1 partial run)');
+    // PHASE 2: CITATION PROCESSING (always runs)
+    console.log('\n🔗 PHASE 2: CITATION PROCESSING');
+    console.log('─'.repeat(70));
+    try {
+      const citationResult = await citationProcessor.processDailyReportCitations(dailyReportId);
+      console.log('✅ Phase 2 complete: citations=' + (citationResult.totalCitations || 0) + ', extracted=' + (citationResult.extracted || 0));
+    } catch (citationError) {
+      console.error('⚠️  Phase 2 failed (non-blocking):', citationError.message);
     }
 
     // PHASE 3: REPORT AGGREGATION (always runs)
@@ -112,38 +112,34 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
       console.error('⚠️  Phase 4 failed (non-blocking):', scoreError.message);
     }
 
-    // PHASE 5: SHARE OF VOICE (Phase 2 / full only)
-    if (!isPartialRun) {
-      console.log('\n📊 PHASE 5: SHARE OF VOICE');
-      console.log('─'.repeat(70));
-      try {
-        const sovResult = await shareOfVoiceCalculator.calculateShareOfVoice(dailyReportId);
-        console.log('✅ Phase 5 complete: entities=' + (sovResult.totalEntities || 0) + ', brandShare=' + (sovResult.brandShare || 0) + '%');
-      } catch (sovError) {
-        console.error('⚠️  Phase 5 failed (non-blocking):', sovError.message);
-      }
+    // PHASE 5: SHARE OF VOICE (always runs)
+    console.log('\n📊 PHASE 5: SHARE OF VOICE');
+    console.log('─'.repeat(70));
+    try {
+      const sovResult = await shareOfVoiceCalculator.calculateShareOfVoice(dailyReportId);
+      console.log('✅ Phase 5 complete: entities=' + (sovResult.totalEntities || 0) + ', brandShare=' + (sovResult.brandShare || 0) + '%');
+    } catch (sovError) {
+      console.error('⚠️  Phase 5 failed (non-blocking):', sovError.message);
+    }
 
-      // PHASE 6: CITATION SHARE
-      console.log('\n📊 PHASE 6: CITATION SHARE');
-      console.log('─'.repeat(70));
-      try {
-        const citationShareResult = await citationShareCalculator.calculateCitationShare(dailyReportId);
-        console.log('✅ Phase 6 complete: brandRank=#' + citationShareResult.brandRank + ', share=' + citationShareResult.brandShare + '%');
-      } catch (citationShareError) {
-        console.error('⚠️  Phase 6 failed (non-blocking):', citationShareError.message);
-      }
+    // PHASE 6: CITATION SHARE (always runs)
+    console.log('\n📊 PHASE 6: CITATION SHARE');
+    console.log('─'.repeat(70));
+    try {
+      const citationShareResult = await citationShareCalculator.calculateCitationShare(dailyReportId);
+      console.log('✅ Phase 6 complete: brandRank=#' + citationShareResult.brandRank + ', share=' + citationShareResult.brandShare + '%');
+    } catch (citationShareError) {
+      console.error('⚠️  Phase 6 failed (non-blocking):', citationShareError.message);
+    }
 
-      // PHASE 7: COMPETITOR METRICS
-      console.log('\n📊 PHASE 7: COMPETITOR METRICS');
-      console.log('─'.repeat(70));
-      try {
-        const compResult = await competitorMetricsCalculator.calculateCompetitorMetrics(dailyReportId);
-        console.log('✅ Phase 7 complete: competitors=' + (compResult.competitorCount || 0));
-      } catch (compError) {
-        console.error('⚠️  Phase 7 failed (non-blocking):', compError.message);
-      }
-    } else {
-      console.log('\n⏭️  PHASES 5-7: SOV/Citation Share/Competitor Metrics — skipped (Phase 1 partial run)');
+    // PHASE 7: COMPETITOR METRICS (always runs)
+    console.log('\n📊 PHASE 7: COMPETITOR METRICS');
+    console.log('─'.repeat(70));
+    try {
+      const compResult = await competitorMetricsCalculator.calculateCompetitorMetrics(dailyReportId);
+      console.log('✅ Phase 7 complete: competitors=' + (compResult.competitorCount || 0));
+    } catch (compError) {
+      console.error('⚠️  Phase 7 failed (non-blocking):', compError.message);
     }
 
     // PHASE 8: FINALIZATION
@@ -151,19 +147,34 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
     console.log('─'.repeat(70));
 
     if (!isPartialRun) {
-      // Full run: mark as complete
+      // Phase 2 / full run: fully complete the daily report
       await supabase
         .from('daily_reports')
         .update({ status: 'completed', is_partial: false })
         .eq('id', dailyReportId);
       console.log('✅ Daily report marked as completed, is_partial=false');
+
+      // Self-contained: mark brand as succeeded directly here.
+      // Do NOT rely on queue-organizer to do this — if EOD was triggered manually
+      // or queue-organizer crashes after calling EOD, the brand would be stuck at phase1_complete.
+      const { error: brandErr } = await supabase
+        .from('brands')
+        .update({ first_report_status: 'succeeded' })
+        .eq('id', report.brand_id)
+        .in('first_report_status', ['phase1_complete', 'running', 'queued']);
+      if (brandErr) {
+        console.error('⚠️  Failed to set brand succeeded (non-fatal):', brandErr.message);
+      } else {
+        console.log('✅ Brand first_report_status → succeeded');
+      }
     } else {
-      // Partial run: keep status running, mark partial
+      // Phase 1: mark completed so dashboard queries find it, keep is_partial=true
+      // Phase 2 EOD will re-run the full pipeline with all 30 prompts and set is_partial=false
       await supabase
         .from('daily_reports')
-        .update({ is_partial: true })
+        .update({ status: 'completed', is_partial: true })
         .eq('id', dailyReportId);
-      console.log('✅ Daily report kept as running, is_partial=true (Phase 2 will complete it)');
+      console.log('✅ Daily report marked as completed, is_partial=true (Phase 2 will re-run with all 30 prompts)');
     }
 
     const endTime = new Date();

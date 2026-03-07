@@ -92,58 +92,50 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
       try {
         const { current, previous } = getDateRanges(timeRange);
 
-        // Get daily report IDs for current period
-        const { data: currentReports } = await supabase
-          .from('daily_reports')
-          .select('id')
+        // Step 1: Always load the brand's active prompts — show them even before any results exist
+        const { data: brandPrompts, error: promptsError } = await supabase
+          .from('brand_prompts')
+          .select('id, raw_prompt, improved_prompt')
           .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .gte('report_date', current.from)
-          .lte('report_date', current.to);
+          .eq('status', 'active')
+          .order('improved_prompt', { ascending: true }); // alphabetical default
 
-        // Get daily report IDs for previous period
-        const { data: previousReports } = await supabase
-          .from('daily_reports')
-          .select('id')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .gte('report_date', previous.from)
-          .lte('report_date', previous.to);
+        if (promptsError || !brandPrompts || brandPrompts.length === 0) {
+          setHasRealData(false);
+          return;
+        }
+
+        // Step 2: Get daily report IDs for current and previous periods
+        const [{ data: currentReports }, { data: previousReports }] = await Promise.all([
+          supabase.from('daily_reports').select('id').eq('brand_id', brandId).eq('status', 'completed')
+            .gte('report_date', current.from).lte('report_date', current.to),
+          supabase.from('daily_reports').select('id').eq('brand_id', brandId).eq('status', 'completed')
+            .gte('report_date', previous.from).lte('report_date', previous.to),
+        ]);
 
         const currentIds = (currentReports || []).map((r: any) => r.id);
         const previousIds = (previousReports || []).map((r: any) => r.id);
 
-        if (currentIds.length === 0) {
-          setHasRealData(false);
-          return;
-        }
+        // Step 3: Build score map — default 0 for every prompt
+        const scoreMap: Record<string, { mentioned: number; total: number }> = {};
+        brandPrompts.forEach((p: any) => { scoreMap[p.id] = { mentioned: 0, total: 0 }; });
 
-        // Get all prompt results for current period with prompt text
-        const { data: currentResults, error } = await supabase
-          .from('prompt_results')
-          .select('brand_prompt_id, brand_mentioned, brand_prompts!inner(raw_prompt, improved_prompt)')
-          .in('daily_report_id', currentIds);
+        // Step 4: Overlay results if any completed reports exist
+        if (currentIds.length > 0) {
+          const { data: currentResults } = await supabase
+            .from('prompt_results')
+            .select('brand_prompt_id, brand_mentioned')
+            .in('daily_report_id', currentIds);
 
-        if (error || !currentResults || currentResults.length === 0) {
-          setHasRealData(false);
-          return;
-        }
-
-        // Group by prompt and calculate score (% mentioned)
-        const promptMap: Record<string, { text: string; mentioned: number; total: number }> = {};
-        for (const r of currentResults) {
-          const bp = r.brand_prompts as any;
-          const key = r.brand_prompt_id;
-          if (!promptMap[key]) {
-            const text = bp?.improved_prompt || bp?.raw_prompt || 'Unknown prompt';
-            const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
-            promptMap[key] = { text: `"${short}"`, mentioned: 0, total: 0 };
+          for (const r of (currentResults || [])) {
+            if (scoreMap[r.brand_prompt_id]) {
+              scoreMap[r.brand_prompt_id].total++;
+              if (r.brand_mentioned) scoreMap[r.brand_prompt_id].mentioned++;
+            }
           }
-          promptMap[key].total++;
-          if (r.brand_mentioned) promptMap[key].mentioned++;
         }
 
-        // Calculate previous period scores if we have data
+        // Step 5: Build previous period score map for trend arrows
         let prevScoreMap: Record<string, number> = {};
         if (previousIds.length > 0) {
           const { data: prevResults } = await supabase
@@ -165,22 +157,28 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           }
         }
 
-        // Build sorted list, take top 5
-        const scores: PromptScore[] = Object.entries(promptMap)
-          .map(([key, val]) => ({
-            promptText: val.text,
-            currentScore: val.total > 0 ? Math.round((val.mentioned / val.total) * 100) : 0,
-            previousScore: prevScoreMap[key] !== undefined ? prevScoreMap[key] : null,
-          }))
-          .sort((a, b) => b.currentScore - a.currentScore)
-          .slice(0, 5);
+        // Step 6: Build scores array for all prompts
+        const scores: PromptScore[] = brandPrompts.map((p: any) => {
+          const text = p.improved_prompt || p.raw_prompt || 'Unknown prompt';
+          const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
+          const agg = scoreMap[p.id];
+          const currentScore = agg.total > 0 ? Math.round((agg.mentioned / agg.total) * 100) : 0;
+          return {
+            promptText: `"${short}"`,
+            currentScore,
+            previousScore: prevScoreMap[p.id] !== undefined ? prevScoreMap[p.id] : null,
+          };
+        });
 
-        if (scores.length > 0) {
-          setPromptScores(scores);
-          setHasRealData(true);
-        } else {
-          setHasRealData(false);
+        // Step 7: Sort — high to low if any scores > 0, otherwise keep alphabetical order
+        const anyHasScore = scores.some(s => s.currentScore > 0);
+        if (anyHasScore) {
+          scores.sort((a, b) => b.currentScore - a.currentScore);
         }
+        // (already alphabetical from the DB query if all 0)
+
+        setPromptScores(scores.slice(0, 5));
+        setHasRealData(true);
       } catch (err) {
         console.error('Prompt score fetch error:', err);
         setHasRealData(false);
