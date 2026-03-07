@@ -285,6 +285,10 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
     fetchCompetitorMetrics();
   }, [brandId, timeRange]);
 
+  // Only show Incredibuild sample data in demo mode (no brandId). When a real
+  // brand is set but data isn't ready yet, show a "computing" empty state.
+  const showSample = !brandId;
+
   // Determine which data to show
   const pieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
   const centerPct = hasRealSov ? sovBrandPct : (showSample ? 45 : 0);
@@ -326,9 +330,6 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
 
   const isLoading = isLoadingSov || isLoadingMetrics;
   const hasAnyReal = hasRealSov || hasRealMetrics;
-  // Only show Incredibuild sample data in demo mode (no brandId). When a real
-  // brand is set but data isn't ready yet, show a "computing" empty state.
-  const showSample = !brandId;
 
   const ComputingPlaceholder = () => (
     <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">

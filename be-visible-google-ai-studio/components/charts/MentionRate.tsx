@@ -6,11 +6,13 @@ import { Loader2 } from 'lucide-react';
 interface MentionRateProps {
   value?: number;
   isLoading?: boolean;
+  brandId?: string | null;
 }
 
-export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLoading }) => {
+export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLoading, brandId }) => {
   const [mentionValue, setMentionValue] = useState(55);
-  const displayValue = propValue ?? mentionValue;
+  // When a real brand is set but no data yet, show 0 — never show fake 55% mock value
+  const displayValue = propValue ?? (brandId ? 0 : mentionValue);
   const [fillColor, setFillColor] = useState('#d5002b');
 
   // Palette from image: Purple (Darkest) -> Maroon -> Red -> Orange -> Yellow (Brightest)
@@ -119,7 +121,9 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLo
       </div>
 
       <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-4">
-         {propValue === undefined ? (
+         {propValue !== undefined ? (
+           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
+         ) : (
            <>
              <span className="text-[10px] font-black text-gray-400 uppercase w-8">Test</span>
              <input
@@ -132,8 +136,6 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLo
                style={{ accentColor: fillColor }}
              />
            </>
-         ) : (
-           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
          )}
       </div>
     </div>

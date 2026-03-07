@@ -192,7 +192,8 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
     fetchPromptScores();
   }, [brandId, timeRange]);
 
-  const data = hasRealData ? promptScores : MOCK_DATA;
+  // When a real brand is set but no data yet, show empty list — never show Incredibuild mock prompts
+  const data = hasRealData ? promptScores : (brandId ? [] : MOCK_DATA);
 
   return (
     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">

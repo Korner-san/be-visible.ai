@@ -226,10 +226,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavi
           currentScore={currentScore}
           trendPercent={trendPercent}
           isLoading={isLoadingVis}
+          brandId={brandId}
         />
       </div>
       <div className="col-span-12 lg:col-span-4 h-[340px]">
-        <MentionRate value={mentionRate} isLoading={isLoadingMention} />
+        <MentionRate value={mentionRate} isLoading={isLoadingMention} brandId={brandId} />
       </div>
 
       {/* Bottom Row: Distribution & Ranking - Balanced height */}

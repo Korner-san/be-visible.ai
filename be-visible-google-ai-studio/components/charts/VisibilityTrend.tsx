@@ -25,11 +25,14 @@ interface VisibilityTrendProps {
   currentScore?: number;
   trendPercent?: number;
   isLoading?: boolean;
+  brandId?: string | null;
 }
 
-export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData, currentScore, trendPercent, isLoading }) => {
-  const data = propData && propData.length > 0 ? propData : mockData;
-  const score = currentScore ?? 94;
+export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData, currentScore, trendPercent, isLoading, brandId }) => {
+  const hasRealData = propData && propData.length > 0;
+  // When a real brand is set but no data yet, show empty chart — never show Incredibuild mock data
+  const data = hasRealData ? propData! : (brandId ? [] : mockData);
+  const score = currentScore ?? (brandId ? 0 : 94);
   const [percentage, setPercentage] = useState(81.6);
   const displayPercent = trendPercent ?? percentage;
   const brandBrown = '#2C1308';
@@ -167,7 +170,9 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
       </div>
 
       <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between">
-         {!propData ? (
+         {hasRealData ? (
+           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
+         ) : (
            <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
              <span className="text-[8px] font-bold text-gray-400">Simulation engine</span>
              <input
@@ -181,8 +186,6 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
                style={{ accentColor: dynamicColor }}
              />
            </div>
-         ) : (
-           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
          )}
          <button className="text-[9px] font-bold text-gray-400 tracking-widest hover:text-brand-brown transition-colors">
            Download raw logs
