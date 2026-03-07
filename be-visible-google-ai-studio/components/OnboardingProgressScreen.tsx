@@ -22,11 +22,12 @@ const PHASE_TEXTS = [
   'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
 ];
 
-function getPhaseText(elapsedSeconds: number, sent: number): string {
-  if (elapsedSeconds < 10) return PHASE_TEXTS[0];   // first 10s: still connecting
-  if (sent >= 6)           return PHASE_TEXTS[3];   // all wave-1 done: generating dashboard
-  if (sent >= 3)           return PHASE_TEXTS[2];   // halfway: mapping citations
-  return PHASE_TEXTS[1];                            // agents running, < 3 prompts done
+// eodElapsed = seconds since the 6th prompt was sent (EOD processor started)
+function getPhaseText(elapsedSeconds: number, sent: number, eodElapsed: number): string {
+  if (elapsedSeconds < 10) return PHASE_TEXTS[0];  // first 10s: still connecting
+  if (sent < 6)            return PHASE_TEXTS[1];  // prompts still running
+  if (eodElapsed < 90)     return PHASE_TEXTS[2];  // EOD started: citation extraction first
+  return PHASE_TEXTS[3];                           // citations done: dashboard generation
 }
 
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
@@ -38,12 +39,19 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   const [status, setStatus] = useState<Status>('working');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [sentCount, setSentCount] = useState(0);
+  const [eodElapsed, setEodElapsed] = useState(0);
   const startRef = useRef(Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const redirectedRef = useRef(false);
+  const eodStartRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const t = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    const t = setInterval(() => {
+      setElapsedSeconds(s => s + 1);
+      if (eodStartRef.current !== null) {
+        setEodElapsed(Math.floor((Date.now() - eodStartRef.current) / 1000));
+      }
+    }, 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -74,6 +82,9 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     }
 
     setSentCount(sent);
+    if (sent >= 6 && eodStartRef.current === null) {
+      eodStartRef.current = Date.now();
+    }
     setStatus(sent >= 6 ? 'almost' : 'working');
   }, [brandId, onComplete]);
 
@@ -123,11 +134,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
     working: {
       heading: `We're working on your report`,
-      sub: getPhaseText(elapsedSeconds, sentCount),
+      sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
     },
     almost: {
       heading: `Almost there`,
-      sub: getPhaseText(elapsedSeconds, sentCount),
+      sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
     },
     redirecting: {
       heading: `Your report is ready!`,
