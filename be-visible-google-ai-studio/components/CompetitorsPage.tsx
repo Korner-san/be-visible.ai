@@ -286,17 +286,17 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
   }, [brandId, timeRange]);
 
   // Determine which data to show
-  const pieData = hasRealSov ? sovSlices : MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color }));
-  const centerPct = hasRealSov ? sovBrandPct : 45;
+  const pieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
+  const centerPct = hasRealSov ? sovBrandPct : (showSample ? 45 : 0);
 
-  const activeTrend = hasRealMetrics ? trendData : MOCK_TREND;
-  const activeMention = hasRealMetrics ? mentionData : MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] }));
-  const activeCitation = hasRealMetrics ? citationData : MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] }));
+  const activeTrend = hasRealMetrics ? trendData : (showSample ? MOCK_TREND : []);
+  const activeMention = hasRealMetrics ? mentionData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
+  const activeCitation = hasRealMetrics ? citationData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
 
   // For trend chart, we need the line keys
   const trendLineKeys = hasRealMetrics
     ? [brandName, ...competitorNames]
-    : ['Incredibuild', 'GitLab CI', 'CircleCI', 'Travis CI', 'Jenkins'];
+    : (showSample ? ['Incredibuild', 'GitLab CI', 'CircleCI', 'Travis CI', 'Jenkins'] : []);
 
   // Y-axis domain for trend: find min across all data points
   const allTrendValues = activeTrend.flatMap(point =>
@@ -326,6 +326,21 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
 
   const isLoading = isLoadingSov || isLoadingMetrics;
   const hasAnyReal = hasRealSov || hasRealMetrics;
+  // Only show Incredibuild sample data in demo mode (no brandId). When a real
+  // brand is set but data isn't ready yet, show a "computing" empty state.
+  const showSample = !brandId;
+
+  const ComputingPlaceholder = () => (
+    <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
+      <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+        <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <p className="text-xs font-semibold text-gray-400">Computing your data…</p>
+      <p className="text-[10px] text-gray-300 leading-relaxed">Available after your full analysis completes</p>
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -345,6 +360,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
                 <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
               ) : hasRealMetrics ? (
                 <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+              ) : brandId ? (
+                <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
               ) : (
                 <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
               )}
@@ -352,6 +369,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
             </div>
           </div>
           <div className="flex-1 min-h-0">
+            {!isLoadingMetrics && !hasRealMetrics && !showSample ? <ComputingPlaceholder /> : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={activeTrend} margin={{ left: -25, right: 15, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -387,6 +405,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
                 ))}
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -401,11 +420,14 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
               <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
             ) : hasRealSov ? (
               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+            ) : brandId ? (
+              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
             ) : (
               <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 relative min-h-0">
+            {!isLoadingSov && !hasRealSov && !showSample ? <ComputingPlaceholder /> : (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius="65%" outerRadius="90%" paddingAngle={4} dataKey="voice" stroke="none" cornerRadius={6}>
@@ -416,10 +438,13 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
                 <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '8px' }} />
               </PieChart>
             </ResponsiveContainer>
+            )}
+            {(hasRealSov || showSample) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <span className="text-2xl font-black text-slate-800 leading-none">{centerPct}%</span>
               <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter mt-1">Primary</span>
             </div>
+            )}
           </div>
           <div className="mt-4 space-y-1.5 overflow-y-auto custom-scrollbar">
             {pieData.slice(0, 6).map(c => (
@@ -445,11 +470,14 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
               <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
             ) : hasRealMetrics ? (
               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+            ) : brandId ? (
+              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
             ) : (
               <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 min-h-0">
+            {!isLoadingMetrics && !hasRealMetrics && !showSample ? <ComputingPlaceholder /> : (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={activeMention}
@@ -483,6 +511,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -497,12 +526,16 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
               <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
             ) : hasRealMetrics ? (
               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+            ) : brandId ? (
+              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
             ) : (
               <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar">
-            {activeCitation.map((c: any, idx: number) => (
+            {!isLoadingMetrics && !hasRealMetrics && !showSample ? (
+              <ComputingPlaceholder />
+            ) : activeCitation.map((c: any, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 rounded-xl border border-gray-100 hover:border-slate-200 transition-all">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white" style={{ backgroundColor: c.color }}>
@@ -525,3 +558,4 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
     </div>
   );
 };
+

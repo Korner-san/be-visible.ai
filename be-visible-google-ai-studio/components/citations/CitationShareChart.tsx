@@ -43,7 +43,7 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
 export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
   const [data, setData] = useState(MOCK_DATA);
   const [avgShare, setAvgShare] = useState(24.8);
-  const [brandDomain, setBrandDomain] = useState('incredibuild.com');
+  const [brandDomain, setBrandDomain] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
 
@@ -159,12 +159,12 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
               <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
             )}
           </h3>
-          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Percentage of total citations linking to {brandDomain}</p>
+          {brandDomain && <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Percentage of total citations linking to {brandDomain}</p>}
         </div>
 
         <div className="text-right">
            <div className="text-2xl font-black text-brand-brown">
-             {isLoading ? '...' : `${avgShare}%`}
+             {isLoading ? '...' : (brandId && !hasRealData ? '–' : `${avgShare}%`)}
            </div>
            <div className="text-[9px] font-black text-gray-400 tracking-wider">Avg. citation share</div>
         </div>
@@ -174,6 +174,16 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="w-6 h-6 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin" />
+          </div>
+        ) : (brandId && !hasRealData) ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
+            <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-xs font-semibold text-gray-400">Computing your data…</p>
+            <p className="text-[10px] text-gray-300 leading-relaxed">Available after your full analysis completes</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
