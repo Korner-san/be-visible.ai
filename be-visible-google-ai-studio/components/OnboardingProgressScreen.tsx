@@ -15,6 +15,20 @@ const TIMEOUT_MS = 25 * 60 * 1_000; // 25 min
 
 type Status = 'working' | 'almost' | 'redirecting' | 'timeout';
 
+const PHASE_TEXTS = [
+  'Connecting to premium AI models...',
+  'Deploying AI agents to run your prompts.',
+  'Mapping high-impact citations and ranking-critical URL content.',
+  'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
+];
+
+function getPhaseText(elapsedSeconds: number): string {
+  if (elapsedSeconds < 10) return PHASE_TEXTS[0];
+  if (elapsedSeconds < 120) return PHASE_TEXTS[1];
+  if (elapsedSeconds < 600) return PHASE_TEXTS[2];
+  return PHASE_TEXTS[3];
+}
+
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
   brandId,
   brandName,
@@ -22,9 +36,15 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
 }) => {
   const { signOut } = useAuth();
   const [status, setStatus] = useState<Status>('working');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startRef = useRef(Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const redirectedRef = useRef(false);
+
+  useEffect(() => {
+    const t = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const poll = useCallback(async () => {
     if (Date.now() - startRef.current > TIMEOUT_MS) {
@@ -101,11 +121,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
     working: {
       heading: `We're working on your report`,
-      sub: `This usually takes a few minutes. We'll take you straight to your dashboard when it's ready.`,
+      sub: getPhaseText(elapsedSeconds),
     },
     almost: {
       heading: `Almost there`,
-      sub: `We're putting the finishing touches on your report — won't be long now.`,
+      sub: getPhaseText(elapsedSeconds),
     },
     redirecting: {
       heading: `Your report is ready!`,

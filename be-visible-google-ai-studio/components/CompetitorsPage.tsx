@@ -8,7 +8,7 @@ import { TimeRange } from '../types';
 import { supabase } from '../lib/supabase';
 
 // Competitor color palette: Purple, Deep Red, Red, Orange, Yellow
-const COMPETITOR_COLORS = ['#481643', '#970e33', '#d90226', '#fb5607', '#ffbd00'];
+const COMPETITOR_COLORS = ['#481643', '#970e33', '#d90226', '#7B3218', '#4A2012'];
 
 // Mock data used when no real data is available
 const MOCK_COMPETITORS = [
