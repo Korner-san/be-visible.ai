@@ -234,7 +234,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavi
 
       {/* Bottom Row: Distribution & Ranking - Balanced height */}
       <div className="col-span-12 lg:col-span-5 h-[380px]">
-        <ShareOfVoice data={sovData} isLoading={isLoadingSov} />
+        <ShareOfVoice data={sovData} isLoading={isLoadingSov} brandId={brandId} />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
         <PositionRanking brandId={brandId} timeRange={timeRange} onNavigateToPrompts={onNavigateToPrompts} />

@@ -26,6 +26,7 @@ export interface ShareOfVoiceData {
 interface ShareOfVoiceProps {
   data?: ShareOfVoiceData;
   isLoading?: boolean;
+  brandId?: string | null;
 }
 
 /**
@@ -48,10 +49,14 @@ function buildTwoSliceData(sovData: ShareOfVoiceData): ShareData[] {
   ];
 }
 
-export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoading }) => {
+export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoading, brandId }) => {
   const hasRealData = sovData && sovData.entities && sovData.entities.length > 0 && sovData.total_mentions > 0;
-  const chartData = hasRealData ? buildTwoSliceData(sovData) : MOCK_DATA;
-  const brandPercent = chartData[0]?.value ?? 45;
+  // Only show Incredibuild sample data in demo mode (no brandId).
+  // When a real brand is set but SOV hasn't been computed yet (Phase 1), show computing state.
+  const showSample = !brandId;
+  const chartData = hasRealData ? buildTwoSliceData(sovData) : (showSample ? MOCK_DATA : []);
+  const brandPercent = hasRealData ? (chartData[0]?.value ?? 0) : (showSample ? 45 : 0);
+  const computingMode = !isLoading && !hasRealData && !showSample;
 
   return (
     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
@@ -64,11 +69,24 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoa
           <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
         ) : hasRealData ? (
           <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+        ) : brandId ? (
+          <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
         ) : (
           <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
         )}
       </div>
 
+      {computingMode ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-4">
+          <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+            <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-xs font-semibold text-gray-400">Computing your data…</p>
+          <p className="text-[10px] text-gray-300 leading-relaxed">Share of voice will be available after your full analysis completes</p>
+        </div>
+      ) : (
       <div className="flex-1 flex items-center gap-4 min-h-0">
         {/* Chart */}
         <div className="w-1/2 h-full relative">
@@ -122,6 +140,7 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoa
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 };
