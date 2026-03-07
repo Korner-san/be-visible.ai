@@ -32,11 +32,13 @@ const args = process.argv.slice(2);
 const watchIdx = args.indexOf('--watch');
 const watchMode = watchIdx !== -1;
 const watchInterval = watchMode ? (parseInt(args[watchIdx + 1]) || 20) : null;
-const targetEmail = args.find(a => a.includes('@')) || null;
+const targetEmail  = args.find(a => a.includes('@')) || null;
+const timelineMode = args.includes('--timeline');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIMEOUT_PER_PROMPT_MS = 2.5 * 60 * 1000;
 const CONNECT_TIME_MS       = 90 * 1000; // ~90s to reconnect browserless session
+const TIMELINE_INTERVAL     = 30 * 1000; // one table row every 30s
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 function il(dateStr) {
@@ -91,6 +93,70 @@ function shortEmail(email) {
 }
 function padR(str, len) { return String(str || '').padEnd(len).substring(0, len); }
 function padL(str, len) { return String(str || '').padStart(len).substring(0, len); }
+
+// ── Per-agent state for timeline table ────────────────────────────────────────
+// Pure computation — uses already-fetched arrays, no extra DB calls.
+function computeAgentState(agentId, prompts, schedules, agentForensics) {
+  // Prompts currently claimed by this agent for any brand
+  const claimed = prompts
+    .filter(p => p.onboarding_claimed_account_id === agentId && p.onboarding_status === 'claimed')
+    .sort((a, b) => new Date(a.onboarding_claimed_at || 0) - new Date(b.onboarding_claimed_at || 0));
+
+  // Prompts already completed by this agent (same brand_id context)
+  const doneByAgent = prompts.filter(p =>
+    p.onboarding_claimed_account_id === agentId && p.onboarding_status === 'completed'
+  ).length;
+
+  const runningBatch = (schedules || []).find(s => s.chatgpt_account_id === agentId && s.status === 'running');
+  const pendingBatches = (schedules || []).filter(s => s.chatgpt_account_id === agentId && s.status === 'pending');
+  const doneBatches   = (schedules || []).filter(s => s.chatgpt_account_id === agentId && s.status === 'completed');
+
+  const latestForensic = (agentForensics || [])[0] || null;
+  const forensicAgeMs  = latestForensic ? Date.now() - new Date(latestForensic.timestamp).getTime() : Infinity;
+
+  // ── Status string ──────────────────────────────────────────────────────────
+  let statusStr;
+  if (claimed.length > 0) {
+    const claimStartMs = new Date(claimed[0].onboarding_claimed_at || Date.now()).getTime();
+    const chunkAgeMs   = Date.now() - claimStartMs;
+    const wave         = claimed[0].onboarding_wave || '?';
+    // Use automation_forensics visual_state if written within last 2 min (most accurate)
+    const vsState      = forensicAgeMs < 2 * 60 * 1000 ? (latestForensic.visual_state || '') : '';
+
+    if (chunkAgeMs < CONNECT_TIME_MS && !vsState.includes('CHAT')) {
+      statusStr = '🔌 connecting (' + dur(chunkAgeMs) + ')';
+    } else {
+      const pNum   = doneByAgent + 1;
+      const vsTag  = vsState ? ' [' + vsState.substring(0, 5) + ']' : '';
+      statusStr    = '⚙️  w' + wave + ' p#' + pNum + ' exec' + vsTag;
+    }
+    if (runningBatch) statusStr += ' +B#' + runningBatch.batch_number;
+  } else if (runningBatch) {
+    const age = runningBatch.execution_time
+      ? ' ' + dur(Date.now() - new Date(runningBatch.execution_time).getTime())
+      : '';
+    statusStr = '📋 batch#' + runningBatch.batch_number + age;
+  } else if (forensicAgeMs < 3 * 60 * 1000 && latestForensic && latestForensic.visual_state) {
+    // Recent forensic entry but no claimed prompt → reinit / transitioning
+    statusStr = '🔄 ' + latestForensic.visual_state.substring(0, 12).toLowerCase();
+  } else {
+    statusStr = '💤 idle';
+  }
+
+  // ── Batches string ─────────────────────────────────────────────────────────
+  let batchStr;
+  if (runningBatch) {
+    batchStr = '🔄 #' + runningBatch.batch_number + ' running';
+  } else if (pendingBatches.length > 0) {
+    batchStr = '⏳ ' + pendingBatches.length + ' pending';
+  } else if (doneBatches.length > 0) {
+    batchStr = '✅ ' + doneBatches.length + ' done';
+  } else {
+    batchStr = '❌ none today';
+  }
+
+  return { statusStr, batchStr };
+}
 
 // ── Group completed/failed/claimed prompts into dispatch chunks ───────────────
 // Prompts in the same chunk share an account and are claimed within a 5-min window.
@@ -271,6 +337,198 @@ function buildEventLog(brand, allPrompts, forensics) {
   // Sort chronologically
   events.sort((a, b) => a.ms - b.ms);
   return events;
+}
+
+// ── Timeline mode ─────────────────────────────────────────────────────────────
+// Usage: node stress-test-monitor.js user@email.com --timeline
+//
+// Prints a growing table: one row every 30s, rows accumulate (screen never cleared).
+// Columns: TIME | EVENT | <agent STATUS> | <agent BATCHES> | ... | NOTES
+//
+// Data sources used per row:
+//   brand_prompts        → who claimed what, when, which wave
+//   automation_forensics → real-time visual_state from the worker (best signal for connecting/executing)
+//   daily_schedules      → whether agent has a batch running/pending today
+//   brands               → first_report_status for milestone events
+async function runTimeline() {
+  const today = new Date().toISOString().split('T')[0];
+
+  // 1. Find target brand ──────────────────────────────────────────────────────
+  process.stdout.write('\n  ⏳ Looking up brand for ' + resolvedEmail + '... ');
+  const { data: authList2 } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const tUser = (authList2?.users || []).find(u => u.email === resolvedEmail);
+  if (!tUser) { console.error('\n  ❌ User not found: ' + resolvedEmail); process.exit(1); }
+
+  const { data: tBrands } = await supabase.from('brands')
+    .select('id, name, first_report_status, chatgpt_account_id, chatgpt_accounts(email, id), created_at')
+    .eq('owner_user_id', tUser.id)
+    .eq('is_demo', false)
+    .order('created_at', { ascending: false });
+
+  const tBrand = (tBrands || []).find(b =>
+    ['queued', 'running', 'phase1_complete'].includes(b.first_report_status)
+  ) || (tBrands || [])[0];
+
+  if (!tBrand) { console.error('\n  ❌ No brand found for ' + resolvedEmail); process.exit(1); }
+  console.log('✅');
+
+  // 2. Get all ChatGPT accounts in the system ─────────────────────────────────
+  // All accounts are shown as columns — this covers any agent wave-2 might pick.
+  const { data: allAccounts } = await supabase.from('chatgpt_accounts')
+    .select('id, email')
+    .order('email');
+
+  const agentIds    = (allAccounts || []).map(a => a.id);
+  const agentEmails = (allAccounts || []).map(a => a.email);
+  const agentShorts = agentEmails.map(e => shortEmail(e));
+
+  // 3. Print header ───────────────────────────────────────────────────────────
+  const W_TIME  = 10;
+  const W_EVENT = 30;
+  const W_STAT  = 24;
+  const W_BATCH = 16;
+
+  let hLine = '  ' + padR('TIME', W_TIME) + '  ' + padR('EVENT', W_EVENT);
+  agentShorts.forEach(s => {
+    hLine += '  ' + padR(s + ' STATUS', W_STAT) + '  ' + padR('BATCHES', W_BATCH);
+  });
+  hLine += '  NOTES';
+
+  const totalWidth = hLine.length;
+  const border = '═'.repeat(totalWidth);
+
+  console.log('\n' + border);
+  console.log('  STRESS TEST TIMELINE  —  "' + tBrand.name + '"  —  started ' + il(tBrand.created_at));
+  console.log('  One row every 30s. Rows accumulate. Ctrl+C to stop. Agents: ' + agentEmails.join(', '));
+  console.log(border);
+  console.log(hLine);
+  console.log('  ' + '─'.repeat(totalWidth - 2));
+
+  // 4. State tracking across ticks ───────────────────────────────────────────
+  let prevW1Done      = null;
+  let prevW2Done      = null;
+  let prevBrandStatus = null;
+  let rowCount        = 0;
+
+  async function tick() {
+    const now     = new Date();
+    const timeStr = il(now.toISOString());
+
+    // Fetch snapshot ──────────────────────────────────────────────────────────
+    const [brandSnap, promptsSnap, schedulesSnap] = await Promise.all([
+      supabase.from('brands')
+        .select('first_report_status, onboarding_prompts_sent')
+        .eq('id', tBrand.id).single(),
+      supabase.from('brand_prompts')
+        .select('id, onboarding_status, onboarding_wave, onboarding_claimed_account_id, onboarding_claimed_at')
+        .eq('brand_id', tBrand.id),
+      supabase.from('daily_schedules')
+        .select('id, batch_number, batch_size, status, execution_time, chatgpt_account_id')
+        .eq('schedule_date', today),
+    ]);
+
+    const cb       = brandSnap.data || {};
+    const prompts  = promptsSnap.data || [];
+    const schedules = schedulesSnap.data || [];
+
+    // Forensics: last entry per agent in past 5 min (visual_state = best live signal)
+    const forensicsAll = await Promise.all(
+      agentEmails.map(email =>
+        supabase.from('automation_forensics')
+          .select('timestamp, visual_state, connection_status')
+          .eq('chatgpt_account_email', email)
+          .gte('timestamp', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .then(r => r.data || [])
+      )
+    );
+
+    // Wave counts ─────────────────────────────────────────────────────────────
+    const w1Done    = prompts.filter(p => p.onboarding_wave === 1 && p.onboarding_status === 'completed').length;
+    const w1Total   = prompts.filter(p => p.onboarding_wave === 1).length;
+    const w2Done    = prompts.filter(p => p.onboarding_wave === 2 && p.onboarding_status === 'completed').length;
+    const w2Total   = prompts.filter(p => p.onboarding_wave === 2).length;
+    const nowClaimed = prompts.filter(p => p.onboarding_status === 'claimed').length;
+
+    // Event string ────────────────────────────────────────────────────────────
+    const evParts = [];
+    const notes   = [];
+
+    if (rowCount === 0) {
+      evParts.push('🚀 onboarding started');
+    } else {
+      // Status change milestones
+      if (cb.first_report_status !== prevBrandStatus) {
+        const s = cb.first_report_status;
+        if      (s === 'running')          evParts.push('🔵 pipeline running');
+        else if (s === 'phase1_complete')  evParts.push('🟠 WAVE 1 COMPLETE');
+        else if (s === 'succeeded')        evParts.push('🟢 ONBOARDING DONE');
+        else                               evParts.push('→' + s);
+      }
+      // Prompt completion events
+      if (prevW1Done !== null && w1Done > prevW1Done) {
+        evParts.push('w1 +' + (w1Done - prevW1Done) + ' done (' + w1Done + '/' + w1Total + ')');
+      }
+      if (prevW2Done !== null && w2Done > prevW2Done) {
+        evParts.push('w2 +' + (w2Done - prevW2Done) + ' done (' + w2Done + '/' + w2Total + ')');
+      }
+      // Fallback: current state summary
+      if (evParts.length === 0) {
+        const s = cb.first_report_status;
+        if      (nowClaimed > 0)              evParts.push(nowClaimed + ' prompt' + (nowClaimed > 1 ? 's' : '') + ' running');
+        else if (s === 'phase1_complete')     evParts.push('w2: ' + w2Done + '/' + w2Total);
+        else if (s === 'running' || s === 'queued') evParts.push('w1: ' + w1Done + '/' + w1Total);
+        else                                  evParts.push('checkpoint');
+      }
+    }
+
+    prevW1Done      = w1Done;
+    prevW2Done      = w2Done;
+    const justHitMilestone = cb.first_report_status !== prevBrandStatus &&
+      (cb.first_report_status === 'phase1_complete' || cb.first_report_status === 'succeeded');
+    prevBrandStatus = cb.first_report_status;
+
+    const eventStr = evParts.join(' | ');
+
+    // Per-agent states ─────────────────────────────────────────────────────────
+    const agentStateObjs = agentIds.map((id, i) =>
+      computeAgentState(id, prompts, schedules, forensicsAll[i])
+    );
+
+    // Build row ───────────────────────────────────────────────────────────────
+    let row = '  ' + padR(timeStr, W_TIME) + '  ' + padR(eventStr, W_EVENT);
+    agentStateObjs.forEach(s => {
+      row += '  ' + padR(s.statusStr, W_STAT) + '  ' + padR(s.batchStr, W_BATCH);
+    });
+    row += '  ' + notes.join(' ');
+
+    // Color coding ─────────────────────────────────────────────────────────────
+    const hasExec     = agentStateObjs.some(s => s.statusStr.includes('exec') || s.statusStr.includes('connecting'));
+    const hasOverdue  = agentStateObjs.some(s => s.statusStr.includes('overdue'));
+    if (justHitMilestone || cb.first_report_status === 'succeeded') {
+      console.log('\x1b[32m' + row + '\x1b[0m'); // green — milestone
+    } else if (hasOverdue) {
+      console.log('\x1b[31m' + row + '\x1b[0m'); // red — overdue/stalled
+    } else if (hasExec) {
+      console.log('\x1b[36m' + row + '\x1b[0m'); // cyan — actively executing
+    } else {
+      console.log(row);
+    }
+
+    rowCount++;
+
+    // Auto-exit when complete
+    if (cb.first_report_status === 'succeeded') {
+      console.log('\n  ' + '─'.repeat(totalWidth - 2));
+      console.log('  🟢 Onboarding complete after ' + rowCount + ' checkpoints. Timeline ended.\n');
+      process.exit(0);
+    }
+  }
+
+  // Run first tick immediately, then every 30s
+  await tick();
+  setInterval(tick, TIMELINE_INTERVAL);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -691,11 +949,17 @@ async function main() {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
-if (watchMode) {
+if (timelineMode) {
+  // Growing table mode — rows accumulate, screen never cleared
+  // Usage: node stress-test-monitor.js user@email.com --timeline
+  runTimeline().catch(e => console.error('TIMELINE ERROR:', e.message, e.stack));
+} else if (watchMode) {
+  // Full dashboard mode — refreshes every N seconds (clears and reprints)
   main().catch(e => console.error('ERROR:', e.message));
   setInterval(() => {
     main().catch(e => console.error('ERROR:', e.message));
   }, watchInterval * 1000);
 } else {
+  // Single snapshot
   main().catch(e => console.error('ERROR:', e.message, e.stack));
 }
