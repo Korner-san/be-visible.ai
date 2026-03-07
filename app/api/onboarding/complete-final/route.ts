@@ -288,23 +288,23 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Trigger the Hetzner queue-checker to immediately process this brand's onboarding queue
-    console.log('🚀 [COMPLETE-FINAL API] Triggering queue-checker for brand:', updatedBrand.id)
+    // Trigger the Hetzner queue-organizer to immediately process this brand's onboarding queue
+    console.log('🚀 [COMPLETE-FINAL API] Triggering queue-organizer for brand:', updatedBrand.id)
     try {
       const baseUrl = process.env.WEBHOOK_BASE_URL || 'http://135.181.203.202:3001'
-      const webhookSecret = process.env.WEBHOOK_SECRET || 'your-secret-key-here'
-      const webhookRes = await fetch(`${baseUrl}/run-queue-checker`, {
+      const webhookSecret = process.env.WEBHOOK_SECRET || 'forensic-reinit-secret-2024'
+      const webhookRes = await fetch(`${baseUrl}/run-queue-organizer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: webhookSecret }),
       })
       if (webhookRes.ok) {
-        console.log('✅ [COMPLETE-FINAL API] Queue-checker triggered successfully')
+        console.log('✅ [COMPLETE-FINAL API] Queue-organizer triggered successfully')
       } else {
-        console.warn('⚠️ [COMPLETE-FINAL API] Queue-checker webhook returned', webhookRes.status)
+        console.warn('⚠️ [COMPLETE-FINAL API] Queue-organizer webhook returned', webhookRes.status)
       }
     } catch (webhookErr) {
-      console.error('❌ [COMPLETE-FINAL API] Queue-checker webhook failed (non-fatal):', webhookErr instanceof Error ? webhookErr.message : webhookErr)
+      console.error('❌ [COMPLETE-FINAL API] Queue-organizer webhook failed (non-fatal):', webhookErr instanceof Error ? webhookErr.message : webhookErr)
     }
     
     console.log('✅ [COMPLETE-FINAL API] COMPLETION SUCCESS - Brand ready for finishing page')

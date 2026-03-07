@@ -133,11 +133,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   // ── Content per status ────────────────────────────────────────────────────
   const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
     working: {
-      heading: `We're working on your report`,
+      heading: `Building your Visibility Intelligence report`,
       sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
     },
     almost: {
-      heading: `Almost there`,
+      heading: `Finalizing your report`,
       sub: getPhaseText(elapsedSeconds, sentCount, eodElapsed),
     },
     redirecting: {
