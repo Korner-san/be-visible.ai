@@ -22,11 +22,11 @@ const PHASE_TEXTS = [
   'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
 ];
 
-function getPhaseText(elapsedSeconds: number): string {
-  if (elapsedSeconds < 10) return PHASE_TEXTS[0];
-  if (elapsedSeconds < 120) return PHASE_TEXTS[1];
-  if (elapsedSeconds < 600) return PHASE_TEXTS[2];
-  return PHASE_TEXTS[3];
+function getPhaseText(elapsedSeconds: number, sent: number): string {
+  if (elapsedSeconds < 10) return PHASE_TEXTS[0];   // first 10s: still connecting
+  if (sent >= 6)           return PHASE_TEXTS[3];   // all wave-1 done: generating dashboard
+  if (sent >= 3)           return PHASE_TEXTS[2];   // halfway: mapping citations
+  return PHASE_TEXTS[1];                            // agents running, < 3 prompts done
 }
 
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
@@ -37,6 +37,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   const { signOut } = useAuth();
   const [status, setStatus] = useState<Status>('working');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [sentCount, setSentCount] = useState(0);
   const startRef = useRef(Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const redirectedRef = useRef(false);
@@ -72,6 +73,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
       return;
     }
 
+    setSentCount(sent);
     setStatus(sent >= 6 ? 'almost' : 'working');
   }, [brandId, onComplete]);
 
@@ -121,11 +123,11 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
   const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
     working: {
       heading: `We're working on your report`,
-      sub: getPhaseText(elapsedSeconds),
+      sub: getPhaseText(elapsedSeconds, sentCount),
     },
     almost: {
       heading: `Almost there`,
-      sub: getPhaseText(elapsedSeconds),
+      sub: getPhaseText(elapsedSeconds, sentCount),
     },
     redirecting: {
       heading: `Your report is ready!`,
