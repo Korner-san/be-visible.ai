@@ -18,28 +18,32 @@ type Status = 'working' | 'almost' | 'redirecting' | 'timeout';
 const STEPS = [
   {
     short: 'Connecting',
-    full: 'Connecting to premium AI models...',
+    full: 'Connecting to AI models and preparing your analysis session…',
   },
   {
-    short: 'Deploying',
-    full: 'Deploying AI agents to run your prompts.',
+    short: 'Running',
+    full: 'AI agents are running your discovery prompts across ChatGPT…',
   },
   {
-    short: 'Extracting',
-    full: 'Mapping high-impact citations and ranking-critical URL content.',
+    short: 'Analyzing',
+    full: 'Analyzing responses, extracting citations, and computing share of voice…',
   },
   {
     short: 'Generating',
-    full: 'Generating your Visibility Intelligence dashboard to show: How your brand is perceived across the AI landscape.',
+    full: 'Building your Visibility Intelligence dashboard…',
   },
 ];
 
-// Returns 1–4 based on real backend signals
-function getCurrentStep(elapsedSeconds: number, sent: number, eodElapsed: number): number {
-  if (elapsedSeconds < 10) return 1;  // first 10s: connecting
-  if (sent < 6)            return 2;  // agents deployed, prompts running
-  if (eodElapsed < 90)     return 3;  // EOD started: citation extraction
-  return 4;                           // citations done: dashboard generation
+// Returns 1–4 based on real DB signals — no time-based guessing
+// Step 1: agents not yet dispatched (queued or no prompts sent)
+// Step 2: prompts actively running in ChatGPT (sent < 6)
+// Step 3: all 6 prompts done, EOD pipeline running (brand analysis, Tavily citations, SOV)
+// Step 4: visibility score computed (EOD in final stages — competitor metrics, dashboard build)
+function getCurrentStep(firstReportStatus: string, sent: number, visibilityScoreReady: boolean): number {
+  if (firstReportStatus === 'queued' || sent === 0) return 1;
+  if (sent < 6) return 2;
+  if (!visibilityScoreReady) return 3;
+  return 4;
 }
 
 export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> = ({
@@ -49,23 +53,12 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
 }) => {
   const { signOut } = useAuth();
   const [status, setStatus] = useState<Status>('working');
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [sentCount, setSentCount] = useState(0);
-  const [eodElapsed, setEodElapsed] = useState(0);
+  const [firstReportStatus, setFirstReportStatus] = useState('queued');
+  const [visibilityScoreReady, setVisibilityScoreReady] = useState(false);
   const startRef = useRef(Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const redirectedRef = useRef(false);
-  const eodStartRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setElapsedSeconds(s => s + 1);
-      if (eodStartRef.current !== null) {
-        setEodElapsed(Math.floor((Date.now() - eodStartRef.current) / 1000));
-      }
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
 
   const poll = useCallback(async () => {
     if (Date.now() - startRef.current > TIMEOUT_MS) {
@@ -76,7 +69,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
 
     const { data } = await supabase
       .from('brands')
-      .select('first_report_status, onboarding_prompts_sent')
+      .select('first_report_status, onboarding_prompts_sent, onboarding_daily_report_id')
       .eq('id', brandId)
       .single();
 
@@ -93,10 +86,22 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
       return;
     }
 
+    setFirstReportStatus(s || 'queued');
     setSentCount(sent);
-    if (sent >= 6 && eodStartRef.current === null) {
-      eodStartRef.current = Date.now();
+
+    // Once all 6 wave-1 prompts are done, check if EOD has computed the visibility score
+    // (Phase 4 of EOD). When it has, we move to step 4 (finalizing dashboard).
+    let vsReady = false;
+    if (sent >= 6 && data.onboarding_daily_report_id) {
+      const { data: report } = await supabase
+        .from('daily_reports')
+        .select('visibility_score')
+        .eq('id', data.onboarding_daily_report_id)
+        .single();
+      vsReady = report?.visibility_score !== null && report?.visibility_score !== undefined;
     }
+    setVisibilityScoreReady(vsReady);
+
     setStatus(sent >= 6 ? 'almost' : 'working');
   }, [brandId, onComplete]);
 
@@ -114,7 +119,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     poll();
   };
 
-  const currentStep = getCurrentStep(elapsedSeconds, sentCount, eodElapsed);
+  const currentStep = getCurrentStep(firstReportStatus, sentCount, visibilityScoreReady);
 
   // ── Timeout screen ────────────────────────────────────────────────────────
   if (status === 'timeout') {
