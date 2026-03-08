@@ -31,7 +31,11 @@ export async function POST(request: NextRequest) {
     }
     
     console.log('✅ [COMPLETE-FINAL API] User authenticated:', user.id)
-    
+
+    // Parse request body
+    const body = await request.json().catch(() => ({}))
+    const { timezone = 'UTC' } = body
+
     // ── CAPACITY CHECK ────────────────────────────────────────────────────────
     const adminSupabaseForCapacity = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -245,7 +249,7 @@ export async function POST(request: NextRequest) {
     const { error: upsertUserError } = await adminSupabase
       .from('users')
       .upsert(
-        { id: user.id, email: user.email, subscription_plan: 'free_trial', reports_enabled: true },
+        { id: user.id, email: user.email, subscription_plan: 'free_trial', reports_enabled: true, timezone },
         { onConflict: 'id', ignoreDuplicates: true }
       )
     if (upsertUserError) {
@@ -253,6 +257,8 @@ export async function POST(request: NextRequest) {
     } else {
       console.log('✅ [COMPLETE-FINAL API] Users table row ensured for:', user.id)
     }
+    // Always update timezone — covers users whose row already existed
+    await adminSupabase.from('users').update({ timezone }).eq('id', user.id)
     
     // VERIFICATION: Double-check the brand was actually updated in the database
     const { data: verifyBrand, error: verifyError } = await supabase

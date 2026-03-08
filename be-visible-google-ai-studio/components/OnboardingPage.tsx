@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ChevronRight,
   ChevronLeft,
@@ -34,7 +34,7 @@ interface OnboardingData {
   brandName: string;
   website: string;
   language: string;
-  region: string;
+  timezone: string;
   industry: string;
   productCategory: string;
   problemSolved: string;
@@ -63,7 +63,7 @@ const emptyData: OnboardingData = {
   brandName: '',
   website: '',
   language: 'English',
-  region: 'Global',
+  timezone: (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC'),
   industry: '',
   productCategory: '',
   problemSolved: '',
@@ -79,9 +79,90 @@ const languages = [
   'English', 'Spanish', 'French', 'German', 'Arabic', 'Hebrew', 'Chinese', 'Japanese', 'Portuguese', 'Italian'
 ];
 
-const regions = [
-  'Global', 'United States', 'Europe', 'Middle East', 'Asia Pacific', 'South America', 'Africa', 'Israel', 'United Kingdom'
-];
+// ─── Timezone picker ──────────────────────────────────────────────────────────
+
+const ALL_TIMEZONES: string[] = (() => {
+  try {
+    return (Intl as any).supportedValuesOf('timeZone') as string[];
+  } catch {
+    return ['UTC', 'America/New_York', 'America/Los_Angeles', 'America/Chicago',
+      'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Jerusalem',
+      'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo',
+      'Australia/Sydney', 'Pacific/Auckland', 'America/Sao_Paulo', 'Africa/Cairo'];
+  }
+})();
+
+function getUtcOffset(tz: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date());
+    const raw = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+    if (raw === 'GMT') return 'UTC+00:00';
+    const m = raw.match(/GMT([+-])(\d+)(?::(\d+))?/);
+    if (!m) return 'UTC+00:00';
+    return `UTC${m[1]}${m[2].padStart(2, '0')}:${(m[3] || '0').padStart(2, '0')}`;
+  } catch { return 'UTC+00:00'; }
+}
+
+interface TimezonePickerProps { value: string; onChange: (tz: string) => void; }
+
+function TimezonePicker({ value, onChange }: TimezonePickerProps) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    if (!q) return ALL_TIMEZONES;
+    return ALL_TIMEZONES.filter(tz =>
+      tz.toLowerCase().replace(/_/g, ' ').includes(q) ||
+      tz.toLowerCase().includes(q.replace(/\s/g, '_'))
+    );
+  }, [query]);
+
+  const label = (tz: string) => `(${getUtcOffset(tz)}) ${tz.replace(/_/g, ' ')}`;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none z-10" />
+      <input
+        type="text"
+        className="w-full px-4 py-3 pl-10 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 focus:border-brand-brown/50 outline-none font-normal text-[#020817] transition-all bg-white text-[15px] cursor-pointer"
+        placeholder="Search timezone..."
+        value={open ? query : label(value)}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-white border border-[#E2E8F0] rounded-lg shadow-lg overflow-hidden">
+          <div className="overflow-y-auto" style={{ maxHeight: '224px' }}>
+            {filtered.map(tz => (
+              <button
+                key={tz}
+                type="button"
+                className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${tz === value ? 'bg-slate-100 font-semibold text-[#020817]' : 'text-slate-600 hover:bg-slate-50'}`}
+                onMouseDown={e => { e.preventDefault(); onChange(tz); setOpen(false); setQuery(''); }}
+              >
+                {label(tz)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -464,7 +545,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       const res = await fetch('/api/onboarding/complete-final', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, selectedPromptIds: selectedIds }),
+        body: JSON.stringify({ brandId, selectedPromptIds: selectedIds, timezone: data.timezone }),
       });
 
       const result = await res.json();
@@ -633,16 +714,12 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                 </div>
               </div>
               <div>
-                <h2 className={questionClass}>Region</h2>
-                <p className={subtextClass}>Target market for AI visibility</p>
-                <div className="relative">
-                  <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
-                  <select value={data.region} onChange={(e) => handleInputChange('region', e.target.value)}
-                    className={`${selectClass} pl-10`}>
-                    {regions.map(region => <option key={region} value={region}>{region}</option>)}
-                  </select>
-                  <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <h2 className={questionClass}>Timezone</h2>
+                <p className={subtextClass}>Your local timezone for report scheduling and display</p>
+                <TimezonePicker
+                  value={data.timezone}
+                  onChange={tz => handleInputChange('timezone', tz)}
+                />
               </div>
             </div>
           </div>
