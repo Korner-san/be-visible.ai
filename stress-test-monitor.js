@@ -96,23 +96,26 @@ function padL(str, len) { return String(str || '').padStart(len).substring(0, le
 
 // ── Per-agent state for timeline table ────────────────────────────────────────
 // Pure computation — uses already-fetched arrays, no extra DB calls.
-function computeAgentState(agentId, prompts, schedules, agentForensics) {
-  // Prompts currently claimed by this agent for any brand
+// No automation_forensics needed: browserless connection state is fully derivable from
+// brand_prompts (onboarding_claimed_at = connection started) + daily_schedules (batch running).
+//
+// Status answers: did a connection start? for what (wave/prompt/batch)? same or new session?
+//   🔌 connecting → w1 chunk (3p)        — claimed < 90s ago, still connecting
+//   ⚙️  w1 p#2/3 in session              — executing prompt 2 of a 3-prompt chunk
+//   🔌 connected → batch#5 (10p) 2m 10s  — daily batch session running
+//   💤 idle                              — no active connection
+function computeAgentState(agentId, prompts, schedules) {
   const claimed = prompts
     .filter(p => p.onboarding_claimed_account_id === agentId && p.onboarding_status === 'claimed')
     .sort((a, b) => new Date(a.onboarding_claimed_at || 0) - new Date(b.onboarding_claimed_at || 0));
 
-  // Prompts already completed by this agent (same brand_id context)
   const doneByAgent = prompts.filter(p =>
     p.onboarding_claimed_account_id === agentId && p.onboarding_status === 'completed'
   ).length;
 
-  const runningBatch = (schedules || []).find(s => s.chatgpt_account_id === agentId && s.status === 'running');
+  const runningBatch   = (schedules || []).find(s => s.chatgpt_account_id === agentId && s.status === 'running');
   const pendingBatches = (schedules || []).filter(s => s.chatgpt_account_id === agentId && s.status === 'pending');
-  const doneBatches   = (schedules || []).filter(s => s.chatgpt_account_id === agentId && s.status === 'completed');
-
-  const latestForensic = (agentForensics || [])[0] || null;
-  const forensicAgeMs  = latestForensic ? Date.now() - new Date(latestForensic.timestamp).getTime() : Infinity;
+  const doneBatches    = (schedules || []).filter(s => s.chatgpt_account_id === agentId && s.status === 'completed');
 
   // ── Status string ──────────────────────────────────────────────────────────
   let statusStr;
@@ -120,25 +123,25 @@ function computeAgentState(agentId, prompts, schedules, agentForensics) {
     const claimStartMs = new Date(claimed[0].onboarding_claimed_at || Date.now()).getTime();
     const chunkAgeMs   = Date.now() - claimStartMs;
     const wave         = claimed[0].onboarding_wave || '?';
-    // Use automation_forensics visual_state if written within last 2 min (most accurate)
-    const vsState      = forensicAgeMs < 2 * 60 * 1000 ? (latestForensic.visual_state || '') : '';
+    const chunkSize    = claimed.length;           // prompts still pending in this session
+    const totalInChunk = doneByAgent + chunkSize;  // total prompts sent in this connection
 
-    if (chunkAgeMs < CONNECT_TIME_MS && !vsState.includes('CHAT')) {
-      statusStr = '🔌 connecting (' + dur(chunkAgeMs) + ')';
+    if (chunkAgeMs < CONNECT_TIME_MS) {
+      // Session is being established — no prompt running yet
+      statusStr = '🔌 connecting → w' + wave + ' chunk (' + chunkSize + 'p) ' + dur(chunkAgeMs);
     } else {
-      const pNum   = doneByAgent + 1;
-      const vsTag  = vsState ? ' [' + vsState.substring(0, 5) + ']' : '';
-      statusStr    = '⚙️  w' + wave + ' p#' + pNum + ' exec' + vsTag;
+      // Session is live — estimate current prompt position
+      const currentPrompt = doneByAgent + 1;
+      statusStr = '⚙️  w' + wave + ' p#' + currentPrompt + '/' + totalInChunk + ' in session';
     }
-    if (runningBatch) statusStr += ' +B#' + runningBatch.batch_number;
+    // Flag if also doing a batch in parallel (should not happen — useful to spot)
+    if (runningBatch) statusStr += ' ⚡+batch#' + runningBatch.batch_number;
   } else if (runningBatch) {
     const age = runningBatch.execution_time
       ? ' ' + dur(Date.now() - new Date(runningBatch.execution_time).getTime())
       : '';
-    statusStr = '📋 batch#' + runningBatch.batch_number + age;
-  } else if (forensicAgeMs < 3 * 60 * 1000 && latestForensic && latestForensic.visual_state) {
-    // Recent forensic entry but no claimed prompt → reinit / transitioning
-    statusStr = '🔄 ' + latestForensic.visual_state.substring(0, 12).toLowerCase();
+    statusStr = '🔌 connected → batch#' + runningBatch.batch_number +
+                ' (' + (runningBatch.batch_size || '?') + 'p)' + age;
   } else {
     statusStr = '💤 idle';
   }
@@ -431,19 +434,6 @@ async function runTimeline() {
     const prompts  = promptsSnap.data || [];
     const schedules = schedulesSnap.data || [];
 
-    // Forensics: last entry per agent in past 5 min (visual_state = best live signal)
-    const forensicsAll = await Promise.all(
-      agentEmails.map(email =>
-        supabase.from('automation_forensics')
-          .select('timestamp, visual_state, connection_status')
-          .eq('chatgpt_account_email', email)
-          .gte('timestamp', new Date(Date.now() - 5 * 60 * 1000).toISOString())
-          .order('timestamp', { ascending: false })
-          .limit(1)
-          .then(r => r.data || [])
-      )
-    );
-
     // Wave counts ─────────────────────────────────────────────────────────────
     const w1Done    = prompts.filter(p => p.onboarding_wave === 1 && p.onboarding_status === 'completed').length;
     const w1Total   = prompts.filter(p => p.onboarding_wave === 1).length;
@@ -492,8 +482,8 @@ async function runTimeline() {
     const eventStr = evParts.join(' | ');
 
     // Per-agent states ─────────────────────────────────────────────────────────
-    const agentStateObjs = agentIds.map((id, i) =>
-      computeAgentState(id, prompts, schedules, forensicsAll[i])
+    const agentStateObjs = agentIds.map(id =>
+      computeAgentState(id, prompts, schedules)
     );
 
     // Build row ───────────────────────────────────────────────────────────────
