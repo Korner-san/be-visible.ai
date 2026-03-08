@@ -398,7 +398,7 @@ function AppContent() {
       case 'Support':
         return <SupportPage />;
       case 'User Settings':
-        return <UserSettingsPage onNavigateToForensic={() => setActiveTab('Forensic')} />;
+        return <UserSettingsPage onNavigateToForensic={() => setActiveTab('Forensic')} onTimezoneChange={setUserTimezone} />;
       case 'Forensic':
         return <ForensicPage />;
       case 'Content':
