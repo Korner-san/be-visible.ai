@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       .from('brand_prompts')
       .select('id')
       .eq('brand_id', updatedBrand.id)
-      .in('status', ['active', 'inactive'])
+      .in('status', ['active', 'inactive', 'improved'])
       .order('created_at', { ascending: true })
 
     if (allPrompts && allPrompts.length > 0) {
@@ -189,20 +189,22 @@ export async function POST(request: NextRequest) {
       ])
       console.log('✅ [COMPLETE-FINAL API] Waves assigned: wave1=' + wave1Ids.length + ' (active), wave2=' + wave2Ids.length + ' (inactive)')
     }
+
+    const totalPromptCount = allPrompts ? allPrompts.length : 30
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── PRE-CREATE DAILY REPORT ───────────────────────────────────────────────
     // Create the Phase 1 daily report now so its report_date is anchored to today
     // (Phase 2 may finish the next day but will still use this same report)
     const today = new Date().toISOString().split('T')[0]
-    console.log('📅 [COMPLETE-FINAL API] Pre-creating Phase 1 daily report for date:', today)
+    console.log('📅 [COMPLETE-FINAL API] Pre-creating Phase 1 daily report for date:', today, 'total_prompts:', totalPromptCount)
     const { data: newReport, error: reportError } = await adminSupabaseForCapacity
       .from('daily_reports')
       .insert({
         brand_id: updatedBrand.id,
         report_date: today,
         status: 'running',
-        total_prompts: 30,
+        total_prompts: totalPromptCount,
         is_partial: true,
       })
       .select('id')
