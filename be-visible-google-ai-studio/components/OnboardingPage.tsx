@@ -702,8 +702,16 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             <div><h2 className="text-2xl font-bold text-[#020817] mb-8 tracking-tight">Localization Settings</h2></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               <div>
-                <h2 className={questionClass}>Language</h2>
-                <p className={subtextClass}>Primary monitoring language — prompts will be generated in this language</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className={questionClass} style={{ marginBottom: 0 }}>Language</h2>
+                  <div className="relative group/tip">
+                    <span className="flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-slate-400 text-[10px] font-bold cursor-default select-none">!</span>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-[#020817] text-white text-[11px] leading-snug rounded-lg px-3 py-2 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                      Prompts will be generated and monitored in this language. Choose the language your target audience uses when searching AI tools.
+                      <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#020817]" />
+                    </div>
+                  </div>
+                </div>
                 <div className="relative">
                   <Languages size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
                   <select value={data.language} onChange={(e) => handleInputChange('language', e.target.value)}
@@ -714,8 +722,16 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                 </div>
               </div>
               <div>
-                <h2 className={questionClass}>Timezone</h2>
-                <p className={subtextClass}>Your local timezone for report scheduling and display</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className={questionClass} style={{ marginBottom: 0 }}>Region</h2>
+                  <div className="relative group/tip">
+                    <span className="flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-slate-400 text-[10px] font-bold cursor-default select-none">!</span>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-[#020817] text-white text-[11px] leading-snug rounded-lg px-3 py-2 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                      Your timezone determines when your daily reports are scheduled and how dates and times appear across your dashboard.
+                      <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#020817]" />
+                    </div>
+                  </div>
+                </div>
                 <TimezonePicker
                   value={data.timezone}
                   onChange={tz => handleInputChange('timezone', tz)}
