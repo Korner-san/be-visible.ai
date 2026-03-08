@@ -69,6 +69,7 @@ function AppContent() {
   // ── Dashboard state ──────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('Visibility');
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.THIRTY_DAYS);
+  const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [academyArticleId, setAcademyArticleId] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [prompts, setPrompts] = useState<PromptStats[]>([]);
@@ -107,8 +108,13 @@ function AppContent() {
       return;
     }
 
-    // Authenticated — fetch brands to determine state
+    // Authenticated — fetch brands and user timezone to determine state
     try {
+      // Fetch user's stored timezone (non-blocking — best effort)
+      supabase.from('users').select('timezone').eq('id', user.id).single().then(({ data: userData }) => {
+        if (userData?.timezone) setUserTimezone(userData.timezone);
+      });
+
       const { data: brandsData, error } = await supabase
         .from('brands')
         .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
@@ -398,7 +404,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:
-        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
+        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} userTimezone={userTimezone} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
     }
   };
 

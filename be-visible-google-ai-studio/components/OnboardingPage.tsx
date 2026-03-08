@@ -138,12 +138,13 @@ function TimezonePicker({ value, onChange }: TimezonePickerProps) {
       <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none z-10" />
       <input
         type="text"
-        className="w-full px-4 py-3 pl-10 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 focus:border-brand-brown/50 outline-none font-normal text-[#020817] transition-all bg-white text-[15px] cursor-pointer"
+        className="w-full px-4 py-3 pl-10 pr-10 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 focus:border-brand-brown/50 outline-none font-normal text-[#020817] transition-all bg-white text-[15px] cursor-pointer"
         placeholder="Search timezone..."
         value={open ? query : label(value)}
         onFocus={() => { setOpen(true); setQuery(''); }}
         onChange={e => { setQuery(e.target.value); setOpen(true); }}
       />
+      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
       {open && filtered.length > 0 && (
         <div className="absolute z-50 top-full mt-1 w-full bg-white border border-[#E2E8F0] rounded-lg shadow-lg overflow-hidden">
           <div className="overflow-y-auto" style={{ maxHeight: '224px' }}>

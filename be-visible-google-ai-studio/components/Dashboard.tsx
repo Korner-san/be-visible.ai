@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 interface DashboardProps {
   timeRange: TimeRange;
   brandId?: string | null;
+  userTimezone?: string;
   onNavigateToPrompts?: () => void;
 }
 
@@ -31,7 +32,7 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavigateToPrompts }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTimezone = 'UTC', onNavigateToPrompts }) => {
   const [visibilityData, setVisibilityData] = useState<TrendDataPoint[]>([]);
   const [currentScore, setCurrentScore] = useState<number | undefined>();
   const [trendPercent, setTrendPercent] = useState<number | undefined>();
@@ -79,7 +80,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, onNavi
           const points: TrendDataPoint[] = Array.from(bestByDate.entries())
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([reportDate, score]) => ({
-              date: new Date(reportDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              date: new Date(reportDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: userTimezone }),
               score,
             }));
 
