@@ -471,7 +471,152 @@ async function finalizePhase(brand, completedWave) {
 
     await ensureUserInTable(brand.owner_user_id);
 
+    // Inject brand into tomorrow's daily schedule so daily reports start the very next day.
+    // The nightly scheduler already ran (at noon) so we add this brand's batches directly.
+    await injectBrandIntoTomorrowSchedule(brand);
+
     console.log('[QUEUE-ORG] Brand', brandId.substring(0, 8), '→ succeeded. Onboarding complete!');
+  }
+}
+
+// ── Inject a newly onboarded brand into tomorrow's daily schedule ─────────────
+// Called after finalizePhase(2) so the brand's daily reports start the next day.
+// Adds only this brand's batches — does not regenerate or touch other brands.
+async function injectBrandIntoTomorrowSchedule(brand) {
+  try {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const scheduleDate = tomorrow.toISOString().split('T')[0];
+
+    // Get brand's active prompts
+    const { data: prompts } = await supabase
+      .from('brand_prompts')
+      .select('id')
+      .eq('brand_id', brand.id)
+      .eq('status', 'active');
+
+    if (!prompts || prompts.length === 0) {
+      console.log('[INJECT] No active prompts for brand', brand.id.substring(0, 8), '— skipping');
+      return;
+    }
+
+    // Check brand is not already scheduled for tomorrow (idempotent)
+    const { data: alreadyScheduled } = await supabase
+      .from('daily_schedules')
+      .select('id', { count: 'exact', head: true })
+      .eq('schedule_date', scheduleDate)
+      .eq('brand_id', brand.id);
+    if (alreadyScheduled && alreadyScheduled.length > 0) {
+      console.log('[INJECT] Brand already scheduled for', scheduleDate, '— skipping');
+      return;
+    }
+
+    // Get eligible ChatGPT accounts
+    const { data: accounts } = await supabase
+      .from('chatgpt_accounts')
+      .select('id, email')
+      .eq('status', 'active')
+      .eq('is_eligible', true)
+      .not('proxy_host', 'is', null);
+
+    if (!accounts || accounts.length === 0) {
+      console.log('[INJECT] No eligible accounts — skipping injection');
+      return;
+    }
+
+    // Read existing execution times for tomorrow to avoid slot conflicts
+    const { data: existingSlots } = await supabase
+      .from('daily_schedules')
+      .select('execution_time, batch_number')
+      .eq('schedule_date', scheduleDate)
+      .order('batch_number', { ascending: false });
+
+    const occupiedMins = new Set(
+      (existingSlots || []).map(s => {
+        const d = new Date(s.execution_time);
+        return d.getUTCHours() * 60 + d.getUTCMinutes(); // store as UTC minutes
+      })
+    );
+
+    const maxBatchNum = (existingSlots || [])[0]?.batch_number || 0;
+
+    // Create batches of 1–6 prompts
+    const MIN_BATCH = 1, MAX_BATCH = 6, MIN_SPACING = 10;
+    // 8 AM – 6 PM Pacific = 16:00–02:00 UTC. Use a UTC equivalent range.
+    // Pacific Standard Time = UTC-8, so 8 AM PST = 16:00 UTC, 6 PM PST = 02:00 UTC next day.
+    // To keep it simple and match the generator, use 08:00–18:00 UTC+0 offset window.
+    // The generator uses `${scheduleDate}T${h}:${m}:00-08:00` so hour 8-18 are PST hours.
+    // We'll store minutes as PST (hour 8–18 = minute 480–1080).
+    const SLOT_START = 8 * 60;   // 8 AM PST
+    const SLOT_END   = 18 * 60;  // 6 PM PST
+
+    const batches = [];
+    let remaining = [...prompts];
+    while (remaining.length > 0) {
+      const size = Math.min(
+        Math.floor(Math.random() * (MAX_BATCH - MIN_BATCH + 1)) + MIN_BATCH,
+        remaining.length
+      );
+      batches.push(remaining.splice(0, size));
+    }
+
+    // Find a free time slot for each batch
+    const assignedSlots = [];
+    for (let i = 0; i < batches.length; i++) {
+      let found = false;
+      for (let attempt = 0; attempt < 50000 && !found; attempt++) {
+        const candidate = SLOT_START + Math.floor(Math.random() * (SLOT_END - SLOT_START));
+        let tooClose = false;
+        for (const taken of occupiedMins) {
+          if (Math.abs(candidate - taken) < MIN_SPACING) { tooClose = true; break; }
+        }
+        for (const s of assignedSlots) {
+          if (Math.abs(candidate - s) < MIN_SPACING) { tooClose = true; break; }
+        }
+        if (!tooClose) {
+          assignedSlots.push(candidate);
+          occupiedMins.add(candidate);
+          found = true;
+        }
+      }
+      if (!found) {
+        console.warn('[INJECT] Schedule full — could only fit', i, '/', batches.length, 'batches');
+        batches.splice(i); // drop remaining batches we couldn't place
+        break;
+      }
+    }
+
+    assignedSlots.sort((a, b) => a - b);
+
+    // Build records
+    const records = batches.slice(0, assignedSlots.length).map((batch, i) => {
+      const slotMin  = assignedSlots[i];
+      const h        = Math.floor(slotMin / 60);
+      const m        = slotMin % 60;
+      const execTime = new Date(`${scheduleDate}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-08:00`);
+      const account  = accounts[i % accounts.length];
+      return {
+        schedule_date:       scheduleDate,
+        user_id:             brand.owner_user_id,
+        brand_id:            brand.id,
+        chatgpt_account_id:  account.id,
+        batch_number:        maxBatchNum + i + 1,
+        execution_time:      execTime.toISOString(),
+        prompt_ids:          batch.map(p => p.id),
+        batch_size:          batch.length,
+        status:              'pending',
+      };
+    });
+
+    const { error } = await supabase.from('daily_schedules').insert(records);
+    if (error) {
+      console.error('[INJECT] Failed to insert schedule batches:', error.message);
+    } else {
+      console.log('[INJECT] Injected', records.length, 'batches (', prompts.length, 'prompts) for "' + (brand.name || brand.id.substring(0, 8)) + '" into', scheduleDate);
+    }
+  } catch (err) {
+    console.error('[INJECT] injectBrandIntoTomorrowSchedule error:', err.message);
+    // Non-fatal — onboarding already succeeded, injection failure just means manual recovery
   }
 }
 
