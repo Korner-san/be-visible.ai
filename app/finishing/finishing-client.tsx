@@ -92,11 +92,11 @@ export function FinishingClient({ brandName }: FinishingClientProps) {
   const content: Record<Exclude<Status, 'timeout'>, { heading: string; sub: string }> = {
     working: {
       heading: `We're working on your report`,
-      sub: 'This usually takes a few minutes. We'll take you straight to your dashboard when it's ready.',
+      sub: `This usually takes a few minutes. We'll take you straight to your dashboard when it's ready.`,
     },
     almost: {
       heading: `Almost there`,
-      sub: 'We're putting the finishing touches on your report — won't be long now.',
+      sub: `We're putting the finishing touches on your report — won't be long now.`,
     },
     redirecting: {
       heading: `Your report is ready!`,
