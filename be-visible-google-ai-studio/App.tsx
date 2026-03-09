@@ -379,6 +379,7 @@ function AppContent() {
         prompts={prompts}
         setPrompts={setPrompts}
         onBack={() => setActiveTab('Prompts')}
+        brandId={activeBrandId}
       />
     );
   }

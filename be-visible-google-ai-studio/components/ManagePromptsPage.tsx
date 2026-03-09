@@ -1,19 +1,20 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Layers, 
-  Search, 
-  ArrowLeft, 
-  MoreVertical, 
-  Edit2, 
-  X, 
-  Filter, 
+import {
+  Plus,
+  Trash2,
+  Layers,
+  Search,
+  ArrowLeft,
+  MoreVertical,
+  Edit2,
+  X,
+  Filter,
   ArrowUpDown,
   Save,
   ChevronDown,
-  Check
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 import { PromptStats } from '../types';
 
@@ -21,6 +22,7 @@ interface ManagePromptsPageProps {
   prompts: PromptStats[];
   setPrompts: React.Dispatch<React.SetStateAction<PromptStats[]>>;
   onBack: () => void;
+  brandId: string | null;
 }
 
 const formatCategory = (cat: string) => {
@@ -31,12 +33,14 @@ const formatCategory = (cat: string) => {
     .join(' ');
 };
 
-export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, setPrompts, onBack }) => {
+export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, setPrompts, onBack, brandId }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>(prompts[0]?.category || 'ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // New Category State
   const [isAddingCategory, setIsAddingCategory] = useState(false);
@@ -96,8 +100,31 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
   };
 
   const handleDeleteSelected = () => {
-    setPrompts(prev => prev.filter(p => !selectedPromptIds.has(p.id)));
-    setSelectedPromptIds(new Set());
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!brandId || selectedPromptIds.size === 0) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/prompts/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptIds: Array.from(selectedPromptIds), brandId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error('[ManagePrompts] Delete failed:', data.error);
+        return;
+      }
+      setPrompts(prev => prev.filter(p => !selectedPromptIds.has(p.id)));
+      setSelectedPromptIds(new Set());
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      console.error('[ManagePrompts] Delete error:', err);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleMoveSelected = (newCat: string) => {
@@ -217,6 +244,68 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
 
   return (
     <div className="h-screen w-full bg-slate-50 flex flex-col overflow-hidden font-sans text-slate-700">
+
+      {/* ── Delete Confirmation Modal ───────────────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[28px] shadow-2xl max-w-md w-full p-8 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-500 shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
+                  Delete {selectedPromptIds.size} prompt{selectedPromptIds.size > 1 ? 's' : ''}?
+                </h2>
+                <p className="text-xs text-slate-400 font-medium mt-1">This action cannot be undone.</p>
+              </div>
+              <button onClick={() => setShowDeleteConfirm(false)} className="ml-auto p-1.5 text-slate-300 hover:text-slate-500 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-5 space-y-2.5">
+              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">What will happen</p>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                <p className="text-sm text-slate-600 leading-snug">
+                  The selected prompt{selectedPromptIds.size > 1 ? 's' : ''} will be permanently removed from your library.
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                <p className="text-sm text-slate-600 leading-snug">
+                  They will no longer be sent to AI in future daily batches.
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                <p className="text-sm text-slate-600 leading-snug">
+                  Past response data for these prompts is kept in your reports — only future tracking stops.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-6 py-3 text-slate-400 font-black text-[10px] tracking-widest hover:text-slate-600 transition-colors disabled:opacity-40"
+              >
+                Keep prompts
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-8 py-3 bg-rose-500 text-white rounded-xl text-[10px] font-black tracking-widest shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting…' : 'Yes, delete permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="h-14 bg-white border-b border-gray-200 px-6 flex items-center justify-between shrink-0 z-30">
         <div className="flex items-center gap-4">
