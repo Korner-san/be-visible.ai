@@ -157,12 +157,31 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
     }
   };
 
-  const handleToggleActiveSelected = () => {
-    if (selectedPromptIds.size > 0) {
-      setPrompts(prev => prev.map(p => 
-        selectedPromptIds.has(p.id) ? { ...p, isActive: !p.isActive, lastUpdated: "Just now" } : p
+  const handleToggleActiveSelected = async () => {
+    if (selectedPromptIds.size === 0 || !brandId) return;
+
+    // Determine target state: if all active → deactivate, otherwise activate
+    const selectedList = prompts.filter(p => selectedPromptIds.has(p.id));
+    const allActive = selectedList.every(p => p.isActive);
+    const newActive = !allActive;
+
+    try {
+      const res = await fetch('/api/prompts/toggle-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptIds: Array.from(selectedPromptIds), brandId, active: newActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error('[ManagePrompts] Toggle status failed:', data.error);
+        return;
+      }
+      setPrompts(prev => prev.map(p =>
+        selectedPromptIds.has(p.id) ? { ...p, isActive: newActive, lastUpdated: 'Just now' } : p
       ));
       setSelectedPromptIds(new Set());
+    } catch (err) {
+      console.error('[ManagePrompts] Toggle status error:', err);
     }
   };
 
