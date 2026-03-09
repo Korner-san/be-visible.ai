@@ -400,16 +400,17 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         console.error('[AddCompetitor] Fetch failed:', fetchErr);
       }
 
-      // 2. Insert to brand_competitors with resolved website
+      // 2. Upsert to brand_competitors — handles case where competitor already exists
+      //    (e.g. added during onboarding). Updates website if it was blank.
       const { data, error } = await supabase
         .from('brand_competitors')
-        .insert({
+        .upsert({
           brand_id: brandId,
           competitor_name: entityName,
           website,
           is_active: true,
           display_order: competitors.length + 1,
-        })
+        }, { onConflict: 'brand_id,competitor_name' })
         .select('id')
         .single();
 
