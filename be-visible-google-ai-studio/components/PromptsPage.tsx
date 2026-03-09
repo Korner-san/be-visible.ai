@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   ChevronRight, 
@@ -28,6 +28,8 @@ import { PromptStats, MetricType } from '../types';
 interface PromptsPageProps {
   prompts: PromptStats[];
   onNavigateToManage: () => void;
+  brandId: string | null;
+  timeRangeDays: number;
 }
 
 const formatCategory = (cat: string) => {
@@ -55,16 +57,60 @@ const HeaderWithInfo = ({ title, info, align = 'right' }: { title: string, info:
   );
 };
 
-export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage }) => {
+export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, timeRangeDays }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<'Citation sources' | 'Ai preference' | 'Sample history'>('Citation sources');
   const [activeChartMetric, setActiveChartMetric] = useState<MetricType>('visibility');
   const [selectedRun, setSelectedRun] = useState<any | null>(null);
+  // Popup-local date range (starts at global, can be overridden)
+  const [popupDays, setPopupDays] = useState<number>(timeRangeDays);
+  const [popupStats, setPopupStats] = useState<any | null>(null);
+  const [popupLoading, setPopupLoading] = useState(false);
   
   const brandTerracotta = '#874B34';
   const brandBrown = '#2C1308';
+
+  // Reset popup days when entity changes, fetch fresh stats
+  useEffect(() => {
+    if (!selectedEntity || !brandId) { setPopupStats(null); return; }
+    setPopupDays(timeRangeDays);
+  }, [selectedEntity?.data?.id ?? selectedEntity?.data?.category]);
+
+  useEffect(() => {
+    if (!selectedEntity || !brandId) return;
+    const promptId = selectedEntity.type === 'prompt' ? selectedEntity.data.id : null;
+    if (promptId?.startsWith('p-')) return; // unsaved prompt, no stats
+    setPopupLoading(true);
+    const url = promptId
+      ? `/api/prompts/stats?brandId=${brandId}&days=${popupDays}&promptId=${promptId}`
+      : `/api/prompts/stats?brandId=${brandId}&days=${popupDays}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.stats) {
+          if (promptId) {
+            setPopupStats(data.stats[promptId] || null);
+          } else {
+            // category: aggregate across all prompts in category
+            const catPrompts = groupedPrompts[selectedEntity.data.category]?.prompts || [];
+            const ids = catPrompts.map((p: PromptStats) => p.id);
+            const allStats = ids.map((id: string) => data.stats[id]).filter(Boolean);
+            if (allStats.length === 0) { setPopupStats(null); return; }
+            setPopupStats({
+              visibilityScore: Math.round(allStats.reduce((s: number, x: any) => s + x.visibilityScore, 0) / allStats.length),
+              citationShare: Math.round(allStats.reduce((s: number, x: any) => s + x.citationShare, 0) / allStats.length),
+              citations: allStats.reduce((s: number, x: any) => s + x.citations, 0),
+              history: allStats[0]?.history || [],
+              recentResults: allStats.flatMap((x: any) => x.recentResults || []).slice(0, 5),
+            });
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPopupLoading(false));
+  }, [selectedEntity?.data?.id ?? selectedEntity?.data?.category, popupDays, brandId]);
 
   const toggleTopic = (topic: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -133,9 +179,12 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
   const runHistory = useMemo(() => {
     if (!selectedEntity) return [];
-    const source = selectedEntity.type === 'prompt'
-      ? selectedEntity.data.recentResults
-      : groupedPrompts[selectedEntity.data.category]?.prompts.flatMap((p: PromptStats) => p.recentResults || []).slice(0, 5);
+    // Prefer popupStats (date-filtered) over static selectedEntity data
+    const source = popupStats?.recentResults || (
+      selectedEntity.type === 'prompt'
+        ? selectedEntity.data.recentResults
+        : groupedPrompts[selectedEntity.data.category]?.prompts.flatMap((p: PromptStats) => p.recentResults || []).slice(0, 5)
+    );
 
     if (!source || source.length === 0) return [];
 
@@ -155,7 +204,25 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
         return { domain, title: domain, snippet: '', favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=64` };
       }),
     }));
-  }, [selectedEntity, groupedPrompts]);
+  }, [selectedEntity, groupedPrompts, popupStats]);
+
+  // Aggregate citation domains from real prompt_results data
+  const citationDomains = useMemo(() => {
+    const results = popupStats?.recentResults || [];
+    if (results.length === 0) return [];
+    const domainMap: Record<string, number> = {};
+    results.forEach((r: any) => {
+      (r.citations || []).forEach((url: string) => {
+        const domain = url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
+        if (domain) domainMap[domain] = (domainMap[domain] || 0) + 1;
+      });
+    });
+    const total = results.length;
+    return Object.entries(domainMap)
+      .map(([domain, count]) => ({ domain, urls: count, mentions: count, coverage: Math.round((count / total) * 100) }))
+      .sort((a, b) => b.urls - a.urls)
+      .slice(0, 10);
+  }, [popupStats]);
 
   const renderRunDetail = (run: any) => {
     return (
@@ -246,22 +313,28 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
     switch (activeModalTab) {
       case 'Citation sources':
+        if (popupLoading) return <div className="text-center py-12 text-sm text-slate-400 font-bold">Loading citation data...</div>;
+        if (citationDomains.length === 0) return (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center animate-fadeIn">
+            <div className="text-slate-300 mb-3"><ExternalLink size={32} className="mx-auto" /></div>
+            <p className="text-sm font-bold text-slate-400">No citation sources found for this period</p>
+            <p className="text-xs text-slate-300 mt-1">Citations appear when AI responses include source URLs</p>
+          </div>
+        );
         return (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
                   <th className="px-8 py-4 font-bold">Domain source</th>
-                  <th className="px-6 py-4 text-center font-bold">Urls</th>
-                  <th className="px-6 py-4 text-center font-bold">Mentions</th>
+                  <th className="px-6 py-4 text-center font-bold">Times cited</th>
                   <th className="px-8 py-4 text-center font-bold">Coverage</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                <SourceRow domain="reddit.com" urls={42} mentions={156} coverage={94} />
-                <SourceRow domain="stackoverflow.com" urls={28} mentions={94} coverage={82} />
-                <SourceRow domain="github.com" urls={15} mentions={42} coverage={68} />
-                <SourceRow domain="medium.com" urls={12} mentions={31} coverage={45} />
+                {citationDomains.map(row => (
+                  <SourceRow key={row.domain} domain={row.domain} urls={row.urls} mentions={row.mentions} coverage={row.coverage} />
+                ))}
               </tbody>
             </table>
           </div>
@@ -503,11 +576,11 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                    </span>
                    <div className="flex items-center gap-2 text-slate-400 font-bold text-[11px] tracking-widest">
                      <Clock size={12} className="text-gray-300" />
-                     {selectedEntity.type === 'category' ? `Prompts: ${groupedPrompts[selectedEntity.data.category].prompts.length}` : `Runs: ${selectedEntity.data.lastRun}`}
+                     {selectedEntity.type === 'category' ? `Prompts: ${groupedPrompts[selectedEntity.data.category]?.prompts.length}` : `Last run: ${selectedEntity.data.lastRun || '—'}`}
                    </div>
                  </div>
                  {selectedRun ? (
-                   <button 
+                   <button
                     onClick={() => setSelectedRun(null)}
                     className="text-xs font-black text-brand-brown hover:underline flex items-center gap-1 uppercase tracking-widest"
                    >
@@ -526,12 +599,31 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                    </h2>
                  )}
                </div>
-               <button 
-                 onClick={() => setSelectedEntity(null)} 
-                 className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all border border-gray-100"
-               >
-                 <X size={24} strokeWidth={2.5} />
-               </button>
+               <div className="flex items-center gap-4">
+                 {!selectedRun && (
+                   <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                     {([7, 30, 90] as const).map(d => (
+                       <button
+                         key={d}
+                         onClick={() => setPopupDays(d)}
+                         className={`px-3 py-1.5 rounded-md text-[10px] font-black tracking-widest transition-all ${
+                           popupDays === d
+                             ? 'bg-white text-brand-brown shadow-sm border border-gray-200'
+                             : 'text-slate-400 hover:text-slate-600'
+                         }`}
+                       >
+                         {d}D
+                       </button>
+                     ))}
+                   </div>
+                 )}
+                 <button
+                   onClick={() => setSelectedEntity(null)}
+                   className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all border border-gray-100"
+                 >
+                   <X size={24} strokeWidth={2.5} />
+                 </button>
+               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-12 space-y-8 scroll-smooth pb-24 pt-8">
@@ -553,7 +645,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                        </div>
                        <div className="flex-1 w-full min-h-0 pt-2">
                          <ResponsiveContainer width="100%" height="100%">
-                           <AreaChart data={selectedEntity.data.history} margin={{ left: -25, right: 10, top: 10, bottom: 0 }}>
+                           <AreaChart data={popupStats?.history || selectedEntity.data.history} margin={{ left: -25, right: 10, top: 10, bottom: 0 }}>
                               <defs>
                                 <linearGradient id="colorVis" x1="0" y1="0" x2="0" y2="1">
                                   <stop offset="5%" stopColor={brandBrown} stopOpacity={0.05}/>
@@ -594,35 +686,36 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                      </div>
 
                      <div className="col-span-12 lg:col-span-5 grid grid-cols-2 gap-4">
-                       <MetricCard 
-                         label="Visibility" 
-                         value={selectedEntity.data.visibilityScore} 
-                         trend={`+ ${selectedEntity.data.visibilityTrend}% vs last`} 
+                       <MetricCard
+                         label="Visibility"
+                         value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore}%`}
+                         trend={`${(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? '+' : ''}${popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend}% vs prev`}
+                         trendColor={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+                         isDown={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) < 0}
                          isHighlighted={activeChartMetric === 'visibility'}
                          onClick={() => setActiveChartMetric('visibility')}
                        />
-                       <MetricCard 
-                         label="Position" 
-                         value={`#${selectedEntity.data.avgPosition}`} 
-                         trend={`0.3% vs last`} 
-                         trendColor="text-rose-500"
-                         isDown={true}
+                       <MetricCard
+                         label="Position"
+                         value={`#${selectedEntity.data.avgPosition}`}
+                         trend="—"
+                         trendColor="text-slate-300"
                          isHighlighted={activeChartMetric === 'avgPosition'}
                          onClick={() => setActiveChartMetric('avgPosition')}
                        />
-                       <MetricCard 
-                         label="Share" 
-                         value={`${selectedEntity.data.citationShare}%`} 
-                         trend={`12% vs last`} 
-                         trendColor="text-emerald-500"
+                       <MetricCard
+                         label="Citation share"
+                         value={`${popupStats?.citationShare ?? selectedEntity.data.citationShare}%`}
+                         trend="% of runs with citations"
+                         trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'citationShare'}
                          onClick={() => setActiveChartMetric('citationShare')}
                        />
-                       <MetricCard 
-                         label="Mentions" 
-                         value={selectedEntity.data.citations} 
-                         trend={`12% vs last`} 
-                         trendColor="text-emerald-500"
+                       <MetricCard
+                         label="Total citations"
+                         value={popupStats?.citations ?? selectedEntity.data.citations}
+                         trend="across all runs"
+                         trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'mentions'}
                          onClick={() => setActiveChartMetric('mentions')}
                        />
