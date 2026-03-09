@@ -381,17 +381,23 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
       // 1. Resolve URL via Perplexity (best-effort, non-blocking on failure)
       let website = '';
       try {
+        console.log('[AddCompetitor] Resolving URL for:', entityName);
         const res = await fetch('/api/resolve-competitor-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ brandId, entityName }),
         });
+        console.log('[AddCompetitor] API response status:', res.status);
         if (res.ok) {
           const json = await res.json();
           website = json.url || '';
+          console.log('[AddCompetitor] Resolved URL:', website);
+        } else {
+          const errText = await res.text();
+          console.error('[AddCompetitor] API error:', res.status, errText);
         }
-      } catch {
-        // URL resolution failed — proceed without it
+      } catch (fetchErr) {
+        console.error('[AddCompetitor] Fetch failed:', fetchErr);
       }
 
       // 2. Insert to brand_competitors with resolved website

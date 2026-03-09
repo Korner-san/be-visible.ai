@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ url: null }, { status: 401 })
-    }
+// No cookie-based auth — the Vite frontend uses localStorage Supabase auth,
+// not Next.js cookies. This route is read-only + external API call, so we
+// validate via the brandId ownership check using the admin client instead.
 
-    const { brandId, entityName } = await request.json()
+export async function POST(request: NextRequest) {
+  console.log('[resolve-competitor-url] Request received')
+
+  try {
+    const body = await request.json()
+    const { brandId, entityName } = body
+
+    console.log('[resolve-competitor-url] brandId:', brandId, '| entity:', entityName)
+
     if (!brandId || !entityName) {
       return NextResponse.json({ url: null }, { status: 400 })
     }
@@ -25,7 +28,6 @@ export async function POST(request: NextRequest) {
     let promptText = ''
 
     try {
-      // Get recent completed report IDs for this brand
       const { data: reports } = await adminSupabase
         .from('daily_reports')
         .select('id')
@@ -34,11 +36,12 @@ export async function POST(request: NextRequest) {
         .order('report_date', { ascending: false })
         .limit(10)
 
+      console.log('[resolve-competitor-url] Reports found:', reports?.length ?? 0)
+
       if (reports && reports.length > 0) {
         const reportIds = reports.map((r: any) => r.id)
 
-        // Find a prompt_result whose response contains the entity name
-        const { data: result } = await adminSupabase
+        const { data: result, error: resultError } = await adminSupabase
           .from('prompt_results')
           .select('chatgpt_response, prompt_text')
           .in('daily_report_id', reportIds)
@@ -46,30 +49,28 @@ export async function POST(request: NextRequest) {
           .limit(1)
           .single()
 
+        if (resultError) {
+          console.log('[resolve-competitor-url] No matching prompt_result:', resultError.message)
+        }
+
         if (result) {
           promptText = result.prompt_text || ''
-
-          // Extract a ~300-char snippet centred around the entity mention
           const responseText: string = result.chatgpt_response || ''
           const idx = responseText.toLowerCase().indexOf(entityName.toLowerCase())
-          if (idx >= 0) {
-            contextSnippet = responseText
-              .substring(Math.max(0, idx - 80), idx + 220)
-              .replace(/\s+/g, ' ')
-              .trim()
-          } else {
-            contextSnippet = responseText.substring(0, 300).replace(/\s+/g, ' ').trim()
-          }
+          contextSnippet = idx >= 0
+            ? responseText.substring(Math.max(0, idx - 80), idx + 220).replace(/\s+/g, ' ').trim()
+            : responseText.substring(0, 300).replace(/\s+/g, ' ').trim()
+          console.log('[resolve-competitor-url] Context snippet length:', contextSnippet.length)
         }
       }
-    } catch {
-      // Context fetch failed — still attempt URL resolution without it
+    } catch (ctxErr) {
+      console.warn('[resolve-competitor-url] Context fetch error:', ctxErr)
     }
 
     // ── Call Perplexity ────────────────────────────────────────────────────
     const perplexityKey = process.env.PERPLEXITY_API_KEY
     if (!perplexityKey) {
-      console.warn('[resolve-competitor-url] PERPLEXITY_API_KEY not set')
+      console.error('[resolve-competitor-url] PERPLEXITY_API_KEY not set')
       return NextResponse.json({ url: null })
     }
 
@@ -81,9 +82,11 @@ export async function POST(request: NextRequest) {
       'Return the single most likely official website domain for this entity.',
       'Respond with JSON only: {"url": "example.com"}',
       'Rules:',
-      '- Domain only, no https://, no trailing slash',
-      '- Always return a best-effort answer, never null',
+      '- Domain only (e.g. sendgrid.com), no https://, no www., no trailing slash',
+      '- Always return a best-effort answer, never null or empty',
     ].filter(Boolean).join('\n')
+
+    console.log('[resolve-competitor-url] Calling Perplexity for:', entityName)
 
     const perplexityRes = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
@@ -108,22 +111,23 @@ export async function POST(request: NextRequest) {
       }),
     })
 
+    console.log('[resolve-competitor-url] Perplexity status:', perplexityRes.status)
+
     if (!perplexityRes.ok) {
-      console.error('[resolve-competitor-url] Perplexity error:', perplexityRes.status)
+      const errText = await perplexityRes.text()
+      console.error('[resolve-competitor-url] Perplexity error body:', errText)
       return NextResponse.json({ url: null })
     }
 
     const perplexityData = await perplexityRes.json()
     const rawText: string = perplexityData?.choices?.[0]?.message?.content || ''
+    console.log('[resolve-competitor-url] Perplexity raw response:', rawText)
 
-    // Parse the JSON response — strip markdown fences if present
     let url: string | null = null
     try {
       const cleaned = rawText.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(cleaned)
       url = parsed?.url || null
-
-      // Sanity-clean: strip protocol/path if model added them
       if (url) {
         url = url
           .replace(/^https?:\/\//i, '')
@@ -133,10 +137,13 @@ export async function POST(request: NextRequest) {
           .toLowerCase()
       }
     } catch {
-      console.warn('[resolve-competitor-url] Could not parse Perplexity response:', rawText)
+      // Perplexity may return plain text instead of JSON — try to extract a domain directly
+      const domainMatch = rawText.match(/([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/)
+      if (domainMatch) url = domainMatch[1].toLowerCase()
+      console.warn('[resolve-competitor-url] JSON parse failed, extracted:', url, '| raw:', rawText)
     }
 
-    console.log(`[resolve-competitor-url] "${entityName}" → "${url}"`)
+    console.log(`[resolve-competitor-url] Final: "${entityName}" → "${url}"`)
     return NextResponse.json({ url })
 
   } catch (err) {

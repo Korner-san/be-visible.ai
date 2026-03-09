@@ -182,15 +182,19 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
             <div className="flex-1" />
 
             <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between">
-               <a 
-                 href={`https://${comp.website}`} 
-                 target="_blank" 
-                 rel="noopener noreferrer"
-                 className="text-[10px] font-black text-slate-400 hover:text-brand-brown tracking-widest flex items-center gap-1.5 transition-colors"
-               >
-                 <ExternalLink size={12} />
-                 View site
-               </a>
+               {comp.website ? (
+                 <a
+                   href={`https://${comp.website}`}
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   className="text-[10px] font-black text-slate-400 hover:text-brand-brown tracking-widest flex items-center gap-1.5 transition-colors"
+                 >
+                   <ExternalLink size={12} />
+                   {comp.website}
+                 </a>
+               ) : (
+                 <span className="text-[10px] font-bold text-slate-300 tracking-widest">No website yet</span>
+               )}
                <button 
                  onClick={() => handleDelete(comp.id)}
                  className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
