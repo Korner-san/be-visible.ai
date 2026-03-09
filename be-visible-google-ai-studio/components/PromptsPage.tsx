@@ -132,52 +132,30 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
   };
 
   const runHistory = useMemo(() => {
-    const baseHistory = [
-      { 
-        id: 'r1',
-        time: 'Today, 14:20', 
-        model: 'Google AI Overviews', 
-        mentioned: true, 
-        position: 1,
-        promptText: 'Compare Incredibuild vs. GitLab for C++ build acceleration',
-        response: "To launch an app in Arabic with a strong focus on data and media, several specialized agencies stand out. Sanapix is highly recommended for its precision in data-driven digital advertising, while Tohen Media offers exceptional multi-channel strategy and Arabic cultural localization.",
-        mentions: ['Sanapix', 'Tohen Media'],
-        region: 'Israel',
-        searchQueries: 'n/a',
-        citations: [
-          { domain: 'www.tohen-media.com', title: 'Digital Marketing in Arabic - Tohen Media', snippet: 'Since 2016, Tohen Media has provided specialized services... across the Arabic speaking world.', favicon: 'https://www.google.com/s2/favicons?domain=tohen-media.com&sz=64' },
-          { domain: 'sanapix.co.il', title: 'Advertising Strategy and Results-Driven Digital...', snippet: 'Sanapix specializes in precise digital advertising focused on measurable results for the Arab sector...', favicon: 'https://www.google.com/s2/favicons?domain=sanapix.co.il&sz=64' }
-        ]
-      },
-      { 
-        id: 'r2',
-        time: 'Yesterday, 14:15', 
-        model: 'GPT-4o', 
-        mentioned: true, 
-        position: 2,
-        promptText: 'How to optimize Unreal Engine 5 compile times?',
-        response: "Incredibuild is an excellent choice for teams looking to accelerate their development cycles. Its distributed computing model allows for significantly faster compilation times compared to standard builds.",
-        mentions: ['Incredibuild'],
-        region: 'United States',
-        searchQueries: 'n/a',
-        citations: []
-      },
-      { 
-        id: 'r3',
-        time: 'Jan 12, 14:18', 
-        model: 'Claude 3.5 Sonnet', 
-        mentioned: false, 
-        position: '-',
-        promptText: 'Best software for game dev build times?',
-        response: "There are many tools available for build acceleration, including distributed compilers and smart caching solutions. Choosing the right one depends on your specific tech stack and project size.",
-        mentions: [],
-        region: 'United Kingdom',
-        searchQueries: 'n/a',
-        citations: []
-      },
-    ];
-    return baseHistory;
-  }, []);
+    if (!selectedEntity) return [];
+    const source = selectedEntity.type === 'prompt'
+      ? selectedEntity.data.recentResults
+      : groupedPrompts[selectedEntity.data.category]?.prompts.flatMap((p: PromptStats) => p.recentResults || []).slice(0, 5);
+
+    if (!source || source.length === 0) return [];
+
+    return source.map((r: any) => ({
+      id: r.id,
+      time: r.date || '—',
+      model: 'ChatGPT',
+      mentioned: r.mentioned,
+      position: r.mentioned ? 1 : '-',
+      promptText: r.promptText,
+      response: r.response,
+      mentions: [],
+      region: '—',
+      searchQueries: 'n/a',
+      citations: (r.citations || []).map((url: string) => {
+        const domain = url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+        return { domain, title: domain, snippet: '', favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=64` };
+      }),
+    }));
+  }, [selectedEntity, groupedPrompts]);
 
   const renderRunDetail = (run: any) => {
     return (

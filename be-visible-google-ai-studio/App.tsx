@@ -218,7 +218,7 @@ function AppContent() {
       if (error || !data) return;
 
       // Transform brand_prompts rows into PromptStats shape
-      const transformed: PromptStats[] = data.map((p, i) => ({
+      const transformed: PromptStats[] = data.map((p) => ({
         id: p.id,
         text: p.improved_prompt || p.raw_prompt,
         category: (p.category || 'General').toUpperCase(),
@@ -239,6 +239,32 @@ function AppContent() {
       }));
 
       setPrompts(transformed);
+
+      // Fetch real stats and merge in — non-blocking so page renders immediately
+      try {
+        const statsRes = await fetch(`/api/prompts/stats?brandId=${activeBrandId}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          if (statsData.success && statsData.stats) {
+            setPrompts(prev => prev.map(p => {
+              const s = statsData.stats[p.id];
+              if (!s) return p;
+              return {
+                ...p,
+                visibilityScore: s.visibilityScore,
+                visibilityTrend: s.visibilityTrend,
+                citationShare: s.citationShare,
+                citations: s.citations,
+                lastRun: s.lastRun,
+                history: s.history,
+                recentResults: s.recentResults,
+              };
+            }));
+          }
+        }
+      } catch (statsErr) {
+        console.warn('[App] Could not fetch prompt stats:', statsErr);
+      }
     };
 
     fetchPrompts();

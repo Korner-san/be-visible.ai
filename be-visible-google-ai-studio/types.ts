@@ -57,6 +57,16 @@ export interface PromptStats {
   tags?: string[];
   platforms?: string[];
   lastUpdated?: string;
+  // Real stats from prompt_results
+  recentResults?: Array<{
+    id: string;
+    promptText: string;
+    response: string;
+    mentioned: boolean;
+    citationCount: number;
+    citations: string[];
+    date: string;
+  }>;
 }
 
 export type MetricType = 'visibility' | 'avgPosition' | 'citationShare' | 'mentions';
