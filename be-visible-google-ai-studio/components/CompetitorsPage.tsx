@@ -3,8 +3,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend, Cell, PieChart, Pie, LabelList
 } from 'recharts';
-import { TrendingUp, HelpCircle } from 'lucide-react';
-import { TimeRange } from '../types';
+import { TrendingUp, HelpCircle, Plus, Check, Loader2, Radar } from 'lucide-react';
+import { TimeRange, Competitor } from '../types';
 import { supabase } from '../lib/supabase';
 
 // Competitor color palette: Purple, Deep Red, Red, Orange, Yellow
@@ -28,9 +28,17 @@ const MOCK_TREND = [
   { date: 'Jan 03', Incredibuild: 94, 'GitLab CI': 82, CircleCI: 79, 'Travis CI': 71, Jenkins: 65 },
 ];
 
+interface DetectedEntity {
+  name: string;
+  mentionRate: number;   // % of reports where this entity appeared
+  visibilityScore: number; // % of total SOV mentions this entity captured
+}
+
 interface CompetitorsPageProps {
   brandId?: string | null;
   timeRange?: TimeRange;
+  competitors?: Competitor[];
+  onAddCompetitor?: (comp: Competitor) => void;
 }
 
 interface SovSlice {
@@ -61,7 +69,11 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
-export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
+const COMP_COLORS = ['#874B34', '#BC633A', '#E7B373', '#963D1F', '#2C1308', '#64748b'];
+
+export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
+  brandId, timeRange = TimeRange.THIRTY_DAYS, competitors = [], onAddCompetitor
+}) => {
   // SOV state
   const [sovSlices, setSovSlices] = useState<SovSlice[]>([]);
   const [sovBrandPct, setSovBrandPct] = useState<number>(45);
@@ -77,14 +89,21 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
   const [hasRealMetrics, setHasRealMetrics] = useState(false);
 
+  // Detected entities state
+  const [detectedEntities, setDetectedEntities] = useState<DetectedEntity[]>([]);
+  const [isLoadingEntities, setIsLoadingEntities] = useState(false);
+  const [addingEntity, setAddingEntity] = useState<string | null>(null);
+  const [addedEntities, setAddedEntities] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (!brandId) return;
 
     const { from, to } = getDateRange(timeRange);
 
-    // Fetch share of voice
+    // Fetch share of voice + detected entities (single query, dual purpose)
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
+      setIsLoadingEntities(true);
       try {
         const { data: reports, error } = await supabase
           .from('daily_reports')
@@ -95,18 +114,31 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
           .gte('report_date', from)
           .lte('report_date', to);
 
-        if (error || !reports || reports.length === 0) { setHasRealSov(false); return; }
+        if (error || !reports || reports.length === 0) {
+          setHasRealSov(false);
+          setDetectedEntities([]);
+          return;
+        }
 
-        const entityMap: Record<string, { name: string; mentions: number; type: string }> = {};
+        const totalReports = reports.length;
+        const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number }> = {};
         let totalMentions = 0;
 
         for (const report of reports) {
           const sov = report.share_of_voice_data as any;
           if (!sov?.entities) continue;
+          const seenInReport = new Set<string>();
           for (const entity of sov.entities) {
             const key = entity.name.toLowerCase();
-            if (entityMap[key]) entityMap[key].mentions += entity.mentions;
-            else entityMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type };
+            if (entityMap[key]) {
+              entityMap[key].mentions += entity.mentions;
+            } else {
+              entityMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type, reportCount: 0 };
+            }
+            if (!seenInReport.has(key)) {
+              entityMap[key].reportCount++;
+              seenInReport.add(key);
+            }
           }
           totalMentions += sov.total_mentions || 0;
         }
@@ -115,14 +147,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
 
         const entities = Object.values(entityMap).sort((a, b) => b.mentions - a.mentions);
         const brand = entities.find(e => e.type === 'brand');
-        const competitors = entities.filter(e => e.type === 'competitor');
+        const trackedComps = entities.filter(e => e.type === 'competitor');
         const others = entities.filter(e => e.type === 'other');
         const otherMentions = others.reduce((sum, e) => sum + e.mentions, 0);
 
+        // ── SOV slices ──
         const slices: SovSlice[] = [];
         let colorIdx = 0;
         if (brand) slices.push({ name: brand.name, voice: Math.round((brand.mentions / totalMentions) * 100), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
-        for (const comp of competitors) {
+        for (const comp of trackedComps) {
           const pct = Math.round((comp.mentions / totalMentions) * 100);
           if (pct > 0) slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         }
@@ -136,11 +169,24 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
         setSovSlices(slices);
         setSovBrandPct(slices[0]?.voice ?? 0);
         setHasRealSov(true);
+
+        // ── Detected entities (all entities except the brand itself) ──
+        const detected: DetectedEntity[] = entities
+          .filter(e => e.type !== 'brand')
+          .map(e => ({
+            name: e.name,
+            mentionRate: Math.round((e.reportCount / totalReports) * 100),
+            visibilityScore: Math.round((e.mentions / totalMentions) * 100),
+          }))
+          .sort((a, b) => b.mentionRate - a.mentionRate);
+
+        setDetectedEntities(detected);
       } catch (err) {
         console.error('Competitors SOV fetch error:', err);
         setHasRealSov(false);
       } finally {
         setIsLoadingSov(false);
+        setIsLoadingEntities(false);
       }
     };
 
@@ -327,6 +373,38 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
       </g>
     );
   };
+
+  const handleAddAsCompetitor = async (entityName: string) => {
+    if (!brandId || !onAddCompetitor) return;
+    setAddingEntity(entityName);
+    try {
+      const { data, error } = await supabase
+        .from('brand_competitors')
+        .insert({
+          brand_id: brandId,
+          competitor_name: entityName,
+          is_active: true,
+          display_order: competitors.length + 1,
+        })
+        .select('id')
+        .single();
+
+      if (error) { console.error('Failed to add competitor:', error); return; }
+
+      const color = COMP_COLORS[competitors.length % COMP_COLORS.length];
+      onAddCompetitor({ id: data?.id || `comp-${Date.now()}`, name: entityName, website: '', color });
+      setAddedEntities(prev => new Set(prev).add(entityName.toLowerCase()));
+    } catch (err) {
+      console.error('Add competitor error:', err);
+    } finally {
+      setAddingEntity(null);
+    }
+  };
+
+  const trackedNames = new Set([
+    ...competitors.map(c => c.name.toLowerCase()),
+    ...Array.from(addedEntities),
+  ]);
 
   const isLoading = isLoadingSov || isLoadingMetrics;
   const hasAnyReal = hasRealSov || hasRealMetrics;
@@ -556,6 +634,106 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({ brandId, timeR
           </div>
         </div>
       </div>
+
+      {/* ── Detected Entities ─────────────────────────────────────────────── */}
+      {brandId && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-brand-brown/5 text-brand-brown flex items-center justify-center">
+                <Radar size={16} />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Detected Entities</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+                  Entities appearing in your AI responses — add any as a tracked competitor
+                </p>
+              </div>
+            </div>
+            {isLoadingEntities ? (
+              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+            ) : detectedEntities.length > 0 ? (
+              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                {detectedEntities.length} ENTITIES
+              </span>
+            ) : null}
+          </div>
+
+          {isLoadingEntities ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={20} className="animate-spin text-slate-300" />
+            </div>
+          ) : detectedEntities.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+              <p className="text-xs font-semibold text-gray-400">No entity data yet</p>
+              <p className="text-[10px] text-gray-300 mt-1">Available after your first complete report</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {/* Table header */}
+              <div className="grid grid-cols-12 gap-4 px-5 py-2.5 bg-gray-50/60">
+                <div className="col-span-5 text-[9px] font-black uppercase tracking-widest text-slate-400">Entity</div>
+                <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Mention Rate</div>
+                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400">SOV Share</div>
+                <div className="col-span-2" />
+              </div>
+
+              {detectedEntities.map((entity) => {
+                const key = entity.name.toLowerCase();
+                const isTracked = trackedNames.has(key);
+                const isAdding = addingEntity === entity.name;
+                return (
+                  <div key={entity.name} className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
+                    {/* Name */}
+                    <div className="col-span-5 flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
+                        {entity.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
+                    </div>
+
+                    {/* Mention Rate bar */}
+                    <div className="col-span-3 flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-brand-brown/60 rounded-full"
+                          style={{ width: `${entity.mentionRate}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">
+                        {entity.mentionRate}%
+                      </span>
+                    </div>
+
+                    {/* SOV Share */}
+                    <div className="col-span-2">
+                      <span className="text-[11px] font-black text-slate-500">{entity.visibilityScore}%</span>
+                    </div>
+
+                    {/* Action */}
+                    <div className="col-span-2 flex justify-end">
+                      {isTracked ? (
+                        <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-lg">
+                          <Check size={10} /> Tracking
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleAddAsCompetitor(entity.name)}
+                          disabled={isAdding || !onAddCompetitor}
+                          className="flex items-center gap-1 text-[9px] font-black text-brand-brown border border-brand-brown/20 bg-brand-brown/5 hover:bg-brand-brown/10 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {isAdding ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />}
+                          Add as Competitor
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

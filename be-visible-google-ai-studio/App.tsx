@@ -76,6 +76,28 @@ function AppContent() {
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
   const [dashboardKey, setDashboardKey] = useState(0);
 
+  // Load competitors from DB when brand is known
+  useEffect(() => {
+    if (!activeBrandId) return;
+    const COLORS = ['#874B34', '#BC633A', '#E7B373', '#963D1F', '#2C1308', '#64748b'];
+    supabase
+      .from('brand_competitors')
+      .select('id, competitor_name, is_active')
+      .eq('brand_id', activeBrandId)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setCompetitors(data.map((c: any, i: number) => ({
+            id: c.id || `comp-${i}`,
+            name: c.competitor_name,
+            website: '',
+            color: COLORS[i % COLORS.length],
+          })));
+        }
+      });
+  }, [activeBrandId]);
+
   // ── Detect auth callback (email confirmation) ────────────────────────────
   useEffect(() => {
     const hash = window.location.hash;
@@ -380,7 +402,12 @@ function AppContent() {
       case 'Getting Started':
         return <OverviewPage onNavigate={handleTabChange} />;
       case 'Competitors':
-        return <CompetitorsPage brandId={activeBrandId} timeRange={timeRange} />;
+        return <CompetitorsPage
+          brandId={activeBrandId}
+          timeRange={timeRange}
+          competitors={competitors}
+          onAddCompetitor={(comp) => setCompetitors(prev => [...prev, comp])}
+        />;
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} />;
       case 'Citations':
