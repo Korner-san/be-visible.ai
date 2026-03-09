@@ -378,11 +378,29 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     if (!brandId || !onAddCompetitor) return;
     setAddingEntity(entityName);
     try {
+      // 1. Resolve URL via Perplexity (best-effort, non-blocking on failure)
+      let website = '';
+      try {
+        const res = await fetch('/api/resolve-competitor-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId, entityName }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          website = json.url || '';
+        }
+      } catch {
+        // URL resolution failed — proceed without it
+      }
+
+      // 2. Insert to brand_competitors with resolved website
       const { data, error } = await supabase
         .from('brand_competitors')
         .insert({
           brand_id: brandId,
           competitor_name: entityName,
+          website,
           is_active: true,
           display_order: competitors.length + 1,
         })
@@ -392,7 +410,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
       if (error) { console.error('Failed to add competitor:', error); return; }
 
       const color = COMP_COLORS[competitors.length % COMP_COLORS.length];
-      onAddCompetitor({ id: data?.id || `comp-${Date.now()}`, name: entityName, website: '', color });
+      onAddCompetitor({ id: data?.id || `comp-${Date.now()}`, name: entityName, website, color });
       setAddedEntities(prev => new Set(prev).add(entityName.toLowerCase()));
     } catch (err) {
       console.error('Add competitor error:', err);

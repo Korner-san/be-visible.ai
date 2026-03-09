@@ -82,7 +82,7 @@ function AppContent() {
     const COLORS = ['#874B34', '#BC633A', '#E7B373', '#963D1F', '#2C1308', '#64748b'];
     supabase
       .from('brand_competitors')
-      .select('id, competitor_name, is_active')
+      .select('id, competitor_name, website, is_active')
       .eq('brand_id', activeBrandId)
       .eq('is_active', true)
       .order('display_order', { ascending: true })
@@ -91,7 +91,7 @@ function AppContent() {
           setCompetitors(data.map((c: any, i: number) => ({
             id: c.id || `comp-${i}`,
             name: c.competitor_name,
-            website: '',
+            website: c.website || '',
             color: COLORS[i % COLORS.length],
           })));
         }
