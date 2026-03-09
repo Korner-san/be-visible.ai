@@ -1,20 +1,22 @@
 
 import React, { useState } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Globe, 
-  Search, 
-  PlusCircle,
-  ExternalLink,
+import {
+  Plus,
+  Trash2,
+  Globe,
+  Search,
   Shield,
-  ArrowRight
+  ArrowRight,
+  ExternalLink,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { Competitor } from '../types';
 
 interface ManageCompetitorsPageProps {
   competitors: Competitor[];
   setCompetitors: React.Dispatch<React.SetStateAction<Competitor[]>>;
+  brandId: string | null;
 }
 
 const DomainLogo = ({ domain }: { domain: string }) => {
@@ -26,26 +28,54 @@ const DomainLogo = ({ domain }: { domain: string }) => {
   }
 
   return (
-    <img 
-      src={faviconUrl} 
-      alt={`${domain} logo`} 
+    <img
+      src={faviconUrl}
+      alt={`${domain} logo`}
       className="w-8 h-8 object-contain rounded-lg"
       onError={() => setError(true)}
     />
   );
 };
 
-export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ competitors, setCompetitors }) => {
+interface PendingDelete {
+  id: string;
+  name: string;
+  website: string;
+}
+
+export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ competitors, setCompetitors, brandId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [newCompName, setNewCompName] = useState('');
   const [newCompWebsite, setNewCompWebsite] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const brandTerracotta = '#874B34';
-  const brandBrown = '#2C1308';
+  const handleDeleteClick = (comp: Competitor) => {
+    setPendingDelete({ id: comp.id, name: comp.name, website: comp.website });
+  };
 
-  const handleDelete = (id: string) => {
-    setCompetitors(prev => prev.filter(c => c.id !== id));
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete || !brandId) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/competitors/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitorId: pendingDelete.id, brandId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error('[DeleteCompetitor] API error:', data.error);
+        return;
+      }
+      setCompetitors(prev => prev.filter(c => c.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (err) {
+      console.error('[DeleteCompetitor] Unexpected error:', err);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleAdd = (e: React.FormEvent) => {
@@ -68,18 +98,94 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
     setIsAdding(false);
   };
 
-  const filteredCompetitors = competitors.filter(c => 
+  const filteredCompetitors = competitors.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.website.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <div className="space-y-6 animate-fadeIn pb-24">
+
+      {/* ── Delete Confirmation Modal ─────────────────────────────────────── */}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[28px] shadow-2xl max-w-md w-full p-8 space-y-6 animate-slideDown">
+            {/* Icon + title */}
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-500 shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
+                  Remove "{pendingDelete.name}"?
+                </h2>
+                <p className="text-xs text-slate-400 font-medium mt-1">This action cannot be undone.</p>
+              </div>
+              <button
+                onClick={() => setPendingDelete(null)}
+                className="ml-auto p-1.5 text-slate-300 hover:text-slate-500 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Impact list */}
+            <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+              <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">What will happen</p>
+              <div className="space-y-2.5">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                  <p className="text-sm text-slate-600 leading-snug">
+                    <span className="font-bold">{pendingDelete.name}</span> will be removed from your tracked competitors immediately.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                  <p className="text-sm text-slate-600 leading-snug">
+                    All historical report data for this competitor will be erased — past mention rates, visibility scores, and benchmarks will be gone.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <p className="text-sm text-slate-600 leading-snug">
+                    If <span className="font-bold">{pendingDelete.name}</span> appears as an entity in AI responses, it will show up again under "Detected Entities" as available to re-add.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                  <p className="text-sm text-slate-600 leading-snug">
+                    Future reports will no longer track or score this competitor.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setPendingDelete(null)}
+                disabled={isDeleting}
+                className="px-6 py-3 text-slate-400 font-black text-[10px] tracking-widest hover:text-slate-600 transition-colors disabled:opacity-40"
+              >
+                Keep competitor
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-8 py-3 bg-rose-500 text-white rounded-xl text-[10px] font-black tracking-widest shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeleting ? 'Removing…' : 'Yes, remove permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header with Search and Toggle Add */}
       <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input 
+          <input
             type="text"
             placeholder="Search tracked competitors..."
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-brown/10"
@@ -87,7 +193,7 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <button 
+        <button
           onClick={() => setIsAdding(!isAdding)}
           className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-brand-brown text-white rounded-xl text-xs font-black tracking-widest hover:scale-[1.02] transition-all shadow-lg shadow-brand-brown/10"
         >
@@ -105,15 +211,15 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
                </div>
                <div>
                  <h3 className="text-lg font-black text-slate-900 tracking-tight leading-none">Benchmark new brand</h3>
-                 <p className="text-xs text-slate-500 font-medium mt-1">Add a competitor to track their Ai mentions and visibility score.</p>
+                 <p className="text-xs text-slate-500 font-medium mt-1">Add a competitor to track their AI mentions and visibility score.</p>
                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div className="space-y-1.5">
                   <label className="text-[10px] font-black tracking-widest text-slate-400 ml-1">Company name</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. GitLab"
                     className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all"
@@ -122,11 +228,11 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
                   />
                </div>
                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 ml-1">Website Url</label>
+                  <label className="text-[10px] font-black tracking-widest text-slate-400 ml-1">Website URL</label>
                   <div className="relative">
                     <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       required
                       placeholder="e.g. gitlab.com"
                       className="w-full pl-12 pr-5 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all"
@@ -138,14 +244,14 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
-               <button 
+               <button
                  type="button"
                  onClick={() => setIsAdding(false)}
                  className="px-6 py-3 text-slate-400 font-black text-[10px] tracking-widest hover:text-slate-600 transition-colors"
                >
                  Cancel
                </button>
-               <button 
+               <button
                  type="submit"
                  className="px-10 py-3 bg-brand-brown text-white rounded-xl text-[10px] font-black tracking-widest shadow-xl shadow-brand-brown/20 hover:scale-[1.02] transition-all flex items-center gap-2"
                >
@@ -169,12 +275,12 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
                     <h4 className="text-base font-black text-slate-900 tracking-tight">{comp.name}</h4>
                     <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
                        <Globe size={12} />
-                       {comp.website}
+                       {comp.website || <span className="italic">No website</span>}
                     </div>
                   </div>
                </div>
-               <div 
-                 className="w-3 h-3 rounded-full shadow-sm ring-2 ring-white" 
+               <div
+                 className="w-3 h-3 rounded-full shadow-sm ring-2 ring-white"
                  style={{ backgroundColor: comp.color }}
                />
             </div>
@@ -195,8 +301,8 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
                ) : (
                  <span className="text-[10px] font-bold text-slate-300 tracking-widest">No website yet</span>
                )}
-               <button 
-                 onClick={() => handleDelete(comp.id)}
+               <button
+                 onClick={() => handleDeleteClick(comp)}
                  className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
                  title="Remove Competitor"
                >
@@ -215,7 +321,7 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
               <h3 className="text-lg font-bold text-slate-700">No competitors found</h3>
               <p className="text-sm text-slate-400 max-w-xs">Try adjusting your search or add a new brand to start benchmarking.</p>
             </div>
-            <button 
+            <button
               onClick={() => setIsAdding(true)}
               className="px-6 py-2 bg-white border border-gray-200 rounded-xl text-xs font-black text-brand-brown tracking-widest hover:border-brand-brown transition-all"
             >

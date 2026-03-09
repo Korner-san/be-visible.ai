@@ -409,7 +409,7 @@ function AppContent() {
           onAddCompetitor={(comp) => setCompetitors(prev => [...prev, comp])}
         />;
       case 'Manage Competitors':
-        return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} />;
+        return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} />;
       case 'Prompts':
