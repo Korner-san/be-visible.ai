@@ -256,7 +256,7 @@ export function getRouteForState(state: UserState): string {
       return '/reports/overview?demo=true'
     
     case 'AUTHENTICATED_READY':
-      return '/reports/overview'
+      return '/reports/visibility'
     
     default:
       return '/auth/signin'

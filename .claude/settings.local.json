@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(ssh:*)",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "Bash(npx supabase:*)",
+      "WebFetch(domain:supermemory.ai)",
+      "WebFetch(domain:github.com)",
+      "Bash(claude plugin:*)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(echo === QUERY 1: architecture ===:*)",
+      "Bash(scp:*)"
     ]
   }
 }
