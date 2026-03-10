@@ -131,10 +131,12 @@ If you cannot determine a value, use a reasonable placeholder in ${language}.`;
 
     return res.status(200).json({ success: true, brandData });
   } catch (err) {
-    console.error('[analyze-website] Error:', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[analyze-website] Error:', errMsg);
+    console.error('[analyze-website] OPENAI_API_KEY set:', !!process.env.OPENAI_API_KEY);
     return res.status(500).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to analyze website',
+      error: errMsg,
     });
   }
 };
