@@ -247,23 +247,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     }));
   }, [selectedEntity, groupedPrompts, popupStats]);
 
-  // Aggregate citation domains from real prompt_results data
-  const citationDomains = useMemo(() => {
-    const results = popupStats?.recentResults || [];
-    if (results.length === 0) return [];
-    const domainMap: Record<string, number> = {};
-    results.forEach((r: any) => {
-      (r.citations || []).forEach((url: string) => {
-        const domain = url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
-        if (domain) domainMap[domain] = (domainMap[domain] || 0) + 1;
-      });
-    });
-    const total = results.length;
-    return Object.entries(domainMap)
-      .map(([domain, count]) => ({ domain, urls: count, mentions: count, coverage: Math.round((count / total) * 100) }))
-      .sort((a, b) => b.urls - a.urls)
-      .slice(0, 10);
-  }, [popupStats]);
+  // Citation domains come directly from the API (full dataset, not just last 5 runs)
+  const citationDomains: any[] = popupStats?.citationDomains || [];
 
 
   const renderRunDetail = (run: any) => {
@@ -373,9 +358,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
     switch (activeModalTab) {
       case 'Citation sources':
-        if (popupLoading) return <div className="text-center py-12 text-sm text-slate-400 font-bold">Loading citation data...</div>;
+        if (popupLoading) return (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin" />
+          </div>
+        );
         if (citationDomains.length === 0) return (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center animate-fadeIn">
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-8">
             <div className="text-slate-300 mb-3"><ExternalLink size={32} className="mx-auto" /></div>
             <p className="text-sm font-bold text-slate-400">No citation sources found for this period</p>
             <p className="text-xs text-slate-300 mt-1">Citations appear when AI responses include source URLs</p>
@@ -383,17 +372,32 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
         );
         return (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
-                  <th className="px-8 py-4 font-bold">Domain source</th>
-                  <th className="px-6 py-4 text-center font-bold">Times cited</th>
-                  <th className="px-8 py-4 text-center font-bold">Coverage</th>
+            <table className="w-full text-left text-[11px] border-collapse">
+              <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
+                <tr>
+                  <th className="px-5 py-3 font-bold">Domain</th>
+                  <th className="px-4 py-3 font-bold text-center">Unique URLs</th>
+                  <th className="px-4 py-3 font-bold text-center">Mentions</th>
+                  <th className="px-4 py-3 font-bold text-center">% Total</th>
+                  <th className="px-4 py-3 font-bold text-center">Coverage</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {citationDomains.map(row => (
-                  <SourceRow key={row.domain} domain={row.domain} urls={row.urls} mentions={row.mentions} coverage={row.coverage} />
+                {citationDomains.map((row: any) => (
+                  <tr key={row.domain} className="hover:bg-gray-50 transition-colors group">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-all">
+                          <img src={`https://www.google.com/s2/favicons?domain=${row.domain}&sz=64`} className="w-4 h-4 object-contain rounded-sm" alt={row.domain} />
+                        </div>
+                        <span className="font-bold text-slate-700 text-[13px]">{row.domain}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.uniqueUrls}</td>
+                    <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.mentions}</td>
+                    <td className="px-4 py-4 text-center font-black text-slate-900 tabular-nums text-[13px]">{row.pctTotal}%</td>
+                    <td className="px-4 py-4 text-center font-bold text-slate-900 text-[13px]">{row.coverage}%</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -765,7 +769,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
                      <div className="col-span-12 lg:col-span-5 grid grid-cols-2 gap-4">
                        <MetricCard
-                         label="Visibility"
+                         label="Visibility score"
                          value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore}%`}
                          trend={`${(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? '+' : ''}${popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend}% vs prev`}
                          trendColor={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? 'text-emerald-500' : 'text-rose-500'}
@@ -774,17 +778,20 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                          onClick={() => setActiveChartMetric('visibility')}
                        />
                        <MetricCard
-                         label="Position"
-                         value={`#${selectedEntity.data.avgPosition}`}
-                         trend="—"
-                         trendColor="text-slate-300"
+                         label="Avg position"
+                         value={(() => {
+                           const pos = popupStats?.avgPosition ?? selectedEntity.data.avgPosition;
+                           return pos != null ? pos.toFixed(1) : '—';
+                         })()}
+                         trend="avg list rank when mentioned"
+                         trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'avgPosition'}
                          onClick={() => setActiveChartMetric('avgPosition')}
                        />
                        <MetricCard
                          label="Citation share"
                          value={`${popupStats?.citationShare ?? selectedEntity.data.citationShare}%`}
-                         trend="% of runs with citations"
+                         trend="brand citations % of total"
                          trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'citationShare'}
                          onClick={() => setActiveChartMetric('citationShare')}
@@ -861,27 +868,3 @@ const MetricCard = ({
   </div>
 );
 
-const SourceRow = ({ domain, urls, mentions, coverage }: { domain: string, urls: number, mentions: number, coverage: number }) => {
-  return (
-    <tr className="hover:bg-slate-50 transition-colors group">
-      <td className="px-8 py-5">
-        <div className="flex items-center gap-4">
-           <div className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-105 transition-transform">
-             <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`} className="w-full h-full object-contain" alt={domain} />
-           </div>
-           <span className="text-sm font-bold text-slate-700">{domain}</span>
-        </div>
-      </td>
-      <td className="px-6 py-5 text-center text-sm font-bold text-slate-500 tabular-nums">{urls}</td>
-      <td className="px-6 py-5 text-center text-sm font-bold text-slate-500 tabular-nums">{mentions}</td>
-      <td className="px-8 py-5">
-        <div className="flex items-center gap-5">
-          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0 min-w-[140px]">
-            <div className="h-full bg-brand-brown transition-all duration-1000" style={{ width: `${coverage}%` }} />
-          </div>
-          <span className="text-[11px] font-black text-slate-900 tabular-nums">{coverage}%</span>
-        </div>
-      </td>
-    </tr>
-  );
-};

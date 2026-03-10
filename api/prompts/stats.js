@@ -2,14 +2,15 @@
  * Vercel Serverless Function: /api/prompts/stats
  *
  * Returns per-prompt stats for the Prompts page:
- *   - visibilityScore  : % of runs where brand was mentioned
- *   - citationCount    : total citations across all runs
- *   - citationShare    : % of runs that had at least one citation
- *   - lastRun          : most recent report_date this prompt ran
- *   - history          : last 30 days visibility per day (for chart)
- *   - recentResults    : last 5 prompt_results rows (for Sample history tab)
- *
- * Query: GET /api/prompts/stats?brandId=xxx
+ *   - visibilityScore      : % of runs where brand was mentioned
+ *   - avgPosition          : avg numbered-list position of brand in response (1 decimal)
+ *   - citationShare        : brand domain citations / total citations % (same as CitationShareChart)
+ *   - citations            : total citation URLs across all runs
+ *   - lastRun              : most recent report_date this prompt ran
+ *   - history              : visibility per day for chart
+ *   - recentResults        : last 5 prompt_results rows
+ *   - citationDomains      : per-domain stats (uniqueUrls, mentions, pctTotal, coverage)
+ *   - contentTypeBreakdown : content type distribution (single-prompt only)
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -29,6 +30,24 @@ function setCorsHeaders(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
+/**
+ * Parse the brand's numbered-list position from a ChatGPT response.
+ * Returns the list number (1-based) if found, null otherwise.
+ */
+function extractBrandPosition(text, brandNameLower) {
+  if (!text || !brandNameLower) return null;
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Match "1.", "1)", "1-", "1 -", "1 ." etc.
+    const numMatch = trimmed.match(/^(\d+)[.):\-\s]/);
+    if (numMatch && trimmed.toLowerCase().includes(brandNameLower)) {
+      return parseInt(numMatch[1], 10);
+    }
+  }
+  return null;
+}
+
 module.exports = async function handler(req, res) {
   setCorsHeaders(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -40,26 +59,31 @@ module.exports = async function handler(req, res) {
   const days = parseInt(daysParam) || 30;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoffStr = cutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
-  // 1. Get brand name (needed to detect mentions in response text)
+  // 1. Get brand name + domain
   const { data: brand } = await supabase
     .from('brands')
-    .select('id, name')
+    .select('id, name, domain')
     .eq('id', brandId)
     .single();
 
   if (!brand) return res.status(404).json({ success: false, error: 'Brand not found' });
 
   const brandNameLower = brand.name.toLowerCase();
+  // Normalise domain: strip protocol + www, keep just hostname
+  const brandDomain = (brand.domain || '')
+    .replace(/^https?:\/\/(www\.)?/, '')
+    .split('/')[0]
+    .toLowerCase();
 
-  // 2. Get completed reports for this brand within the date range
-  let reportsQuery = supabase
+  // 2. Get completed reports within date range
+  const { data: reports } = await supabase
     .from('daily_reports')
     .select('id, report_date')
     .eq('brand_id', brandId)
@@ -68,8 +92,6 @@ module.exports = async function handler(req, res) {
     .order('report_date', { ascending: false })
     .limit(90);
 
-  const { data: reports } = await reportsQuery;
-
   if (!reports || reports.length === 0) {
     return res.status(200).json({ success: true, stats: {} });
   }
@@ -77,7 +99,7 @@ module.exports = async function handler(req, res) {
   const reportIds = reports.map(r => r.id);
   const reportDateMap = Object.fromEntries(reports.map(r => [r.id, r.report_date]));
 
-  // 3. Fetch all prompt_results for these reports (optionally filtered to one prompt)
+  // 3. Fetch prompt_results (optionally filtered to one prompt)
   let resultsQuery = supabase
     .from('prompt_results')
     .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, prompt_text, created_at')
@@ -93,7 +115,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ success: true, stats: {} });
   }
 
-  // 4. Group by brand_prompt_id and compute stats
+  // 4. Group by brand_prompt_id
   const grouped = {};
 
   for (const row of results) {
@@ -104,18 +126,24 @@ module.exports = async function handler(req, res) {
       grouped[pid] = { runs: [], recentResults: [] };
     }
 
-    // Determine if brand was mentioned
-    // Prefer stored brand_mentioned field; fall back to text search
     const mentioned = row.brand_mentioned != null
       ? row.brand_mentioned
       : (row.chatgpt_response || '').toLowerCase().includes(brandNameLower);
 
-    const citationCount = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations.length : 0;
+    const citations = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : [];
+    const citationCount = citations.length;
+    const brandCitationCount = brandDomain
+      ? citations.filter(url => (url || '').toLowerCase().includes(brandDomain)).length
+      : 0;
+
+    const position = mentioned
+      ? extractBrandPosition(row.chatgpt_response, brandNameLower)
+      : null;
+
     const reportDate = reportDateMap[row.daily_report_id] || '';
 
-    grouped[pid].runs.push({ mentioned, citationCount, reportDate, dailyReportId: row.daily_report_id });
+    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate });
 
-    // Keep last 5 for sample history tab
     if (grouped[pid].recentResults.length < 5) {
       grouped[pid].recentResults.push({
         id: row.id,
@@ -123,24 +151,34 @@ module.exports = async function handler(req, res) {
         response: row.chatgpt_response || '',
         mentioned,
         citationCount,
-        citations: row.chatgpt_citations || [],
+        citations: citations,
         date: reportDate,
       });
     }
   }
 
-  // 5. Build per-prompt stats object
+  // 5. Build per-prompt stats
   const stats = {};
 
-  for (const [promptId, data] of Object.entries(grouped)) {
+  for (const [pid, data] of Object.entries(grouped)) {
     const { runs, recentResults } = data;
     const total = runs.length;
     const mentionedCount = runs.filter(r => r.mentioned).length;
     const totalCitations = runs.reduce((sum, r) => sum + r.citationCount, 0);
-    const runsWithCitations = runs.filter(r => r.citationCount > 0).length;
+    const totalBrandCitations = runs.reduce((sum, r) => sum + r.brandCitationCount, 0);
 
-    // Build daily history for chart (last 30 days)
-    // Group by date, take the latest run per date
+    // Average position (1 decimal) — only runs where brand appeared in a numbered list
+    const positionedRuns = runs.filter(r => r.position !== null);
+    const avgPosition = positionedRuns.length > 0
+      ? Math.round(positionedRuns.reduce((s, r) => s + r.position, 0) / positionedRuns.length * 10) / 10
+      : null;
+
+    // Citation share: brand domain URLs / total citation URLs (same basis as CitationShareChart)
+    const citationShare = totalCitations > 0
+      ? Math.round((totalBrandCitations / totalCitations) * 1000) / 10  // 1 decimal %
+      : 0;
+
+    // Daily history for chart
     const byDate = {};
     for (const run of runs) {
       if (run.reportDate && !byDate[run.reportDate]) {
@@ -149,31 +187,64 @@ module.exports = async function handler(req, res) {
     }
     const history = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, visibility]) => ({
-        date: date.slice(5), // "MM-DD"
-        visibility,
-      }));
+      .map(([date, visibility]) => ({ date: date.slice(5), visibility }));
 
-    // Trend: compare last 7 days vs previous 7 days
+    // Trend: last 7 vs previous 7
     const recent7 = runs.slice(0, 7);
     const prev7 = runs.slice(7, 14);
     const recentVis = recent7.length ? (recent7.filter(r => r.mentioned).length / recent7.length) * 100 : 0;
     const prevVis = prev7.length ? (prev7.filter(r => r.mentioned).length / prev7.length) * 100 : 0;
     const visibilityTrend = Math.round(recentVis - prevVis);
 
-    stats[promptId] = {
+    // Citation domain breakdown (for Citation sources tab)
+    const domainData = {};
+    runs.forEach((run, runIdx) => {
+      // We don't have per-run URL arrays here; collect from recentResults + approximate
+    });
+    // Build from all result citations directly
+    const allResultsForPrompt = results.filter(r => r.brand_prompt_id === pid);
+    const domainMap = {};
+    let grandTotalMentions = 0;
+    allResultsForPrompt.forEach((row, runIdx) => {
+      const urls = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : [];
+      const domainsInRun = new Set();
+      urls.forEach(url => {
+        const domain = (url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
+        if (!domain) return;
+        if (!domainMap[domain]) domainMap[domain] = { urlSet: new Set(), mentions: 0, runSet: new Set() };
+        domainMap[domain].urlSet.add(url);
+        domainMap[domain].mentions++;
+        domainMap[domain].runSet.add(runIdx);
+        grandTotalMentions++;
+      });
+    });
+    const totalRuns = allResultsForPrompt.length;
+    const citationDomains = Object.entries(domainMap)
+      .map(([domain, d]) => ({
+        domain,
+        uniqueUrls: d.urlSet.size,
+        mentions: d.mentions,
+        pctTotal: grandTotalMentions > 0 ? Math.round((d.mentions / grandTotalMentions) * 1000) / 10 : 0,
+        coverage: totalRuns > 0 ? Math.round((d.runSet.size / totalRuns) * 100) : 0,
+      }))
+      .sort((a, b) => b.mentions - a.mentions)
+      .slice(0, 15);
+
+    stats[pid] = {
       visibilityScore: total > 0 ? Math.round((mentionedCount / total) * 100) : 0,
       visibilityTrend,
-      citationShare: total > 0 ? Math.round((runsWithCitations / total) * 100) : 0,
+      avgPosition,
+      citationShare,
       citations: totalCitations,
       lastRun: runs[0]?.reportDate || '',
       history,
       recentResults,
-      contentTypeBreakdown: null, // filled below for single-prompt queries
+      citationDomains,
+      contentTypeBreakdown: null,
     };
   }
 
-  // 6. For single-prompt queries, add content type breakdown from url_citations → url_content_facts
+  // 6. Content type breakdown (single-prompt only)
   if (promptId && stats[promptId]) {
     const promptResultIds = results.map(r => r.id);
     if (promptResultIds.length > 0) {
