@@ -34,8 +34,13 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const { brandId } = req.query;
+  const { brandId, days: daysParam, promptId } = req.query;
   if (!brandId) return res.status(400).json({ success: false, error: 'Missing brandId' });
+
+  const days = parseInt(daysParam) || 30;
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoffStr = cutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -53,14 +58,17 @@ module.exports = async function handler(req, res) {
 
   const brandNameLower = brand.name.toLowerCase();
 
-  // 2. Get last 30 completed reports for this brand
-  const { data: reports } = await supabase
+  // 2. Get completed reports for this brand within the date range
+  let reportsQuery = supabase
     .from('daily_reports')
     .select('id, report_date')
     .eq('brand_id', brandId)
     .eq('status', 'completed')
+    .gte('report_date', cutoffStr)
     .order('report_date', { ascending: false })
-    .limit(30);
+    .limit(90);
+
+  const { data: reports } = await reportsQuery;
 
   if (!reports || reports.length === 0) {
     return res.status(200).json({ success: true, stats: {} });
@@ -69,13 +77,17 @@ module.exports = async function handler(req, res) {
   const reportIds = reports.map(r => r.id);
   const reportDateMap = Object.fromEntries(reports.map(r => [r.id, r.report_date]));
 
-  // 3. Fetch all prompt_results for these reports
-  const { data: results } = await supabase
+  // 3. Fetch all prompt_results for these reports (optionally filtered to one prompt)
+  let resultsQuery = supabase
     .from('prompt_results')
     .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, prompt_text, created_at')
     .in('daily_report_id', reportIds)
     .not('chatgpt_response', 'is', null)
     .order('created_at', { ascending: false });
+
+  if (promptId) resultsQuery = resultsQuery.eq('brand_prompt_id', promptId);
+
+  const { data: results } = await resultsQuery;
 
   if (!results || results.length === 0) {
     return res.status(200).json({ success: true, stats: {} });
@@ -108,7 +120,7 @@ module.exports = async function handler(req, res) {
       grouped[pid].recentResults.push({
         id: row.id,
         promptText: row.prompt_text || '',
-        response: (row.chatgpt_response || '').substring(0, 600),
+        response: row.chatgpt_response || '',
         mentioned,
         citationCount,
         citations: row.chatgpt_citations || [],
