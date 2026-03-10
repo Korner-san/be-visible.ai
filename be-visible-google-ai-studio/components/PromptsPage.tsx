@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Search, 
-  ChevronRight, 
+import {
+  Search,
+  ChevronRight,
   X,
   Target,
   Sparkles,
@@ -20,7 +20,17 @@ import {
   Flag,
   Globe,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  FileText,
+  List,
+  BookOpen,
+  MessageCircle,
+  Newspaper,
+  Video,
+  ShoppingBag,
+  Shield,
+  HelpCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { PromptStats, MetricType } from '../types';
@@ -32,6 +42,36 @@ interface PromptsPageProps {
   brandName?: string;
   timeRangeDays: number;
 }
+
+const CONTENT_TYPE_LABELS: Record<string, string> = {
+  OFFICIAL_DOCS: 'Official docs',
+  HOW_TO_GUIDE: 'How-to guide',
+  COMPARISON_ANALYSIS: 'Comparison analysis',
+  PRODUCT_PAGE: 'Product page',
+  THOUGHT_LEADERSHIP: 'Thought leadership',
+  CASE_STUDY: 'Case study',
+  TECHNICAL_DEEP_DIVE: 'Technical deep dive',
+  NEWS_ANNOUNCEMENT: 'News announcement',
+  COMMUNITY_DISCUSSION: 'Community discussion',
+  VIDEO_CONTENT: 'Video content',
+  OTHER_LOW_CONFIDENCE: 'Other',
+  UNCLASSIFIED: 'Unclassified',
+};
+
+const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
+  OFFICIAL_DOCS: <Shield size={14} />,
+  HOW_TO_GUIDE: <List size={14} />,
+  COMPARISON_ANALYSIS: <FileText size={14} />,
+  PRODUCT_PAGE: <ShoppingBag size={14} />,
+  THOUGHT_LEADERSHIP: <BookOpen size={14} />,
+  CASE_STUDY: <FileText size={14} />,
+  TECHNICAL_DEEP_DIVE: <FileText size={14} />,
+  NEWS_ANNOUNCEMENT: <Newspaper size={14} />,
+  COMMUNITY_DISCUSSION: <MessageCircle size={14} />,
+  VIDEO_CONTENT: <Video size={14} />,
+  OTHER_LOW_CONFIDENCE: <HelpCircle size={14} />,
+  UNCLASSIFIED: <AlertTriangle size={14} />,
+};
 
 const formatCategory = (cat: string) => {
   if (!cat) return '';
@@ -225,16 +265,6 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       .slice(0, 10);
   }, [popupStats]);
 
-  // AI preference: same domain data, share = % of total citation URLs
-  const aiPreferenceData = useMemo(() => {
-    if (citationDomains.length === 0) return [];
-    const totalUrls = citationDomains.reduce((sum, d) => sum + d.urls, 0);
-    return citationDomains.map(d => ({
-      domain: d.domain,
-      urls: d.urls,
-      share: totalUrls > 0 ? Math.round((d.urls / totalUrls) * 100) : 0,
-    }));
-  }, [citationDomains]);
 
   const renderRunDetail = (run: any) => {
     return (
@@ -369,42 +399,54 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             </table>
           </div>
         );
-      case 'Ai preference':
-        if (popupLoading) return <div className="text-center py-12 text-sm text-slate-400 font-bold">Loading data...</div>;
-        if (aiPreferenceData.length === 0) return (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center animate-fadeIn">
-            <div className="text-slate-300 mb-3"><ExternalLink size={32} className="mx-auto" /></div>
-            <p className="text-sm font-bold text-slate-400">No citation data found for this period</p>
+      case 'Ai preference': {
+        const breakdown = popupStats?.contentTypeBreakdown;
+        if (popupLoading) return (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-gray-200 border-t-brand-brown rounded-full animate-spin" />
+          </div>
+        );
+        if (!breakdown || breakdown.length === 0) return (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-8">
+            <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-xs font-semibold text-gray-400">Computing your data…</p>
+            <p className="text-[10px] text-gray-300 leading-relaxed">Content type analysis will be available after citation classification completes</p>
           </div>
         );
         return (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
-                  <th className="px-8 py-4 font-bold">Citation source</th>
-                  <th className="px-6 py-4 text-center font-bold">Times cited</th>
-                  <th className="px-8 py-4 font-bold">Visibility share</th>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+            <table className="w-full text-left text-[11px] table-auto">
+              <thead className="bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+                <tr>
+                  <th className="px-5 py-3 font-bold">Type</th>
+                  <th className="px-3 py-3 font-bold text-right min-w-[60px]">Urls</th>
+                  <th className="px-5 py-3 font-bold text-right min-w-[120px]">Visibility share</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {aiPreferenceData.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-8 py-5">
+              <tbody className="divide-y divide-gray-100">
+                {breakdown.map((row: any, i: number) => (
+                  <tr key={i} className="hover:bg-gray-50/80 transition-all group">
+                    <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center p-1 shadow-sm shrink-0">
-                          <img src={`https://www.google.com/s2/favicons?domain=${row.domain}&sz=64`} className="w-full h-full object-contain" alt={row.domain} />
+                        <div className="p-1.5 rounded-lg bg-gray-50 text-slate-400 group-hover:text-brand-brown shadow-sm transition-all border border-gray-100 shrink-0">
+                          {CONTENT_TYPE_ICONS[row.category] || <FileText size={14} />}
                         </div>
-                        <span className="text-sm font-bold text-slate-700">{row.domain}</span>
+                        <span className="font-bold text-slate-700 text-[12px] leading-tight">
+                          {CONTENT_TYPE_LABELS[row.category] || row.category}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-center text-sm font-bold text-slate-500 tabular-nums">{row.urls}</td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-5">
-                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0 max-w-[200px]">
-                          <div className="h-full bg-brand-brown transition-all duration-1000" style={{ width: `${row.share}%` }} />
+                    <td className="px-3 py-3 text-right font-black text-slate-500 tabular-nums text-[12px]">{row.urls}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <span className="font-black text-slate-800 tabular-nums w-8 text-right text-[12px]">{row.percentage}%</span>
+                        <div className="w-20 h-2 bg-gray-100 rounded-full overflow-hidden shrink-0">
+                          <div className="h-full transition-all duration-1000 ease-out" style={{ width: `${row.percentage}%`, backgroundColor: '#874B34' }} />
                         </div>
-                        <span className="text-[11px] font-black text-slate-900 tabular-nums">{row.share}%</span>
                       </div>
                     </td>
                   </tr>
@@ -413,6 +455,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             </table>
           </div>
         );
+      }
       case 'Sample history':
         return (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">

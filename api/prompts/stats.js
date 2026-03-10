@@ -169,7 +169,37 @@ module.exports = async function handler(req, res) {
       lastRun: runs[0]?.reportDate || '',
       history,
       recentResults,
+      contentTypeBreakdown: null, // filled below for single-prompt queries
     };
+  }
+
+  // 6. For single-prompt queries, add content type breakdown from url_citations → url_content_facts
+  if (promptId && stats[promptId]) {
+    const promptResultIds = results.map(r => r.id);
+    if (promptResultIds.length > 0) {
+      const { data: typeRows } = await supabase
+        .from('url_citations')
+        .select('url_inventory(url_content_facts(content_structure_category))')
+        .in('prompt_result_id', promptResultIds);
+
+      if (typeRows && typeRows.length > 0) {
+        const typeCounts = {};
+        let totalUrlCount = 0;
+        for (const row of typeRows) {
+          const facts = row.url_inventory?.url_content_facts;
+          const cat = (Array.isArray(facts) ? facts[0]?.content_structure_category : facts?.content_structure_category) || 'UNCLASSIFIED';
+          typeCounts[cat] = (typeCounts[cat] || 0) + 1;
+          totalUrlCount++;
+        }
+        stats[promptId].contentTypeBreakdown = Object.entries(typeCounts)
+          .map(([category, count]) => ({
+            category,
+            urls: count,
+            percentage: totalUrlCount > 0 ? Math.round((count / totalUrlCount) * 100) : 0,
+          }))
+          .sort((a, b) => b.urls - a.urls);
+      }
+    }
   }
 
   return res.status(200).json({ success: true, stats });
