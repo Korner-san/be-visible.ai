@@ -377,7 +377,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
           }));
           setPrefilled(true);
         } else {
-          setWebsiteAnalysisError(`DEBUG: ${result.error || 'no error field'} (status: ${response.status})`);
+          setWebsiteAnalysisError('Could not auto-fill from website. Fill in the fields manually.');
         }
       } catch (err) {
         clearInterval(msgInterval);
