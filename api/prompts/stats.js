@@ -30,23 +30,6 @@ function setCorsHeaders(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
-/**
- * Parse the brand's numbered-list position from a ChatGPT response.
- * Returns the list number (1-based) if found, null otherwise.
- */
-function extractBrandPosition(text, brandNameLower) {
-  if (!text || !brandNameLower) return null;
-  const lines = text.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Match "1.", "1)", "1-", "1 -", "1 ." etc.
-    const numMatch = trimmed.match(/^(\d+)[.):\-\s]/);
-    if (numMatch && trimmed.toLowerCase().includes(brandNameLower)) {
-      return parseInt(numMatch[1], 10);
-    }
-  }
-  return null;
-}
 
 module.exports = async function handler(req, res) {
   setCorsHeaders(req, res);
@@ -102,7 +85,7 @@ module.exports = async function handler(req, res) {
   // 3. Fetch prompt_results (optionally filtered to one prompt)
   let resultsQuery = supabase
     .from('prompt_results')
-    .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, prompt_text, created_at')
+    .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, brand_position, prompt_text, created_at')
     .in('daily_report_id', reportIds)
     .not('chatgpt_response', 'is', null)
     .order('created_at', { ascending: false });
@@ -136,9 +119,8 @@ module.exports = async function handler(req, res) {
       ? citations.filter(url => (url || '').toLowerCase().includes(brandDomain)).length
       : 0;
 
-    const position = mentioned
-      ? extractBrandPosition(row.chatgpt_response, brandNameLower)
-      : null;
+    // brand_position is pre-computed by brand-analyzer.js (entity rank, not char index)
+    const position = (mentioned && row.brand_position != null) ? row.brand_position : null;
 
     const reportDate = reportDateMap[row.daily_report_id] || '';
 
