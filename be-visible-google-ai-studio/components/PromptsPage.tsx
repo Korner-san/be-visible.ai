@@ -29,6 +29,7 @@ interface PromptsPageProps {
   prompts: PromptStats[];
   onNavigateToManage: () => void;
   brandId: string | null;
+  brandName?: string;
   timeRangeDays: number;
 }
 
@@ -57,7 +58,7 @@ const HeaderWithInfo = ({ title, info, align = 'right' }: { title: string, info:
   );
 };
 
-export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, timeRangeDays }) => {
+export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
@@ -224,6 +225,17 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       .slice(0, 10);
   }, [popupStats]);
 
+  // AI preference: same domain data, share = % of total citation URLs
+  const aiPreferenceData = useMemo(() => {
+    if (citationDomains.length === 0) return [];
+    const totalUrls = citationDomains.reduce((sum, d) => sum + d.urls, 0);
+    return citationDomains.map(d => ({
+      domain: d.domain,
+      urls: d.urls,
+      share: totalUrls > 0 ? Math.round((d.urls / totalUrls) * 100) : 0,
+    }));
+  }, [citationDomains]);
+
   const renderRunDetail = (run: any) => {
     return (
       <div className="animate-fadeIn space-y-8 pb-12">
@@ -269,14 +281,14 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                   <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white">
                     <CheckCircle2 size={12} />
                   </div>
-                  Lines is mentioned
+                  {brandName || 'Brand'} is mentioned
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
                   <div className="w-5 h-5 rounded-full bg-rose-500 flex items-center justify-center text-white">
                     <XCircle size={12} />
                   </div>
-                  Lines is not mentioned
+                  {brandName || 'Brand'} is not mentioned
                 </div>
               )}
             </div>
@@ -303,6 +315,24 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             {run.response}
           </div>
         </div>
+
+        {run.citations && run.citations.length > 0 && (
+          <div className="space-y-4 pt-4">
+            <div className="flex items-center gap-2 text-[11px] font-black text-slate-900 uppercase tracking-widest">
+              <ExternalLink size={14} /> Citation Sources ({run.citations.length})
+            </div>
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+              {run.citations.map((cite: any, i: number) => (
+                <div key={i} className={`flex items-center gap-4 px-6 py-4 ${i < run.citations.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                  <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center p-1 shadow-sm shrink-0">
+                    <img src={cite.favicon} className="w-full h-full object-contain" alt={cite.domain} />
+                  </div>
+                  <span className="text-sm font-bold text-slate-700">{cite.domain}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -340,28 +370,33 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           </div>
         );
       case 'Ai preference':
-        const preferenceData = [
-          { type: 'Community discussion', urls: 84, share: 32 },
-          { type: 'Official docs', urls: 62, share: 24 },
-          { type: 'How-to guide', urls: 45, share: 17 },
-          { type: 'Comparison analysis', urls: 28, share: 11 },
-          { type: 'Thought leadership', urls: 18, share: 7 },
-        ];
+        if (popupLoading) return <div className="text-center py-12 text-sm text-slate-400 font-bold">Loading data...</div>;
+        if (aiPreferenceData.length === 0) return (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center animate-fadeIn">
+            <div className="text-slate-300 mb-3"><ExternalLink size={32} className="mx-auto" /></div>
+            <p className="text-sm font-bold text-slate-400">No citation data found for this period</p>
+          </div>
+        );
         return (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
-                  <th className="px-8 py-4 font-bold">Content type</th>
-                  <th className="px-6 py-4 text-center font-bold">Total urls</th>
+                  <th className="px-8 py-4 font-bold">Citation source</th>
+                  <th className="px-6 py-4 text-center font-bold">Times cited</th>
                   <th className="px-8 py-4 font-bold">Visibility share</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {preferenceData.map((row, i) => (
+                {aiPreferenceData.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-5">
-                      <span className="text-sm font-bold text-slate-700">{row.type}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center p-1 shadow-sm shrink-0">
+                          <img src={`https://www.google.com/s2/favicons?domain=${row.domain}&sz=64`} className="w-full h-full object-contain" alt={row.domain} />
+                        </div>
+                        <span className="text-sm font-bold text-slate-700">{row.domain}</span>
+                      </div>
                     </td>
                     <td className="px-6 py-5 text-center text-sm font-bold text-slate-500 tabular-nums">{row.urls}</td>
                     <td className="px-8 py-5">

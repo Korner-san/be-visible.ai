@@ -240,35 +240,34 @@ function AppContent() {
 
       setPrompts(transformed);
 
-      // Fetch real stats and merge in — non-blocking so page renders immediately
-      try {
-        const statsRes = await fetch(`/api/prompts/stats?brandId=${activeBrandId}`);
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          if (statsData.success && statsData.stats) {
-            setPrompts(prev => prev.map(p => {
-              const s = statsData.stats[p.id];
-              if (!s) return p;
-              return {
-                ...p,
-                visibilityScore: s.visibilityScore,
-                visibilityTrend: s.visibilityTrend,
-                citationShare: s.citationShare,
-                citations: s.citations,
-                lastRun: s.lastRun,
-                history: s.history,
-                recentResults: s.recentResults,
-              };
-            }));
-          }
-        }
-      } catch (statsErr) {
-        console.warn('[App] Could not fetch prompt stats:', statsErr);
-      }
     };
 
     fetchPrompts();
   }, [activeBrandId, appView]);
+
+  // ── Refetch prompt stats when timeRange changes ───────────────────────────
+  const timeRangeDays = timeRange === TimeRange.SEVEN_DAYS ? 7 : timeRange === TimeRange.NINETY_DAYS ? 90 : 30;
+
+  useEffect(() => {
+    if (!activeBrandId || appView !== 'AUTHENTICATED_READY') return;
+    const fetchStats = async () => {
+      try {
+        const statsRes = await fetch(`/api/prompts/stats?brandId=${activeBrandId}&days=${timeRangeDays}`);
+        if (!statsRes.ok) return;
+        const statsData = await statsRes.json();
+        if (statsData.success && statsData.stats) {
+          setPrompts(prev => prev.map(p => {
+            const s = statsData.stats[p.id];
+            if (!s) return p;
+            return { ...p, visibilityScore: s.visibilityScore, visibilityTrend: s.visibilityTrend, citationShare: s.citationShare, citations: s.citations, lastRun: s.lastRun, history: s.history, recentResults: s.recentResults };
+          }));
+        }
+      } catch (e) {
+        console.warn('[App] Could not fetch prompt stats:', e);
+      }
+    };
+    fetchStats();
+  }, [activeBrandId, appView, timeRangeDays]);
 
   // ── Callback: onboarding completed → show live progress screen ───────────
   // Skip WaitingScreen entirely — go straight to OnboardingProgressScreen
@@ -440,7 +439,7 @@ function AppContent() {
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} />;
       case 'Prompts':
-        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} />;
+        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} />;
       case 'Improve':
         return <ImprovePage />;
       case 'Integrations':
