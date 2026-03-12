@@ -69,6 +69,8 @@ function AppContent() {
   // ── Dashboard state ──────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('Visibility');
   const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.THIRTY_DAYS);
+  const [customFrom, setCustomFrom] = useState<string>('');
+  const [customTo, setCustomTo] = useState<string>('');
   const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [academyArticleId, setAcademyArticleId] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -246,7 +248,11 @@ function AppContent() {
   }, [activeBrandId, appView]);
 
   // ── Refetch prompt stats when timeRange changes ───────────────────────────
-  const timeRangeDays = timeRange === TimeRange.SEVEN_DAYS ? 7 : timeRange === TimeRange.NINETY_DAYS ? 90 : 30;
+  const timeRangeDays = timeRange === TimeRange.SEVEN_DAYS ? 7
+    : timeRange === TimeRange.NINETY_DAYS ? 90
+    : timeRange === TimeRange.CUSTOM && customFrom && customTo
+      ? Math.max(1, Math.ceil((new Date(customTo).getTime() - new Date(customFrom).getTime()) / (1000 * 60 * 60 * 24)))
+      : 30;
 
   useEffect(() => {
     if (!activeBrandId || appView !== 'AUTHENTICATED_READY') return;
@@ -457,7 +463,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:
-        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} userTimezone={userTimezone} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
+        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} userTimezone={userTimezone} brandName={activeBrand?.name} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
     }
   };
 
@@ -470,6 +476,7 @@ function AppContent() {
           setActiveTab={handleTabChange}
           timeRange={timeRange}
           setTimeRange={setTimeRange}
+          onCustomRange={(from, to) => { setCustomFrom(from); setCustomTo(to); }}
           isScrolled={isScrolled}
         />
         <main

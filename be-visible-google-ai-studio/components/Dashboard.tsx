@@ -11,9 +11,14 @@ interface DashboardProps {
   brandId?: string | null;
   userTimezone?: string;
   onNavigateToPrompts?: () => void;
+  brandName?: string;
+  customDateRange?: { from: string; to: string };
 }
 
-function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
+  if (timeRange === TimeRange.CUSTOM && customDateRange?.from && customDateRange?.to) {
+    return { from: customDateRange.from, to: customDateRange.to };
+  }
   const to = new Date();
   const from = new Date();
   switch (timeRange) {
@@ -32,20 +37,90 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTimezone = 'UTC', onNavigateToPrompts }) => {
+function getPreviousPeriod(from: string, to: string): { from: string; to: string } {
+  const fromMs = new Date(from + 'T00:00:00').getTime();
+  const toMs = new Date(to + 'T00:00:00').getTime();
+  const diffMs = toMs - fromMs;
+  const prevTo = new Date(fromMs - 24 * 60 * 60 * 1000);
+  const prevFrom = new Date(prevTo.getTime() - diffMs);
+  return {
+    from: prevFrom.toISOString().split('T')[0],
+    to: prevTo.toISOString().split('T')[0],
+  };
+}
+
+async function fetchMentionRateValue(bId: string, from: string, to: string): Promise<number | null> {
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('id')
+    .eq('brand_id', bId)
+    .eq('status', 'completed')
+    .gte('report_date', from)
+    .lte('report_date', to);
+  if (!reports || reports.length === 0) return null;
+  const reportIds = reports.map((r: any) => r.id);
+  const { count: total } = await supabase
+    .from('prompt_results')
+    .select('*', { count: 'exact', head: true })
+    .in('daily_report_id', reportIds);
+  const { count: mentioned } = await supabase
+    .from('prompt_results')
+    .select('*', { count: 'exact', head: true })
+    .in('daily_report_id', reportIds)
+    .eq('brand_mentioned', true);
+  if (!total || total === 0) return null;
+  return parseFloat(((mentioned || 0) / total * 100).toFixed(1));
+}
+
+async function fetchBrandSOVPct(bId: string, from: string, to: string): Promise<number | null> {
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('share_of_voice_data')
+    .eq('brand_id', bId)
+    .eq('status', 'completed')
+    .not('share_of_voice_data', 'is', null)
+    .gte('report_date', from)
+    .lte('report_date', to);
+  if (!reports || reports.length === 0) return null;
+  const entityMap: Record<string, { mentions: number; type: string }> = {};
+  let totalMentions = 0;
+  for (const report of reports) {
+    const sov = report.share_of_voice_data as any;
+    if (!sov?.entities) continue;
+    for (const entity of sov.entities) {
+      const key = entity.name.toLowerCase();
+      if (entityMap[key]) {
+        entityMap[key].mentions += entity.mentions;
+      } else {
+        entityMap[key] = { mentions: entity.mentions, type: entity.type };
+      }
+    }
+    totalMentions += sov.total_mentions || 0;
+  }
+  if (totalMentions === 0) return null;
+  const brand = Object.values(entityMap).find((e: any) => e.type === 'brand');
+  return brand ? Math.round((brand.mentions / totalMentions) * 100) : 0;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTimezone = 'UTC', onNavigateToPrompts, brandName, customDateRange }) => {
   const [visibilityData, setVisibilityData] = useState<TrendDataPoint[]>([]);
   const [currentScore, setCurrentScore] = useState<number | undefined>();
   const [trendPercent, setTrendPercent] = useState<number | undefined>();
   const [isLoadingVis, setIsLoadingVis] = useState(false);
   const [mentionRate, setMentionRate] = useState<number | undefined>();
+  const [mentionTrend, setMentionTrend] = useState<number | null>(null);
   const [isLoadingMention, setIsLoadingMention] = useState(false);
   const [sovData, setSovData] = useState<any>(undefined);
+  const [sovTrend, setSovTrend] = useState<number | null>(null);
   const [isLoadingSov, setIsLoadingSov] = useState(false);
 
   useEffect(() => {
     if (!brandId) return;
 
-    const { from, to } = getDateRange(timeRange);
+    const { from, to } = getDateRange(timeRange, customDateRange);
+    const { from: prevFrom, to: prevTo } = getPreviousPeriod(from, to);
+    const days = Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24));
+    const timePeriodLabel = `vs prev ${days}d`;
 
     // Fetch visibility scores
     const fetchVisibility = async () => {
@@ -67,8 +142,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
         }
 
         if (data && data.length > 0) {
-          // Deduplicate by report_date — keep the row with the highest visibility_score
-          // (duplicate rows can appear if the end-of-day processor ran on the same date twice)
           const bestByDate = new Map<string, number>();
           data.forEach((row: any) => {
             const score = parseFloat(row.visibility_score) || 0;
@@ -107,48 +180,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
       }
     };
 
-    // Fetch mention rate: get daily_report IDs, then count brand_mentioned in prompt_results
+    // Fetch mention rate + previous period trend
     const fetchMentionRate = async () => {
       setIsLoadingMention(true);
       try {
-        // Step 1: get report IDs for this brand in range
-        const { data: reports, error: reportsError } = await supabase
-          .from('daily_reports')
-          .select('id')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .gte('report_date', from)
-          .lte('report_date', to);
+        const [rate, prevRate] = await Promise.all([
+          fetchMentionRateValue(brandId, from, to),
+          fetchMentionRateValue(brandId, prevFrom, prevTo),
+        ]);
 
-        if (reportsError || !reports || reports.length === 0) {
-          setMentionRate(undefined);
-          return;
-        }
-
-        const reportIds = reports.map((r: any) => r.id);
-
-        // Step 2: count total prompt results and ones where brand was mentioned
-        const { count: totalCount, error: totalErr } = await supabase
-          .from('prompt_results')
-          .select('*', { count: 'exact', head: true })
-          .in('daily_report_id', reportIds);
-
-        const { count: mentionedCount, error: mentionErr } = await supabase
-          .from('prompt_results')
-          .select('*', { count: 'exact', head: true })
-          .in('daily_report_id', reportIds)
-          .eq('brand_mentioned', true);
-
-        if (totalErr || mentionErr) {
-          console.error('Error fetching mention counts:', totalErr || mentionErr);
-          return;
-        }
-
-        if (totalCount && totalCount > 0) {
-          const rate = ((mentionedCount || 0) / totalCount) * 100;
-          setMentionRate(parseFloat(rate.toFixed(1)));
+        if (rate !== null) {
+          setMentionRate(rate);
+          if (prevRate !== null) {
+            setMentionTrend(parseFloat((rate - prevRate).toFixed(1)));
+          } else {
+            setMentionTrend(null);
+          }
         } else {
           setMentionRate(0);
+          setMentionTrend(null);
         }
       } catch (err) {
         console.error('Mention rate fetch error:', err);
@@ -157,7 +207,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
       }
     };
 
-    // Fetch share of voice: aggregate share_of_voice_data across daily reports
+    // Fetch share of voice + previous period trend
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       try {
@@ -176,14 +226,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
         }
 
         if (reports && reports.length > 0) {
-          // Aggregate entities across all days
           const entityMap: Record<string, { name: string; mentions: number; type: string }> = {};
           let totalMentions = 0;
 
           for (const report of reports) {
             const sov = report.share_of_voice_data as any;
             if (!sov?.entities) continue;
-
             for (const entity of sov.entities) {
               const key = entity.name.toLowerCase();
               if (entityMap[key]) {
@@ -195,16 +243,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
             totalMentions += sov.total_mentions || 0;
           }
 
-          const entities = Object.values(entityMap)
-            .sort((a, b) => b.mentions - a.mentions);
+          const entities = Object.values(entityMap).sort((a, b) => b.mentions - a.mentions);
 
           setSovData({
             entities,
             total_mentions: totalMentions,
             calculated_at: new Date().toISOString(),
           });
+
+          // Compute SOV trend vs previous period
+          const currentBrandPct = await fetchBrandSOVPct(brandId, from, to);
+          const prevBrandPct = await fetchBrandSOVPct(brandId, prevFrom, prevTo);
+          if (currentBrandPct !== null && prevBrandPct !== null) {
+            setSovTrend(currentBrandPct - prevBrandPct);
+          } else {
+            setSovTrend(null);
+          }
         } else {
           setSovData(undefined);
+          setSovTrend(null);
         }
       } catch (err) {
         console.error('Share of voice fetch error:', err);
@@ -216,7 +273,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     fetchVisibility();
     fetchMentionRate();
     fetchShareOfVoice();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to]);
+
+  const { from, to } = getDateRange(timeRange, customDateRange);
+  const days = Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24));
+  const timePeriodLabel = `vs prev ${days}d`;
 
   return (
     <div className="grid grid-cols-12 gap-6 items-stretch">
@@ -228,15 +289,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           trendPercent={trendPercent}
           isLoading={isLoadingVis}
           brandId={brandId}
+          brandName={brandName}
         />
       </div>
       <div className="col-span-12 lg:col-span-4 h-[340px]">
-        <MentionRate value={mentionRate} isLoading={isLoadingMention} brandId={brandId} />
+        <MentionRate
+          value={mentionRate}
+          trend={mentionTrend}
+          timePeriodLabel={timePeriodLabel}
+          isLoading={isLoadingMention}
+          brandId={brandId}
+        />
       </div>
 
       {/* Bottom Row: Distribution & Ranking - Balanced height */}
       <div className="col-span-12 lg:col-span-5 h-[380px]">
-        <ShareOfVoice data={sovData} isLoading={isLoadingSov} brandId={brandId} />
+        <ShareOfVoice
+          data={sovData}
+          trend={sovTrend}
+          timePeriodLabel={timePeriodLabel}
+          isLoading={isLoadingSov}
+          brandId={brandId}
+        />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
         <PositionRanking brandId={brandId} timeRange={timeRange} onNavigateToPrompts={onNavigateToPrompts} />

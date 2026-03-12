@@ -578,13 +578,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                 return (
                   <React.Fragment key={topic}>
                     {/* Category Row */}
-                    <tr 
+                    <tr
                       className="group transition-all bg-white border-b border-gray-200 hover:bg-gray-50 cursor-pointer"
                       onClick={() => handleSelectCategory(topic)}
                     >
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
-                          <button 
+                          <button
                             onClick={(e) => toggleTopic(topic, e)}
                             className={`w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 border border-gray-200 text-gray-400 hover:text-brand-brown hover:border-brand-brown bg-white shadow-sm ${isExpanded ? 'rotate-90 text-brand-brown border-brand-brown' : ''}`}
                           >
@@ -596,7 +596,12 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                         </div>
                       </td>
                       <td className="px-4 py-5 text-center">
-                        <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.visibility}%</span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.visibility}%</span>
+                          {group.stats.visibilityTrend != null && group.stats.visibilityTrend !== 0 && (
+                            <PromptTrendBadge trend={group.stats.visibilityTrend} />
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-5 text-center">
                         <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.position}</span>
@@ -608,8 +613,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
                     {/* Prompt Rows */}
                     {isExpanded && group.prompts.map((prompt, pIdx) => (
-                      <tr 
-                        key={prompt.id} 
+                      <tr
+                        key={prompt.id}
                         className={`group hover:bg-slate-50 transition-all cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-brown ${pIdx === group.prompts.length - 1 ? 'border-b border-gray-200' : 'border-b border-gray-100'}`}
                         onClick={() => handleSelectPrompt(prompt)}
                       >
@@ -620,7 +625,12 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}%</span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}%</span>
+                            {prompt.visibilityTrend !== 0 && (
+                              <PromptTrendBadge trend={prompt.visibilityTrend} />
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-4 text-center">
                           <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.avgPosition}</span>
@@ -837,6 +847,18 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     </>
   );
 };
+
+const PromptTrendBadge = ({ trend }: { trend: number }) => (
+  <span
+    className="text-[8px] font-black px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 border"
+    style={trend > 0
+      ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+      : { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+    }
+  >
+    {trend > 0 ? '↑' : '↓'}{trend > 0 ? '+' : ''}{trend}%
+  </span>
+);
 
 const MetricCard = ({ 
   label, 

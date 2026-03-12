@@ -5,11 +5,13 @@ import { Loader2 } from 'lucide-react';
 
 interface MentionRateProps {
   value?: number;
+  trend?: number | null;
+  timePeriodLabel?: string;
   isLoading?: boolean;
   brandId?: string | null;
 }
 
-export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLoading, brandId }) => {
+export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, trend, timePeriodLabel, isLoading, brandId }) => {
   const [mentionValue, setMentionValue] = useState(55);
   // When a real brand is set but no data yet, show 0 — never show fake 55% mock value
   const displayValue = propValue ?? (brandId ? 0 : mentionValue);
@@ -120,22 +122,37 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, isLo
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-4">
-         {propValue !== undefined ? (
-           <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
-         ) : (
-           <>
-             <span className="text-[10px] font-black text-gray-400 uppercase w-8">Test</span>
-             <input
-               type="range"
-               min="0"
-               max="100"
-               value={mentionValue}
-               onChange={(e) => setMentionValue(Number(e.target.value))}
-               className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-               style={{ accentColor: fillColor }}
-             />
-           </>
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+         <div className="flex items-center gap-2">
+           {propValue !== undefined ? (
+             <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
+           ) : (
+             <>
+               <span className="text-[10px] font-black text-gray-400 uppercase w-8">Test</span>
+               <input
+                 type="range"
+                 min="0"
+                 max="100"
+                 value={mentionValue}
+                 onChange={(e) => setMentionValue(Number(e.target.value))}
+                 className="w-24 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                 style={{ accentColor: fillColor }}
+               />
+             </>
+           )}
+         </div>
+         {trend != null && (
+           <span
+             className="text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 border whitespace-nowrap"
+             style={trend > 0
+               ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+               : trend < 0
+               ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+               : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
+             }
+           >
+             {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'}{trend > 0 ? '+' : ''}{trend.toFixed(1)}% <span className="opacity-70 ml-0.5">{timePeriodLabel || 'vs prev'}</span>
+           </span>
          )}
       </div>
     </div>

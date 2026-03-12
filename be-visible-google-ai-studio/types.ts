@@ -27,6 +27,7 @@ export enum TimeRange {
   SEVEN_DAYS = 'Last 7 days',
   THIRTY_DAYS = 'Last 30 days',
   NINETY_DAYS = 'Last 90 days',
+  CUSTOM = 'Custom',
 }
 
 export interface PromptHistoryPoint {

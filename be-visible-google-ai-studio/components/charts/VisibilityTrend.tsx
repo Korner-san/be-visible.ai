@@ -26,9 +26,10 @@ interface VisibilityTrendProps {
   trendPercent?: number;
   isLoading?: boolean;
   brandId?: string | null;
+  brandName?: string;
 }
 
-export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData, currentScore, trendPercent, isLoading, brandId }) => {
+export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData, currentScore, trendPercent, isLoading, brandId, brandName }) => {
   const hasRealData = propData && propData.length > 0;
   // When a real brand is set but no data yet, show empty chart — never show Incredibuild mock data
   const data = hasRealData ? propData! : (brandId ? [] : mockData);
@@ -151,9 +152,16 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
               axisLine={false}
               tickLine={false}
             />
-            <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: '8px', fontSize: '11px' }}
-              itemStyle={{ color: dynamicColor, fontWeight: 800 }}
+            <Tooltip
+              content={({ active, payload, label }: any) => {
+                if (!active || !payload?.length) return null;
+                return (
+                  <div style={{ background: 'white', borderRadius: '8px', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '11px', border: '1px solid #f1f5f9' }}>
+                    <p style={{ color: '#94a3b8', fontWeight: 600, marginBottom: '3px', fontSize: '10px' }}>{label}</p>
+                    <p style={{ color: dynamicColor, fontWeight: 800 }}>{brandName || 'Brand'}: <span style={{ fontSize: '13px' }}>{payload[0].value}%</span></p>
+                  </div>
+                );
+              }}
               cursor={{ stroke: dynamicColor, strokeWidth: 1, strokeDasharray: '4 4' }}
             />
             <Area 

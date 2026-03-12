@@ -25,6 +25,8 @@ export interface ShareOfVoiceData {
 
 interface ShareOfVoiceProps {
   data?: ShareOfVoiceData;
+  trend?: number | null;
+  timePeriodLabel?: string;
   isLoading?: boolean;
   brandId?: string | null;
 }
@@ -49,7 +51,7 @@ function buildTwoSliceData(sovData: ShareOfVoiceData): ShareData[] {
   ];
 }
 
-export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoading, brandId }) => {
+export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend, timePeriodLabel, isLoading, brandId }) => {
   const hasRealData = sovData && sovData.entities && sovData.entities.length > 0 && sovData.total_mentions > 0;
   // Only show Incredibuild sample data in demo mode (no brandId).
   // When a real brand is set but SOV hasn't been computed yet (Phase 1), show computing state.
@@ -65,15 +67,30 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, isLoa
           <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Share of voice</h3>
           <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Brand presence in AI responses</p>
         </div>
-        {isLoading ? (
-          <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
-        ) : hasRealData ? (
-          <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
-        ) : brandId ? (
-          <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
-        ) : (
-          <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
-        )}
+        <div className="flex items-center gap-2">
+          {trend != null && (
+            <span
+              className="text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 border whitespace-nowrap"
+              style={trend > 0
+                ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+                : trend < 0
+                ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+                : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
+              }
+            >
+              {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'}{trend > 0 ? '+' : ''}{trend}% <span className="opacity-70 ml-0.5">{timePeriodLabel || 'vs prev'}</span>
+            </span>
+          )}
+          {isLoading ? (
+            <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+          ) : hasRealData ? (
+            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+          ) : brandId ? (
+            <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
+          ) : (
+            <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
+          )}
+        </div>
       </div>
 
       {computingMode ? (
