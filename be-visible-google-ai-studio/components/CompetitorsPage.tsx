@@ -30,8 +30,8 @@ const MOCK_TREND = [
 
 interface DetectedEntity {
   name: string;
-  mentionRate: number;   // % of reports where this entity appeared
-  visibilityScore: number; // % of total SOV mentions this entity captured
+  mentionRate: number;
+  visibilityScore: number;
 }
 
 interface CompetitorsPageProps {
@@ -53,6 +53,7 @@ interface CompetitorRow {
   citation: number;
   color: string;
   website: string;
+  trend?: number | null;
 }
 
 function getDateRange(timeRange: TimeRange): { from: string; to: string } {
@@ -69,7 +70,39 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
+function getPreviousPeriod(from: string, to: string): { from: string; to: string } {
+  const fromMs = new Date(from + 'T00:00:00').getTime();
+  const toMs = new Date(to + 'T00:00:00').getTime();
+  const diffMs = toMs - fromMs;
+  const prevTo = new Date(fromMs - 24 * 60 * 60 * 1000);
+  const prevFrom = new Date(prevTo.getTime() - diffMs);
+  return {
+    from: prevFrom.toISOString().split('T')[0],
+    to: prevTo.toISOString().split('T')[0],
+  };
+}
+
 const COMP_COLORS = ['#874B34', '#BC633A', '#E7B373', '#963D1F', '#2C1308', '#64748b'];
+
+// Small trend badge — green for improvement, warm orange/brown for deterioration
+const TrendBadge = ({ trend, size = 'sm' }: { trend: number | null | undefined; size?: 'sm' | 'xs' }) => {
+  if (trend == null) return null;
+  const fontSize = size === 'xs' ? '7px' : '8px';
+  const px = size === 'xs' ? '4px' : '5px';
+  const style: React.CSSProperties = trend > 0
+    ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+    : trend < 0
+    ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+    : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' };
+  return (
+    <span
+      className="font-black rounded-full inline-flex items-center border whitespace-nowrap"
+      style={{ ...style, fontSize, padding: `1px ${px}` }}
+    >
+      {trend > 0 ? '↑+' : trend < 0 ? '↓' : '→'}{Math.abs(trend)}%
+    </span>
+  );
+};
 
 export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   brandId, timeRange = TimeRange.THIRTY_DAYS, competitors = [], onAddCompetitor
@@ -77,6 +110,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   // SOV state
   const [sovSlices, setSovSlices] = useState<SovSlice[]>([]);
   const [sovBrandPct, setSovBrandPct] = useState<number>(45);
+  const [sovEntityTrends, setSovEntityTrends] = useState<Record<string, number | null>>({});
   const [isLoadingSov, setIsLoadingSov] = useState(false);
   const [hasRealSov, setHasRealSov] = useState(false);
 
@@ -99,20 +133,31 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     if (!brandId) return;
 
     const { from, to } = getDateRange(timeRange);
+    const { from: prevFrom, to: prevTo } = getPreviousPeriod(from, to);
 
-    // Fetch share of voice + detected entities (single query, dual purpose)
+    // Fetch share of voice + detected entities + SOV trends
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       setIsLoadingEntities(true);
       try {
-        const { data: reports, error } = await supabase
-          .from('daily_reports')
-          .select('share_of_voice_data')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .not('share_of_voice_data', 'is', null)
-          .gte('report_date', from)
-          .lte('report_date', to);
+        const [{ data: reports, error }, { data: prevReports }] = await Promise.all([
+          supabase
+            .from('daily_reports')
+            .select('share_of_voice_data')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('share_of_voice_data', 'is', null)
+            .gte('report_date', from)
+            .lte('report_date', to),
+          supabase
+            .from('daily_reports')
+            .select('share_of_voice_data')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('share_of_voice_data', 'is', null)
+            .gte('report_date', prevFrom)
+            .lte('report_date', prevTo),
+        ]);
 
         if (error || !reports || reports.length === 0) {
           setHasRealSov(false);
@@ -170,7 +215,36 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         setSovBrandPct(slices[0]?.voice ?? 0);
         setHasRealSov(true);
 
-        // ── Detected entities (all entities except the brand itself) ──
+        // ── Previous period SOV for trends ──
+        const prevEntityPcts: Record<string, number> = {};
+        if (prevReports && prevReports.length > 0) {
+          const prevTempMap: Record<string, number> = {};
+          let prevTotal = 0;
+          for (const report of prevReports) {
+            const sov = report.share_of_voice_data as any;
+            if (!sov?.entities) continue;
+            for (const entity of sov.entities) {
+              const key = entity.name.toLowerCase();
+              prevTempMap[key] = (prevTempMap[key] || 0) + entity.mentions;
+            }
+            prevTotal += sov.total_mentions || 0;
+          }
+          if (prevTotal > 0) {
+            Object.entries(prevTempMap).forEach(([key, mentions]) => {
+              prevEntityPcts[key] = Math.round((mentions / prevTotal) * 100);
+            });
+          }
+        }
+
+        const trends: Record<string, number | null> = {};
+        for (const slice of slices) {
+          const key = slice.name.toLowerCase();
+          const prev = prevEntityPcts[key];
+          trends[slice.name] = prev !== undefined ? slice.voice - prev : null;
+        }
+        setSovEntityTrends(trends);
+
+        // ── Detected entities ──
         const detected: DetectedEntity[] = entities
           .filter(e => e.type !== 'brand')
           .map(e => ({
@@ -190,55 +264,56 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
       }
     };
 
-    // Fetch competitor metrics (visibility trend, mention rate, citation share)
+    // Fetch competitor metrics (visibility trend, mention rate, citation share) + previous period trends
     const fetchCompetitorMetrics = async () => {
       setIsLoadingMetrics(true);
       try {
-        const { data: reports, error } = await supabase
-          .from('daily_reports')
-          .select('report_date, competitor_metrics')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .not('competitor_metrics', 'is', null)
-          .gte('report_date', from)
-          .lte('report_date', to)
-          .order('report_date', { ascending: true });
+        const [{ data: reports, error }, { data: prevReports }] = await Promise.all([
+          supabase
+            .from('daily_reports')
+            .select('report_date, competitor_metrics')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('competitor_metrics', 'is', null)
+            .gte('report_date', from)
+            .lte('report_date', to)
+            .order('report_date', { ascending: true }),
+          supabase
+            .from('daily_reports')
+            .select('competitor_metrics')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('competitor_metrics', 'is', null)
+            .gte('report_date', prevFrom)
+            .lte('report_date', prevTo),
+        ]);
 
         if (error || !reports || reports.length === 0) {
           setHasRealMetrics(false);
           return;
         }
 
-        // Deduplicate by report_date — keep the row with the highest brand_visibility_score
-        // (duplicate rows can appear if the end-of-day processor ran on the same date twice)
+        // Deduplicate by report_date
         const bestByDate = new Map<string, any>();
         for (const r of reports) {
           const cm = r.competitor_metrics as any;
           const score = cm?.brand_visibility_score ?? -1;
           const existing = bestByDate.get(r.report_date);
           const existingScore = (existing?.competitor_metrics as any)?.brand_visibility_score ?? -1;
-          if (score > existingScore) {
-            bestByDate.set(r.report_date, r);
-          }
+          if (score > existingScore) bestByDate.set(r.report_date, r);
         }
         const dedupedReports = Array.from(bestByDate.values())
           .sort((a, b) => a.report_date.localeCompare(b.report_date));
 
-        // Extract brand name and competitor names from first report
         const firstMetrics = dedupedReports[0].competitor_metrics as any;
         const compNames = (firstMetrics.competitors || []).map((c: any) => c.name);
         setCompetitorNames(compNames);
 
-        // Get brand name
-        const { data: brandData } = await supabase
-          .from('brands')
-          .select('name')
-          .eq('id', brandId)
-          .single();
+        const { data: brandData } = await supabase.from('brands').select('name').eq('id', brandId).single();
         const bName = brandData?.name || 'Brand';
         setBrandName(bName);
 
-        // Build trend data (one point per day)
+        // Build trend line data
         const trend: any[] = dedupedReports.map(r => {
           const cm = r.competitor_metrics as any;
           const dateLabel = new Date(r.report_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -251,69 +326,98 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         });
         setTrendData(trend);
 
-        // Aggregate mention rates and citation shares across all days
+        // Aggregate current period mention rates and citation shares
+        const allNames = [bName, ...compNames];
         const mentionAgg: Record<string, { totalMentions: number; totalResponses: number }> = {};
         const citationAgg: Record<string, { totalShare: number; count: number }> = {};
-
-        // Init brand
-        mentionAgg[bName] = { totalMentions: 0, totalResponses: 0 };
-        citationAgg[bName] = { totalShare: 0, count: 0 };
-        for (const name of compNames) {
+        for (const name of allNames) {
           mentionAgg[name] = { totalMentions: 0, totalResponses: 0 };
           citationAgg[name] = { totalShare: 0, count: 0 };
         }
-
         for (const r of dedupedReports) {
           const cm = r.competitor_metrics as any;
-
-          // Brand
           mentionAgg[bName].totalMentions += cm.brand_mention_count || 0;
           mentionAgg[bName].totalResponses += cm.total_responses || 0;
-          if (cm.brand_citation_share !== null && cm.brand_citation_share !== undefined) {
+          if (cm.brand_citation_share != null) {
             citationAgg[bName].totalShare += cm.brand_citation_share;
             citationAgg[bName].count++;
           }
-
-          // Competitors
           for (const comp of (cm.competitors || [])) {
             if (mentionAgg[comp.name]) {
               mentionAgg[comp.name].totalMentions += comp.mention_count || 0;
               mentionAgg[comp.name].totalResponses += comp.total_responses || 0;
             }
-            if (citationAgg[comp.name] && comp.citation_share !== null && comp.citation_share !== undefined) {
+            if (citationAgg[comp.name] && comp.citation_share != null) {
               citationAgg[comp.name].totalShare += comp.citation_share;
               citationAgg[comp.name].count++;
             }
           }
         }
 
-        // Build mention rate bars: brand first, then competitors sorted by rate
-        const allNames = [bName, ...compNames];
+        // Aggregate previous period
+        const prevMentionAgg: Record<string, { totalMentions: number; totalResponses: number }> = {};
+        const prevCitationAgg: Record<string, { totalShare: number; count: number }> = {};
+        for (const name of allNames) {
+          prevMentionAgg[name] = { totalMentions: 0, totalResponses: 0 };
+          prevCitationAgg[name] = { totalShare: 0, count: 0 };
+        }
+        if (prevReports && prevReports.length > 0) {
+          for (const r of prevReports) {
+            const cm = r.competitor_metrics as any;
+            if (!cm) continue;
+            prevMentionAgg[bName].totalMentions += cm.brand_mention_count || 0;
+            prevMentionAgg[bName].totalResponses += cm.total_responses || 0;
+            if (cm.brand_citation_share != null) {
+              prevCitationAgg[bName].totalShare += cm.brand_citation_share;
+              prevCitationAgg[bName].count++;
+            }
+            for (const comp of (cm.competitors || [])) {
+              if (prevMentionAgg[comp.name]) {
+                prevMentionAgg[comp.name].totalMentions += comp.mention_count || 0;
+                prevMentionAgg[comp.name].totalResponses += comp.total_responses || 0;
+              }
+              if (prevCitationAgg[comp.name] && comp.citation_share != null) {
+                prevCitationAgg[comp.name].totalShare += comp.citation_share;
+                prevCitationAgg[comp.name].count++;
+              }
+            }
+          }
+        }
+
+        // Build mention rows with trends
         const mentionRows: CompetitorRow[] = allNames.map((name, idx) => {
           const agg = mentionAgg[name];
-          const rate = agg.totalResponses > 0 ? Math.round((agg.totalMentions / agg.totalResponses) * 100) : 0;
-          const comp = MOCK_COMPETITORS.find(m => m.name === name);
+          const currRate = agg.totalResponses > 0 ? Math.round((agg.totalMentions / agg.totalResponses) * 100) : 0;
+          const prevAgg = prevMentionAgg[name];
+          const prevRate = prevAgg && prevAgg.totalResponses > 0
+            ? Math.round((prevAgg.totalMentions / prevAgg.totalResponses) * 100)
+            : null;
           return {
             name,
-            mentionRate: rate,
+            mentionRate: currRate,
             citation: 0,
             color: COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length],
-            website: comp?.website || '',
+            website: '',
+            trend: prevRate !== null ? currRate - prevRate : null,
           };
         }).sort((a, b) => b.mentionRate - a.mentionRate);
         setMentionData(mentionRows);
 
-        // Build citation share rows
+        // Build citation rows with trends
         const citationRows: CompetitorRow[] = allNames.map((name, idx) => {
           const agg = citationAgg[name];
-          const avgShare = agg.count > 0 ? parseFloat((agg.totalShare / agg.count).toFixed(1)) : 0;
-          const comp = MOCK_COMPETITORS.find(m => m.name === name);
+          const currShare = agg.count > 0 ? parseFloat((agg.totalShare / agg.count).toFixed(1)) : 0;
+          const prevAgg = prevCitationAgg[name];
+          const prevShare = prevAgg && prevAgg.count > 0
+            ? parseFloat((prevAgg.totalShare / prevAgg.count).toFixed(1))
+            : null;
           return {
             name,
             mentionRate: 0,
-            citation: avgShare,
+            citation: currShare,
             color: COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length],
-            website: comp?.website || '',
+            website: '',
+            trend: prevShare !== null ? parseFloat((currShare - prevShare).toFixed(1)) : null,
           };
         }).sort((a, b) => b.citation - a.citation);
         setCitationData(citationRows);
@@ -331,11 +435,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     fetchCompetitorMetrics();
   }, [brandId, timeRange]);
 
-  // Only show Incredibuild sample data in demo mode (no brandId). When a real
-  // brand is set but data isn't ready yet, show a "computing" empty state.
   const showSample = !brandId;
 
-  // Determine which data to show
   const pieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
   const centerPct = hasRealSov ? sovBrandPct : (showSample ? 45 : 0);
 
@@ -343,33 +444,39 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   const activeMention = hasRealMetrics ? mentionData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
   const activeCitation = hasRealMetrics ? citationData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
 
-  // For trend chart, we need the line keys
   const trendLineKeys = hasRealMetrics
     ? [brandName, ...competitorNames]
     : (showSample ? ['Incredibuild', 'GitLab CI', 'CircleCI', 'Travis CI', 'Jenkins'] : []);
 
-  // Y-axis domain for trend: find min across all data points
   const allTrendValues = activeTrend.flatMap(point =>
     trendLineKeys.map(key => (point as any)[key] as number).filter(v => v !== undefined)
   );
   const minTrend = allTrendValues.length > 0 ? Math.max(0, Math.floor(Math.min(...allTrendValues) / 10) * 10 - 10) : 0;
   const maxTrend = allTrendValues.length > 0 ? Math.min(100, Math.ceil(Math.max(...allTrendValues) / 10) * 10 + 10) : 100;
 
-  const renderCustomLabel = (props: any) => {
-    const { x, y, width, value } = props;
+  // Custom bar label with trend
+  const renderMentionLabel = (mentionRows: CompetitorRow[]) => (props: any) => {
+    const { x, y, width, value, index } = props;
+    const trend = mentionRows[index]?.trend;
+    const hasTrend = trend != null;
     return (
       <g>
-        <text
-          x={x + width / 2}
-          y={y - 12}
-          fill="#475569"
-          fontSize="9"
-          fontWeight="800"
-          textAnchor="middle"
-          className="font-sans"
-        >
+        <text x={x + width / 2} y={y - (hasTrend ? 20 : 12)} fill="#475569" fontSize="9" fontWeight="800" textAnchor="middle" fontFamily="inherit">
           {value}%
         </text>
+        {hasTrend && (
+          <text
+            x={x + width / 2}
+            y={y - 6}
+            fill={trend! > 0 ? '#16a34a' : trend! < 0 ? '#7B3218' : '#94a3b8'}
+            fontSize="8"
+            fontWeight="800"
+            textAnchor="middle"
+            fontFamily="inherit"
+          >
+            {trend! > 0 ? '↑+' : trend! < 0 ? '↓' : '→'}{Math.abs(trend!)}%
+          </text>
+        )}
       </g>
     );
   };
@@ -378,30 +485,19 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     if (!brandId || !onAddCompetitor) return;
     setAddingEntity(entityName);
     try {
-      // 1. Resolve URL via Perplexity (best-effort, non-blocking on failure)
       let website = '';
       try {
-        console.log('[AddCompetitor] Resolving URL for:', entityName);
         const res = await fetch('/api/resolve-competitor-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ brandId, entityName }),
         });
-        console.log('[AddCompetitor] API response status:', res.status);
         if (res.ok) {
           const json = await res.json();
           website = json.url || '';
-          console.log('[AddCompetitor] Resolved URL:', website);
-        } else {
-          const errText = await res.text();
-          console.error('[AddCompetitor] API error:', res.status, errText);
         }
-      } catch (fetchErr) {
-        console.error('[AddCompetitor] Fetch failed:', fetchErr);
-      }
+      } catch {}
 
-      // 2. Upsert to brand_competitors — handles case where competitor already exists
-      //    (e.g. added during onboarding). Updates website if it was blank.
       const { data, error } = await supabase
         .from('brand_competitors')
         .upsert({
@@ -431,9 +527,6 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     ...Array.from(addedEntities),
   ]);
 
-  const isLoading = isLoadingSov || isLoadingMetrics;
-  const hasAnyReal = hasRealSov || hasRealMetrics;
-
   const ComputingPlaceholder = () => (
     <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
       <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
@@ -449,7 +542,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       <div className="grid grid-cols-12 gap-6 items-stretch">
-        {/* Primary Row: Trend Comparison */}
+        {/* Visibility Trend vs Competitors */}
         <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[340px]">
           <div className="flex items-start justify-between mb-4">
             <div className="space-y-1">
@@ -489,10 +582,25 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }}
                   axisLine={false}
                   tickLine={false}
+                  tickFormatter={(v) => `${v}%`}
                 />
                 <Tooltip
-                  contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px' }}
-                  formatter={(value: number) => [`${value.toFixed(1)}%`, undefined]}
+                  contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', padding: '8px 12px' }}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div style={{ background: 'white', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '8px 12px', fontSize: '11px', border: '1px solid #f1f5f9' }}>
+                        <p style={{ color: '#94a3b8', fontWeight: 600, fontSize: '10px', marginBottom: '6px' }}>{label}</p>
+                        {payload.map((entry: any) => (
+                          <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 700, color: '#475569' }}>{entry.dataKey}:</span>
+                            <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '8px', fontSize: '9px', fontWeight: 700 }} />
                 {trendLineKeys.map((key, idx) => (
@@ -539,7 +647,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '8px' }} />
+                <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '8px' }} formatter={(v: number) => [`${v}%`, 'Share']} />
               </PieChart>
             </ResponsiveContainer>
             )}
@@ -550,16 +658,23 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             </div>
             )}
           </div>
-          <div className="mt-4 space-y-1.5 overflow-y-auto custom-scrollbar">
-            {pieData.slice(0, 6).map(c => (
-              <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.color }}></div>
-                  <span className="truncate max-w-[100px]">{c.name}</span>
+          {/* Legend with trend badges */}
+          <div className="mt-3 space-y-1.5 overflow-y-auto custom-scrollbar">
+            {pieData.slice(0, 6).map(c => {
+              const trend = sovEntityTrends[c.name];
+              return (
+                <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
+                    <span className="truncate max-w-[90px]">{c.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span>{c.voice}%</span>
+                    <TrendBadge trend={trend} size="xs" />
+                  </div>
                 </div>
-                <span>{c.voice}%</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -585,7 +700,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={activeMention}
-                margin={{ top: 25, right: 15, left: -20, bottom: 5 }}
+                margin={{ top: 30, right: 15, left: -20, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                 <XAxis
@@ -605,13 +720,28 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 <Tooltip
                   cursor={{ fill: '#f8fafc', opacity: 0.5 }}
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', fontSize: '11px' }}
-                  formatter={(value: number) => [`${value}%`, 'Mention Rate']}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const entry = payload[0];
+                    const row = activeMention.find((m: any) => m.name === entry.payload?.name) as CompetitorRow | undefined;
+                    return (
+                      <div style={{ background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '8px 12px', fontSize: '11px', border: '1px solid #f1f5f9' }}>
+                        <p style={{ fontWeight: 800, color: '#475569', marginBottom: '3px' }}>{entry.payload?.name}</p>
+                        <p style={{ color: entry.color, fontWeight: 800 }}>Mention Rate: {entry.value}%</p>
+                        {row?.trend != null && (
+                          <p style={{ fontSize: '10px', marginTop: '3px', color: row.trend > 0 ? '#16a34a' : row.trend < 0 ? '#7B3218' : '#94a3b8', fontWeight: 700 }}>
+                            {row.trend > 0 ? '↑' : row.trend < 0 ? '↓' : '→'} {row.trend > 0 ? '+' : ''}{row.trend}% vs prev period
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }}
                 />
                 <Bar dataKey="mentionRate" radius={[4, 4, 0, 0]} barSize={20}>
                   {activeMention.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
-                  <LabelList dataKey="mentionRate" content={renderCustomLabel} />
+                  <LabelList dataKey="mentionRate" content={renderMentionLabel(activeMention as CompetitorRow[])} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -642,7 +772,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             ) : activeCitation.map((c: any, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 rounded-xl border border-gray-100 hover:border-slate-200 transition-all">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white" style={{ backgroundColor: c.color }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0" style={{ backgroundColor: c.color }}>
                     {c.name.charAt(0)}
                   </div>
                   <div>
@@ -650,9 +780,12 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     {c.website && <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.website}</div>}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-black text-slate-900">{c.citation}%</div>
-                  <div className="text-[8px] font-bold text-slate-400 uppercase">Share</div>
+                <div className="flex items-center gap-2">
+                  <TrendBadge trend={c.trend} />
+                  <div className="text-right">
+                    <div className="text-sm font-black text-slate-900">{c.citation}%</div>
+                    <div className="text-[8px] font-bold text-slate-400 uppercase">Share</div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -695,7 +828,6 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
-              {/* Table header */}
               <div className="grid grid-cols-12 gap-4 px-5 py-2.5 bg-gray-50/60">
                 <div className="col-span-5 text-[9px] font-black uppercase tracking-widest text-slate-400">Entity</div>
                 <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Mention Rate</div>
@@ -709,33 +841,21 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 const isAdding = addingEntity === entity.name;
                 return (
                   <div key={entity.name} className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
-                    {/* Name */}
                     <div className="col-span-5 flex items-center gap-3">
                       <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
                         {entity.name.charAt(0).toUpperCase()}
                       </div>
                       <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
                     </div>
-
-                    {/* Mention Rate bar */}
                     <div className="col-span-3 flex items-center gap-2">
                       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-brand-brown/60 rounded-full"
-                          style={{ width: `${entity.mentionRate}%` }}
-                        />
+                        <div className="h-full bg-brand-brown/60 rounded-full" style={{ width: `${entity.mentionRate}%` }} />
                       </div>
-                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">
-                        {entity.mentionRate}%
-                      </span>
+                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">{entity.mentionRate}%</span>
                     </div>
-
-                    {/* SOV Share */}
                     <div className="col-span-2">
                       <span className="text-[11px] font-black text-slate-500">{entity.visibilityScore}%</span>
                     </div>
-
-                    {/* Action */}
                     <div className="col-span-2 flex justify-end">
                       {isTracked ? (
                         <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-lg">
@@ -762,4 +882,3 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     </div>
   );
 };
-

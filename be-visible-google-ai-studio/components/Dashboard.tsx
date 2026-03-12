@@ -159,10 +159,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
 
           setVisibilityData(points);
 
-          const latest = points[points.length - 1].score;
-          setCurrentScore(latest);
+          // Main metric = average score across the selected period
+          const avgScore = points.reduce((sum, p) => sum + p.score, 0) / points.length;
+          setCurrentScore(Math.round(avgScore * 10) / 10);
 
+          // Trend = change from first day to last day in the period
           const first = points[0].score;
+          const latest = points[points.length - 1].score;
           if (first > 0) {
             setTrendPercent(parseFloat((((latest - first) / first) * 100).toFixed(1)));
           } else {
