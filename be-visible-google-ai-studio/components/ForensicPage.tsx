@@ -527,7 +527,11 @@ export const ForensicPage: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{schedule.account_assigned || 'N/A'}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{schedule.proxy_assigned || 'N/A'}</td>
-                          <td className="px-4 py-3"><VisualStateBadge state={schedule.account_last_visual_state} /></td>
+                          <td className="px-4 py-3">
+                            {(schedule.status === 'completed' || schedule.status === 'failed')
+                              ? <VisualStateBadge state={schedule.account_last_visual_state} />
+                              : <span className="text-slate-300">—</span>}
+                          </td>
                         </tr>
                         {isExpanded && schedule.prompts.map((prompt, idx) => (
                           <tr key={`${schedule.id}-${prompt.id}`} className="bg-slate-50/70 border-b border-slate-100">

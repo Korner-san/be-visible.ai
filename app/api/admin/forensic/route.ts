@@ -344,6 +344,21 @@ export async function GET(request: NextRequest) {
             user_email: userMap[p.brands?.owner_user_id] || 'Unknown'
           }))
 
+          // Only fetch actual execution visual state for batches that have run.
+          // Pending/running batches have no real login result yet — show nothing.
+          let batchVisualState: string | null = null
+          if (schedule.status === 'completed' || schedule.status === 'failed') {
+            const { data: forensicRow } = await supabase
+              .from('automation_forensics')
+              .select('visual_state')
+              .eq('batch_id', schedule.id)
+              .eq('operation_type', 'batch_execution')
+              .order('timestamp', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            batchVisualState = forensicRow?.visual_state ?? null
+          }
+
           return {
             id: schedule.id,
             schedule_date: schedule.schedule_date,
@@ -354,7 +369,7 @@ export async function GET(request: NextRequest) {
             prompt_ids: schedule.prompt_ids,
             account_assigned: schedule.chatgpt_accounts?.email,
             proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
-            account_last_visual_state: schedule.chatgpt_accounts?.last_visual_state,
+            account_last_visual_state: batchVisualState,
             session_id_assigned: schedule.chatgpt_accounts?.browserless_session_id,
             prompts: enrichedPrompts
           }
