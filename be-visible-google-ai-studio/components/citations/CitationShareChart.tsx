@@ -24,9 +24,13 @@ const MOCK_DATA = [
 interface CitationShareChartProps {
   brandId?: string | null;
   timeRange?: TimeRange;
+  customDateRange?: { from: string; to: string };
 }
 
-function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
+  if (timeRange === TimeRange.CUSTOM && customDateRange?.from && customDateRange?.to) {
+    return { from: customDateRange.from, to: customDateRange.to };
+  }
   const to = new Date();
   const from = new Date();
   switch (timeRange) {
@@ -40,9 +44,35 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
   };
 }
 
-export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
+function getPreviousPeriod(from: string, to: string): { from: string; to: string } {
+  const fromMs = new Date(from + 'T00:00:00').getTime();
+  const toMs = new Date(to + 'T00:00:00').getTime();
+  const diffMs = toMs - fromMs;
+  const prevTo = new Date(fromMs - 24 * 60 * 60 * 1000);
+  const prevFrom = new Date(prevTo.getTime() - diffMs);
+  return {
+    from: prevFrom.toISOString().split('T')[0],
+    to: prevTo.toISOString().split('T')[0],
+  };
+}
+
+async function fetchAvgCitationShare(brandId: string, from: string, to: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('citation_share_stats')
+    .select('citation_share')
+    .eq('brand_id', brandId)
+    .eq('domain_type', 'brand')
+    .gte('report_date', from)
+    .lte('report_date', to);
+  if (error || !data || data.length === 0) return null;
+  const avg = data.reduce((sum: number, r: any) => sum + (r.citation_share ?? 0), 0) / data.length;
+  return parseFloat(avg.toFixed(1));
+}
+
+export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange }) => {
   const [data, setData] = useState(MOCK_DATA);
   const [avgShare, setAvgShare] = useState(24.8);
+  const [trend, setTrend] = useState<number | null>(null);
   const [brandDomain, setBrandDomain] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
@@ -51,6 +81,7 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
     if (!brandId) {
       setData(MOCK_DATA);
       setAvgShare(24.8);
+      setTrend(null);
       setBrandDomain('incredibuild.com');
       setHasRealData(false);
       return;
@@ -59,9 +90,10 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const { from, to } = getDateRange(timeRange);
+        const { from, to } = getDateRange(timeRange, customDateRange);
+        const { from: prevFrom, to: prevTo } = getPreviousPeriod(from, to);
 
-        const [statsResult, brandResult] = await Promise.all([
+        const [statsResult, brandResult, prevAvg] = await Promise.all([
           supabase
             .from('citation_share_stats')
             .select('report_date, citation_share, citation_count, total_citations, rank')
@@ -75,6 +107,7 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
             .select('domain')
             .eq('id', brandId)
             .single(),
+          fetchAvgCitationShare(brandId, prevFrom, prevTo),
         ]);
 
         if (brandResult.data?.domain) {
@@ -86,6 +119,7 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
           setHasRealData(false);
           setData(MOCK_DATA);
           setAvgShare(24.8);
+          setTrend(null);
           setIsLoading(false);
           return;
         }
@@ -95,6 +129,7 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
           setHasRealData(false);
           setData(MOCK_DATA);
           setAvgShare(24.8);
+          setTrend(null);
           setIsLoading(false);
           return;
         }
@@ -106,22 +141,30 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
         });
 
         const avg = rows.reduce((sum: number, r: any) => sum + (r.citation_share ?? 0), 0) / rows.length;
+        const currentAvg = parseFloat(avg.toFixed(1));
 
         setData(chartData);
-        setAvgShare(parseFloat(avg.toFixed(1)));
+        setAvgShare(currentAvg);
         setHasRealData(true);
+
+        if (prevAvg !== null) {
+          setTrend(parseFloat((currentAvg - prevAvg).toFixed(1)));
+        } else {
+          setTrend(null);
+        }
       } catch (err) {
         console.error('Citation share fetch error:', err);
         setHasRealData(false);
         setData(MOCK_DATA);
         setAvgShare(24.8);
+        setTrend(null);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to]);
 
   // Helper to ensure exactly 7 equidistant ticks
   const getTicks = (dataset: any[], count: number) => {
@@ -162,11 +205,24 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
           {brandDomain && <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Percentage of total citations linking to {brandDomain}</p>}
         </div>
 
-        <div className="text-right">
+        <div className="text-right flex flex-col items-end gap-1">
            <div className="text-2xl font-black text-brand-brown">
              {isLoading ? '...' : (brandId && !hasRealData ? '–' : `${avgShare}%`)}
            </div>
            <div className="text-[9px] font-black text-gray-400 tracking-wider">Avg. citation share</div>
+           {trend != null && hasRealData && (
+             <span
+               className="text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 border whitespace-nowrap"
+               style={trend > 0
+                 ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+                 : trend < 0
+                 ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+                 : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
+               }
+             >
+               {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'}{trend > 0 ? '+' : ''}{trend}% <span className="opacity-70 ml-0.5">vs prev</span>
+             </span>
+           )}
         </div>
       </div>
 

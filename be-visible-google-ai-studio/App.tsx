@@ -265,7 +265,7 @@ function AppContent() {
           setPrompts(prev => prev.map(p => {
             const s = statsData.stats[p.id];
             if (!s) return p;
-            return { ...p, visibilityScore: s.visibilityScore, visibilityTrend: s.visibilityTrend, citationShare: s.citationShare, citations: s.citations, lastRun: s.lastRun, history: s.history, recentResults: s.recentResults };
+            return { ...p, visibilityScore: s.visibilityScore, visibilityTrend: s.visibilityTrend, avgPosition: s.avgPosition ?? 0, citationShare: s.citationShare, citations: s.citations, lastRun: s.lastRun, history: s.history, recentResults: s.recentResults };
           }));
         }
       } catch (e) {
@@ -443,7 +443,7 @@ function AppContent() {
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
       case 'Citations':
-        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} />;
+        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} />;
       case 'Prompts':
         return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} />;
       case 'Improve':
