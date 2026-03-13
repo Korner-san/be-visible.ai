@@ -147,8 +147,7 @@ module.exports = async function handler(req, res) {
     const { runs, recentResults } = data;
     const total = runs.length;
     const mentionedCount = runs.filter(r => r.mentioned).length;
-    const totalMentionCount = runs.reduce((sum, r) => sum + r.mentionCount, 0);
-    const mentionRate = total > 0 ? Math.round((totalMentionCount / total) * 100) / 100 : 0;
+    const mentionRate = total > 0 ? Math.round((mentionedCount / total) * 100) : 0;
     const totalCitations = runs.reduce((sum, r) => sum + r.citationCount, 0);
     const totalBrandCitations = runs.reduce((sum, r) => sum + r.brandCitationCount, 0);
 

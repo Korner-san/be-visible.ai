@@ -646,8 +646,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                       <td className="px-4 py-5 text-center">
                         <span className="font-bold text-slate-900 text-[13px] tabular-nums">
                           {group.prompts.length > 0
-                            ? (group.prompts.reduce((s, p) => s + (p.mentionRate || 0), 0) / group.prompts.length).toFixed(2)
-                            : '—'}x
+                            ? Math.round(group.prompts.reduce((s, p) => s + (p.mentionRate || 0), 0) / group.prompts.length)
+                            : '—'}%
                         </span>
                       </td>
                       <td className="px-8 py-5 text-center">
@@ -680,7 +680,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                           <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.avgPosition}</span>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.mentionRate.toFixed(2)}x</span>
+                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.mentionRate}%</span>
                         </td>
                         <td className="px-8 py-4 text-center">
                           <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.citationShare}%</span>
@@ -847,8 +847,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                        />
                        <MetricCard
                          label="Mention rate"
-                         value={`${(popupStats?.mentionRate ?? selectedEntity.data.mentionRate ?? 0).toFixed(2)}x`}
-                         trend="avg mentions per response"
+                         value={`${popupStats?.mentionRate ?? selectedEntity.data.mentionRate ?? 0}%`}
+                         trend="% of runs brand was mentioned"
                          trendColor="text-slate-400"
                          isHighlighted={false}
                          onClick={() => {}}
