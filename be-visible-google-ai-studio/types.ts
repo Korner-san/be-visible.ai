@@ -45,6 +45,7 @@ export interface PromptStats {
   visibilityScore: number;
   visibilityTrend: number;
   avgPosition: number;
+  mentionRate: number;
   citationShare: number;
   citations: number;
   citationTrend: number;

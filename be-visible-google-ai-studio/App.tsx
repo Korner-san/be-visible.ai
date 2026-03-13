@@ -228,6 +228,7 @@ function AppContent() {
         visibilityScore: 0,
         visibilityTrend: 0,
         avgPosition: 0,
+        mentionRate: 0,
         citationShare: 0,
         citations: 0,
         citationTrend: 0,
@@ -265,7 +266,7 @@ function AppContent() {
           setPrompts(prev => prev.map(p => {
             const s = statsData.stats[p.id];
             if (!s) return p;
-            return { ...p, visibilityScore: s.visibilityScore, visibilityTrend: s.visibilityTrend, avgPosition: s.avgPosition ?? 0, citationShare: s.citationShare, citations: s.citations, lastRun: s.lastRun, history: s.history, recentResults: s.recentResults };
+            return { ...p, visibilityScore: s.visibilityScore, visibilityTrend: s.visibilityTrend, avgPosition: s.avgPosition ?? 0, mentionRate: s.mentionRate ?? 0, citationShare: s.citationShare, citations: s.citations, lastRun: s.lastRun, history: s.history, recentResults: s.recentResults };
           }));
         }
       } catch (e) {

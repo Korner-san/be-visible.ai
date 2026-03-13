@@ -599,7 +599,10 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                 <th className="w-[15%] px-4 py-4 font-bold text-center">
                   <HeaderWithInfo title="Average position" info="Average rank in AI generated lists." align="center" />
                 </th>
-                <th className="w-[20%] px-8 py-4 font-bold text-center">
+                <th className="w-[15%] px-4 py-4 font-bold text-center">
+                  <HeaderWithInfo title="Mention rate" info="Average number of times your brand is mentioned per AI response." align="center" />
+                </th>
+                <th className="w-[15%] px-8 py-4 font-bold text-center">
                   <HeaderWithInfo title="Citation share" info="Proportion of citations linking to your site." align="center" />
                 </th>
               </tr>
@@ -640,6 +643,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                       <td className="px-4 py-5 text-center">
                         <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.position}</span>
                       </td>
+                      <td className="px-4 py-5 text-center">
+                        <span className="font-bold text-slate-900 text-[13px] tabular-nums">
+                          {group.prompts.length > 0
+                            ? (group.prompts.reduce((s, p) => s + (p.mentionRate || 0), 0) / group.prompts.length).toFixed(2)
+                            : '—'}x
+                        </span>
+                      </td>
                       <td className="px-8 py-5 text-center">
                         <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.share}%</span>
                       </td>
@@ -668,6 +678,9 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                         </td>
                         <td className="px-4 py-4 text-center">
                           <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.avgPosition}</span>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.mentionRate.toFixed(2)}x</span>
                         </td>
                         <td className="px-8 py-4 text-center">
                           <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.citationShare}%</span>
@@ -831,6 +844,14 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                          trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'avgPosition'}
                          onClick={() => setActiveChartMetric('avgPosition')}
+                       />
+                       <MetricCard
+                         label="Mention rate"
+                         value={`${(popupStats?.mentionRate ?? selectedEntity.data.mentionRate ?? 0).toFixed(2)}x`}
+                         trend="avg mentions per response"
+                         trendColor="text-slate-400"
+                         isHighlighted={false}
+                         onClick={() => {}}
                        />
                        <MetricCard
                          label="Citation share"

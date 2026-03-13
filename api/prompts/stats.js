@@ -85,7 +85,7 @@ module.exports = async function handler(req, res) {
   // 3. Fetch prompt_results (optionally filtered to one prompt)
   let resultsQuery = supabase
     .from('prompt_results')
-    .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, brand_position, prompt_text, created_at')
+    .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, brand_position, brand_mention_count, prompt_text, created_at')
     .in('daily_report_id', reportIds)
     .not('chatgpt_response', 'is', null)
     .order('created_at', { ascending: false });
@@ -124,7 +124,8 @@ module.exports = async function handler(req, res) {
 
     const reportDate = reportDateMap[row.daily_report_id] || '';
 
-    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate });
+    const mentionCount = row.brand_mention_count || 0;
+    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount });
 
     if (grouped[pid].recentResults.length < 5) {
       grouped[pid].recentResults.push({
@@ -146,6 +147,8 @@ module.exports = async function handler(req, res) {
     const { runs, recentResults } = data;
     const total = runs.length;
     const mentionedCount = runs.filter(r => r.mentioned).length;
+    const totalMentionCount = runs.reduce((sum, r) => sum + r.mentionCount, 0);
+    const mentionRate = total > 0 ? Math.round((totalMentionCount / total) * 100) / 100 : 0;
     const totalCitations = runs.reduce((sum, r) => sum + r.citationCount, 0);
     const totalBrandCitations = runs.reduce((sum, r) => sum + r.brandCitationCount, 0);
 
@@ -217,6 +220,7 @@ module.exports = async function handler(req, res) {
       visibilityScore: total > 0 ? Math.round((mentionedCount / total) * 100) : 0,
       visibilityTrend,
       avgPosition,
+      mentionRate,
       citationShare,
       citations: totalCitations,
       lastRun: runs[0]?.reportDate || '',
