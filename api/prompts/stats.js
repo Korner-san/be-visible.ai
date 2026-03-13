@@ -208,6 +208,7 @@ module.exports = async function handler(req, res) {
         mentions: d.mentions,
         pctTotal: grandTotalMentions > 0 ? Math.round((d.mentions / grandTotalMentions) * 1000) / 10 : 0,
         coverage: totalRuns > 0 ? Math.round((d.runSet.size / totalRuns) * 100) : 0,
+        urls: [...d.urlSet],
       }))
       .sort((a, b) => b.mentions - a.mentions)
       .slice(0, 15);

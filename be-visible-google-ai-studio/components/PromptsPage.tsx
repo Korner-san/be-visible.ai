@@ -109,6 +109,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
   const [popupDays, setPopupDays] = useState<number>(timeRangeDays);
   const [popupStats, setPopupStats] = useState<any | null>(null);
   const [popupLoading, setPopupLoading] = useState(false);
+  const [expandedCitationDomain, setExpandedCitationDomain] = useState<string | null>(null);
   
   const brandTerracotta = '#874B34';
   const brandBrown = '#2C1308';
@@ -198,6 +199,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     setActiveChartMetric('visibility');
     setActiveModalTab('Citation sources');
     setSelectedRun(null);
+    setExpandedCitationDomain(null);
   };
 
   const handleSelectCategory = (category: string) => {
@@ -216,6 +218,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     setActiveChartMetric('visibility');
     setActiveModalTab('Citation sources');
     setSelectedRun(null);
+    setExpandedCitationDomain(null);
   };
 
   const runHistory = useMemo(() => {
@@ -383,22 +386,53 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {citationDomains.map((row: any) => (
-                  <tr key={row.domain} className="hover:bg-gray-50 transition-colors group">
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-all">
-                          <img src={`https://www.google.com/s2/favicons?domain=${row.domain}&sz=64`} className="w-4 h-4 object-contain rounded-sm" alt={row.domain} />
-                        </div>
-                        <span className="font-bold text-slate-700 text-[13px]">{row.domain}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.uniqueUrls}</td>
-                    <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.mentions}</td>
-                    <td className="px-4 py-4 text-center font-black text-slate-900 tabular-nums text-[13px]">{row.pctTotal}%</td>
-                    <td className="px-4 py-4 text-center font-bold text-slate-900 text-[13px]">{row.coverage}%</td>
-                  </tr>
-                ))}
+                {citationDomains.map((row: any) => {
+                  const isExpanded = expandedCitationDomain === row.domain;
+                  return (
+                    <React.Fragment key={row.domain}>
+                      <tr
+                        className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                        onClick={() => setExpandedCitationDomain(isExpanded ? null : row.domain)}
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-all">
+                              <img src={`https://www.google.com/s2/favicons?domain=${row.domain}&sz=64`} className="w-4 h-4 object-contain rounded-sm" alt={row.domain} />
+                            </div>
+                            <span className="font-bold text-slate-700 text-[13px]">{row.domain}</span>
+                            <span className="ml-1 text-[10px] text-slate-400">{isExpanded ? '▲' : '▼'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.uniqueUrls}</td>
+                        <td className="px-4 py-4 text-center font-bold text-slate-500 tabular-nums text-[13px]">{row.mentions}</td>
+                        <td className="px-4 py-4 text-center font-black text-slate-900 tabular-nums text-[13px]">{row.pctTotal}%</td>
+                        <td className="px-4 py-4 text-center font-bold text-slate-900 text-[13px]">{row.coverage}%</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={5} className="px-5 py-3">
+                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-2">URLs cited for this prompt</p>
+                            <div className="flex flex-col gap-1">
+                              {(row.urls || []).map((url: string, i: number) => (
+                                <a
+                                  key={i}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-2 text-[11px] text-blue-600 font-medium hover:underline truncate"
+                                >
+                                  <ExternalLink size={10} className="shrink-0 text-blue-400" />
+                                  {url}
+                                </a>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
