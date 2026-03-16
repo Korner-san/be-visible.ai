@@ -428,12 +428,19 @@ export const ForensicPage: React.FC = () => {
               const totalPrompts = pendingQ.reduce((sum, s) => sum + (s.batch_size || 0), 0);
               const uniqueAccounts = new Set(q.map(s => s.account_assigned).filter(Boolean));
               const uniqueProxies = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
+              const uniqueUsers = new Set(q.flatMap(s => s.prompts.map(p => p.user_email)).filter(e => e && e !== 'Unknown'));
               return (
                 <div className="flex items-center gap-6 px-8 py-4 bg-slate-50 border-b border-gray-100">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Prompts</span>
                     <span className="text-2xl font-black text-slate-800">{totalPrompts}</span>
                     <span className="text-[10px] text-slate-400">across {pendingQ.length} {pendingQ.length === 1 ? 'batch' : 'batches'}</span>
+                  </div>
+                  <div className="w-px h-12 bg-gray-200" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Users</span>
+                    <span className="text-2xl font-black text-slate-800">{uniqueUsers.size}</span>
+                    <span className="text-[10px] text-slate-400">{uniqueUsers.size === 1 ? 'user' : 'users'} in batches</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
                   <div className="flex flex-col">
