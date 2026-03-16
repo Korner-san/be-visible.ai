@@ -9,7 +9,15 @@ interface HeaderProps {
   setTimeRange: (range: TimeRange) => void;
   onCustomRange?: (from: string, to: string) => void;
   isScrolled?: boolean;
+  selectedModels?: string[];
+  onModelsChange?: (models: string[]) => void;
 }
+
+const MODEL_OPTIONS = [
+  { id: 'all',                  label: 'All Models',         models: ['chatgpt', 'google_ai_overview'], dot: 'bg-gradient-to-r from-emerald-500 to-blue-500' },
+  { id: 'chatgpt',              label: 'ChatGPT',            models: ['chatgpt'],                       dot: 'bg-emerald-500' },
+  { id: 'google_ai_overview',   label: 'Google AI Overview', models: ['google_ai_overview'],            dot: 'bg-blue-500' },
+];
 
 const formatDateLabel = (iso: string) => {
   const d = new Date(iso + 'T12:00:00');
@@ -22,7 +30,9 @@ export const Header: React.FC<HeaderProps> = ({
   timeRange,
   setTimeRange,
   onCustomRange,
-  isScrolled
+  isScrolled,
+  selectedModels = ['chatgpt', 'google_ai_overview'],
+  onModelsChange,
 }) => {
   const tabs = ['Visibility', 'Competitors', 'Citations', 'Prompts', 'Improve'];
 
@@ -30,6 +40,23 @@ export const Header: React.FC<HeaderProps> = ({
   const [customFromInput, setCustomFromInput] = useState('');
   const [customToInput, setCustomToInput] = useState('');
   const customPickerRef = useRef<HTMLDivElement>(null);
+
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const currentModelOption = MODEL_OPTIONS.find(o =>
+    o.models.length === selectedModels.length && o.models.every(m => selectedModels.includes(m))
+  ) || MODEL_OPTIONS[0];
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -160,6 +187,37 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Model selector */}
+        <div className="relative" ref={modelPickerRef}>
+          <button
+            onClick={() => setShowModelPicker(!showModelPicker)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-slate-700 hover:border-gray-300 hover:bg-gray-100 transition-all"
+          >
+            <span className={`w-2 h-2 rounded-full shrink-0 ${currentModelOption.dot}`} />
+            {currentModelOption.label}
+            <ChevronDown size={11} className={`text-gray-400 transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
+          </button>
+          {showModelPicker && (
+            <div className="absolute right-0 top-full mt-2 bg-white rounded-xl border border-gray-200 shadow-xl z-50 py-1 min-w-[180px]">
+              <p className="px-3 pt-2 pb-1 text-[10px] font-black text-gray-400 uppercase tracking-widest">Source Model</p>
+              {MODEL_OPTIONS.map(opt => {
+                const isActive = opt.models.length === selectedModels.length && opt.models.every(m => selectedModels.includes(m));
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => { onModelsChange?.(opt.models); setShowModelPicker(false); }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold transition-colors ${isActive ? 'bg-brand-brown/5 text-brand-brown' : 'text-slate-600 hover:bg-gray-50'}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                    {opt.label}
+                    {isActive && <span className="ml-auto text-brand-brown">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 text-gray-400">

@@ -13,6 +13,7 @@ interface DashboardProps {
   onNavigateToPrompts?: () => void;
   brandName?: string;
   customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
 }
 
 function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
@@ -49,7 +50,9 @@ function getPreviousPeriod(from: string, to: string): { from: string; to: string
   };
 }
 
-async function fetchMentionRateValue(bId: string, from: string, to: string): Promise<number | null> {
+const ALL_MODELS = ['chatgpt', 'google_ai_overview'];
+
+async function fetchMentionRateValue(bId: string, from: string, to: string, models = ALL_MODELS): Promise<number | null> {
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('id')
@@ -62,14 +65,59 @@ async function fetchMentionRateValue(bId: string, from: string, to: string): Pro
   const { count: total } = await supabase
     .from('prompt_results')
     .select('*', { count: 'exact', head: true })
-    .in('daily_report_id', reportIds);
+    .in('daily_report_id', reportIds)
+    .in('provider', models);
   const { count: mentioned } = await supabase
     .from('prompt_results')
     .select('*', { count: 'exact', head: true })
     .in('daily_report_id', reportIds)
+    .in('provider', models)
     .eq('brand_mentioned', true);
   if (!total || total === 0) return null;
   return parseFloat(((mentioned || 0) / total * 100).toFixed(1));
+}
+
+/**
+ * For single-model view: compute visibility score from prompt_results.brand_mentioned
+ * grouped by report_date instead of using the pre-aggregated daily_reports.visibility_score.
+ */
+async function fetchVisibilityByProvider(bId: string, from: string, to: string, models: string[]): Promise<{ date: string; score: number }[]> {
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('id, report_date')
+    .eq('brand_id', bId)
+    .eq('status', 'completed')
+    .gte('report_date', from)
+    .lte('report_date', to)
+    .order('report_date', { ascending: true });
+  if (!reports || reports.length === 0) return [];
+
+  const reportIds = reports.map((r: any) => r.id);
+  const reportDateMap = new Map(reports.map((r: any) => [r.id, r.report_date as string]));
+
+  const { data: results } = await supabase
+    .from('prompt_results')
+    .select('daily_report_id, brand_mentioned')
+    .in('daily_report_id', reportIds)
+    .in('provider', models);
+  if (!results || results.length === 0) return [];
+
+  const byDate = new Map<string, { total: number; mentioned: number }>();
+  for (const r of results as any[]) {
+    const date = reportDateMap.get(r.daily_report_id);
+    if (!date) continue;
+    const cur = byDate.get(date) || { total: 0, mentioned: 0 };
+    cur.total++;
+    if (r.brand_mentioned) cur.mentioned++;
+    byDate.set(date, cur);
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, { total, mentioned }]) => ({
+      date,
+      score: total > 0 ? parseFloat(((mentioned / total) * 100).toFixed(1)) : 0,
+    }));
 }
 
 async function fetchBrandSOVPct(bId: string, from: string, to: string): Promise<number | null> {
@@ -102,7 +150,7 @@ async function fetchBrandSOVPct(bId: string, from: string, to: string): Promise<
   return brand ? Math.round((brand.mentions / totalMentions) * 100) : 0;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTimezone = 'UTC', onNavigateToPrompts, brandName, customDateRange }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTimezone = 'UTC', onNavigateToPrompts, brandName, customDateRange, selectedModels = ALL_MODELS }) => {
   const [visibilityData, setVisibilityData] = useState<TrendDataPoint[]>([]);
   const [currentScore, setCurrentScore] = useState<number | undefined>();
   const [trendPercent, setTrendPercent] = useState<number | undefined>();
@@ -122,55 +170,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     const days = Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24));
     const timePeriodLabel = `vs prev ${days}d`;
 
-    // Fetch visibility scores
+    // Fetch visibility scores — when a single model is selected, compute from prompt_results
+    // so users see that model's mention rate as their visibility trend.
+    // When all models selected, use pre-aggregated daily_reports.visibility_score.
     const fetchVisibility = async () => {
       setIsLoadingVis(true);
       try {
-        const { data, error } = await supabase
-          .from('daily_reports')
-          .select('report_date, visibility_score')
-          .eq('brand_id', brandId)
-          .eq('status', 'completed')
-          .not('visibility_score', 'is', null)
-          .gte('report_date', from)
-          .lte('report_date', to)
-          .order('report_date', { ascending: true });
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
+        let points: TrendDataPoint[] = [];
 
-        if (error) {
-          console.error('Error fetching visibility scores:', error);
-          return;
+        if (isFiltered) {
+          // Compute per-model visibility from prompt_results.brand_mentioned
+          const raw = await fetchVisibilityByProvider(brandId, from, to, selectedModels);
+          points = raw.map(({ date, score }) => ({
+            date: new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: userTimezone }),
+            score,
+          }));
+        } else {
+          const { data, error } = await supabase
+            .from('daily_reports')
+            .select('report_date, visibility_score')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('visibility_score', 'is', null)
+            .gte('report_date', from)
+            .lte('report_date', to)
+            .order('report_date', { ascending: true });
+
+          if (error) { console.error('Error fetching visibility scores:', error); return; }
+
+          if (data && data.length > 0) {
+            const bestByDate = new Map<string, number>();
+            data.forEach((row: any) => {
+              const score = parseFloat(row.visibility_score) || 0;
+              if (score > (bestByDate.get(row.report_date) ?? -1)) bestByDate.set(row.report_date, score);
+            });
+            points = Array.from(bestByDate.entries())
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([reportDate, score]) => ({
+                date: new Date(reportDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: userTimezone }),
+                score,
+              }));
+          }
         }
 
-        if (data && data.length > 0) {
-          const bestByDate = new Map<string, number>();
-          data.forEach((row: any) => {
-            const score = parseFloat(row.visibility_score) || 0;
-            if (score > (bestByDate.get(row.report_date) ?? -1)) {
-              bestByDate.set(row.report_date, score);
-            }
-          });
-
-          const points: TrendDataPoint[] = Array.from(bestByDate.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([reportDate, score]) => ({
-              date: new Date(reportDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: userTimezone }),
-              score,
-            }));
-
+        if (points.length > 0) {
           setVisibilityData(points);
-
-          // Main metric = average score across the selected period
           const avgScore = points.reduce((sum, p) => sum + p.score, 0) / points.length;
           setCurrentScore(Math.round(avgScore * 10) / 10);
-
-          // Trend = change from first day to last day in the period
           const first = points[0].score;
           const latest = points[points.length - 1].score;
-          if (first > 0) {
-            setTrendPercent(parseFloat((((latest - first) / first) * 100).toFixed(1)));
-          } else {
-            setTrendPercent(0);
-          }
+          setTrendPercent(first > 0 ? parseFloat((((latest - first) / first) * 100).toFixed(1)) : 0);
         } else {
           setVisibilityData([]);
           setCurrentScore(undefined);
@@ -183,13 +233,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
       }
     };
 
-    // Fetch mention rate + previous period trend
+    // Fetch mention rate + previous period trend — filtered by selected models
     const fetchMentionRate = async () => {
       setIsLoadingMention(true);
       try {
         const [rate, prevRate] = await Promise.all([
-          fetchMentionRateValue(brandId, from, to),
-          fetchMentionRateValue(brandId, prevFrom, prevTo),
+          fetchMentionRateValue(brandId, from, to, selectedModels),
+          fetchMentionRateValue(brandId, prevFrom, prevTo, selectedModels),
         ]);
 
         if (rate !== null) {
@@ -276,7 +326,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     fetchVisibility();
     fetchMentionRate();
     fetchShareOfVoice();
-  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
   const { from, to } = getDateRange(timeRange, customDateRange);
   const days = Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24));

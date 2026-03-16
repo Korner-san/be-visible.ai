@@ -77,6 +77,7 @@ function AppContent() {
   const [prompts, setPrompts] = useState<PromptStats[]>([]);
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
   const [dashboardKey, setDashboardKey] = useState(0);
+  const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'google_ai_overview']);
 
   // Load competitors from DB when brand is known
   useEffect(() => {
@@ -464,7 +465,7 @@ function AppContent() {
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:
-        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} userTimezone={userTimezone} brandName={activeBrand?.name} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} onNavigateToPrompts={() => setActiveTab('Prompts')} />;
+        return <Dashboard key={dashboardKey} timeRange={timeRange} brandId={activeBrandId} userTimezone={userTimezone} brandName={activeBrand?.name} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} onNavigateToPrompts={() => setActiveTab('Prompts')} selectedModels={selectedModels} />;
     }
   };
 
@@ -479,6 +480,8 @@ function AppContent() {
           setTimeRange={setTimeRange}
           onCustomRange={(from, to) => { setCustomFrom(from); setCustomTo(to); }}
           isScrolled={isScrolled}
+          selectedModels={selectedModels}
+          onModelsChange={setSelectedModels}
         />
         <main
           className="flex-1 overflow-y-auto px-4 md:px-6 py-4 pt-20 scroll-smooth"
