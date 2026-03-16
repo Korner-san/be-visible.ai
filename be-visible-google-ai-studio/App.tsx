@@ -77,7 +77,7 @@ function AppContent() {
   const [prompts, setPrompts] = useState<PromptStats[]>([]);
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
   const [dashboardKey, setDashboardKey] = useState(0);
-  const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'google_ai_overview']);
+  const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'google_ai_overview', 'claude']);
 
   // Load competitors from DB when brand is known
   useEffect(() => {

@@ -50,7 +50,7 @@ function getPreviousPeriod(from: string, to: string): { from: string; to: string
   };
 }
 
-const ALL_MODELS = ['chatgpt', 'google_ai_overview'];
+const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
 
 async function fetchMentionRateValue(bId: string, from: string, to: string, models = ALL_MODELS): Promise<number | null> {
   const { data: reports } = await supabase
