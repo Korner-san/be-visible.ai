@@ -367,7 +367,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
         />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
-        <PositionRanking brandId={brandId} timeRange={timeRange} onNavigateToPrompts={onNavigateToPrompts} />
+        <PositionRanking brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} selectedModels={selectedModels} onNavigateToPrompts={onNavigateToPrompts} />
       </div>
     </div>
   );

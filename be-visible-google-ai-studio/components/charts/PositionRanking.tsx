@@ -12,10 +12,27 @@ interface PromptScore {
 interface PositionRankingProps {
   brandId?: string | null;
   timeRange?: TimeRange;
+  customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
   onNavigateToPrompts?: () => void;
 }
 
-function getDateRanges(timeRange: TimeRange): { current: { from: string; to: string }; previous: { from: string; to: string } } {
+function getDateRanges(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { current: { from: string; to: string }; previous: { from: string; to: string } } {
+  if (timeRange === TimeRange.CUSTOM && customDateRange?.from && customDateRange?.to) {
+    const fromMs = new Date(customDateRange.from + 'T00:00:00').getTime();
+    const toMs = new Date(customDateRange.to + 'T00:00:00').getTime();
+    const diffMs = toMs - fromMs;
+    const prevTo = new Date(fromMs - 24 * 60 * 60 * 1000);
+    const prevFrom = new Date(prevTo.getTime() - diffMs);
+    return {
+      current: { from: customDateRange.from, to: customDateRange.to },
+      previous: {
+        from: prevFrom.toISOString().split('T')[0],
+        to: prevTo.toISOString().split('T')[0],
+      },
+    };
+  }
+
   const to = new Date();
   const now = new Date();
   let days = 30;
@@ -79,7 +96,7 @@ function getScoreColor(score: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, onNavigateToPrompts }) => {
+export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange, selectedModels, onNavigateToPrompts }) => {
   const [promptScores, setPromptScores] = useState<PromptScore[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasRealData, setHasRealData] = useState(false);
@@ -90,7 +107,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
     const fetchPromptScores = async () => {
       setIsLoading(true);
       try {
-        const { current, previous } = getDateRanges(timeRange);
+        const { current, previous } = getDateRanges(timeRange, customDateRange);
 
         // Step 1: Always load the brand's active prompts — show them even before any results exist
         const { data: brandPrompts, error: promptsError } = await supabase
@@ -122,11 +139,15 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
 
         // Step 4: Overlay results if any completed reports exist
         if (currentIds.length > 0) {
-          const { data: currentResults } = await supabase
+          let q = supabase
             .from('prompt_results')
             .select('brand_prompt_id, brand_mentioned')
             .in('daily_report_id', currentIds)
             .eq('provider_status', 'ok');
+          if (selectedModels && selectedModels.length > 0) {
+            q = q.in('provider', selectedModels);
+          }
+          const { data: currentResults } = await q;
 
           for (const r of (currentResults || [])) {
             if (scoreMap[r.brand_prompt_id]) {
@@ -139,11 +160,15 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
         // Step 5: Build previous period score map for trend arrows
         let prevScoreMap: Record<string, number> = {};
         if (previousIds.length > 0) {
-          const { data: prevResults } = await supabase
+          let pq = supabase
             .from('prompt_results')
             .select('brand_prompt_id, brand_mentioned')
             .in('daily_report_id', previousIds)
             .eq('provider_status', 'ok');
+          if (selectedModels && selectedModels.length > 0) {
+            pq = pq.in('provider', selectedModels);
+          }
+          const { data: prevResults } = await pq;
 
           if (prevResults && prevResults.length > 0) {
             const prevMap: Record<string, { mentioned: number; total: number }> = {};
@@ -190,7 +215,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
     };
 
     fetchPromptScores();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, (selectedModels || []).join(',')]);
 
   // When a real brand is set but no data yet, show empty list — never show Incredibuild mock prompts
   const data = hasRealData ? promptScores : (brandId ? [] : MOCK_DATA);
