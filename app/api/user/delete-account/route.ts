@@ -78,6 +78,12 @@ export async function POST(request: NextRequest) {
         .delete()
         .in('brand_id', brandIds)
 
+      // 6.5. Delete prompt_execution_log
+      await supabaseAdmin
+        .from('prompt_execution_log')
+        .delete()
+        .in('brand_id', brandIds)
+
       // 7. Delete brands
       await supabaseAdmin
         .from('brands')

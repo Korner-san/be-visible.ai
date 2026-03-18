@@ -34,6 +34,8 @@ interface PromptDetail {
   brand_name: string;
   brand_id: string;
   user_email: string;
+  aio_status: string;
+  claude_status: string;
 }
 
 interface ScheduleItem {
@@ -96,6 +98,21 @@ const VisualStateBadge: React.FC<{ state: string | null }> = ({ state }) => {
   if (state === 'Blank')
     return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-gray-600">Blank</span>;
   return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">{state}</span>;
+};
+
+const ApiModelBadge: React.FC<{ status: string }> = ({ status }) => {
+  if (status === 'ok')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'no_result')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-500">No Result</span>;
+  if (status === 'rate_limit')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700">Rate Limit</span>;
+  if (status === 'credit_error')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">No Credits</span>;
+  if (status === 'error')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">Error</span>;
+  // not_run or unknown
+  return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-400 border border-gray-200">—</span>;
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -463,14 +480,17 @@ export const ForensicPage: React.FC = () => {
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
                     <th className="w-8"></th>
-                    {['Done', 'Execution Time', 'Batch #', 'Prompts', 'Status', 'Account', 'Proxy', 'State'].map(h => (
+                    {['Done', 'Execution Time', 'Batch #', 'Prompts', 'Status', 'Account', 'Proxy'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">ChatGPT</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Google AIO</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Claude</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.schedulingQueue.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
+                    <tr><td colSpan={11} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
                   ) : data.schedulingQueue.map((schedule, idx) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
@@ -482,7 +502,7 @@ export const ForensicPage: React.FC = () => {
                       <Fragment key={schedule.id}>
                         {showDateSeparator && (
                           <tr>
-                            <td colSpan={9} className="px-4 py-3 bg-blue-50/70 border-y border-blue-100">
+                            <td colSpan={11} className="px-4 py-3 bg-blue-50/70 border-y border-blue-100">
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 h-px bg-blue-200" />
                                 <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">
@@ -534,7 +554,7 @@ export const ForensicPage: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{schedule.account_assigned || 'N/A'}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{schedule.proxy_assigned || 'N/A'}</td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3" colSpan={3}>
                             {(schedule.status === 'completed' || schedule.status === 'failed')
                               ? <VisualStateBadge state={schedule.account_last_visual_state} />
                               : <span className="text-slate-300">—</span>}
@@ -543,16 +563,22 @@ export const ForensicPage: React.FC = () => {
                         {isExpanded && schedule.prompts.map((prompt, idx) => (
                           <tr key={`${schedule.id}-${prompt.id}`} className="bg-slate-50/70 border-b border-slate-100">
                             <td className="px-3 py-2"></td>
-                            <td className="px-4 py-2 pl-8" colSpan={3}>
+                            <td className="px-4 py-2 pl-8" colSpan={2}>
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px] text-slate-400">#{idx + 1}</span>
                                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">{prompt.brand_name}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-2" colSpan={4}>
-                              <div className="text-xs text-slate-600 max-w-2xl">
-                                {prompt.prompt_text.length > 150 ? prompt.prompt_text.substring(0, 150) + '…' : prompt.prompt_text}
+                            <td className="px-4 py-2" colSpan={3}>
+                              <div className="text-xs text-slate-600 max-w-xl">
+                                {prompt.prompt_text.length > 120 ? prompt.prompt_text.substring(0, 120) + '…' : prompt.prompt_text}
                               </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <ApiModelBadge status={prompt.aio_status} />
+                            </td>
+                            <td className="px-4 py-2">
+                              <ApiModelBadge status={prompt.claude_status} />
                             </td>
                             <td className="px-4 py-2">
                               <span className="text-[11px] text-slate-400">{prompt.user_email}</span>

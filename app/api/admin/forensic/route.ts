@@ -336,12 +336,52 @@ export async function GET(request: NextRequest) {
             })
           }
 
+          // Fetch AIO and Claude status per prompt for completed/failed batches
+          const promptStatusMap: Record<string, { aio: string; claude: string }> = {}
+          const batchPromptIds = (prompts || []).map((p: any) => p.id)
+          if ((schedule.status === 'completed' || schedule.status === 'failed') && batchPromptIds.length > 0) {
+            // Find the daily_report for this brand+date
+            const brandId = (prompts || [])[0]?.brands?.id || (prompts || [])[0]?.brand_id
+            if (brandId) {
+              const { data: dailyRep } = await supabase
+                .from('daily_reports')
+                .select('id')
+                .eq('brand_id', brandId)
+                .eq('report_date', schedule.schedule_date)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+
+              if (dailyRep?.id) {
+                const { data: providerResults } = await supabase
+                  .from('prompt_results')
+                  .select('brand_prompt_id, provider, provider_status')
+                  .eq('daily_report_id', dailyRep.id)
+                  .in('brand_prompt_id', batchPromptIds)
+                  .in('provider', ['google_ai_overview', 'claude'])
+
+                for (const r of (providerResults || []) as any[]) {
+                  if (!promptStatusMap[r.brand_prompt_id]) {
+                    promptStatusMap[r.brand_prompt_id] = { aio: 'not_run', claude: 'not_run' }
+                  }
+                  if (r.provider === 'google_ai_overview') {
+                    promptStatusMap[r.brand_prompt_id].aio = r.provider_status
+                  } else if (r.provider === 'claude') {
+                    promptStatusMap[r.brand_prompt_id].claude = r.provider_status
+                  }
+                }
+              }
+            }
+          }
+
           const enrichedPrompts = (prompts || []).map((p: any) => ({
             id: p.id,
             prompt_text: p.improved_prompt || p.raw_prompt || '',
             brand_name: p.brands?.name || 'Unknown',
             brand_id: p.brands?.id || p.brand_id,
-            user_email: userMap[p.brands?.owner_user_id] || 'Unknown'
+            user_email: userMap[p.brands?.owner_user_id] || 'Unknown',
+            aio_status: promptStatusMap[p.id]?.aio ?? 'not_run',
+            claude_status: promptStatusMap[p.id]?.claude ?? 'not_run',
           }))
 
           // Only fetch actual execution visual state for batches that have run.
