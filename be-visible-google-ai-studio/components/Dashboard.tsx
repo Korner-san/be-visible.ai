@@ -78,6 +78,57 @@ async function fetchMentionRateValue(bId: string, from: string, to: string, mode
 }
 
 /**
+ * Compute Share of Voice from prompt_results for a given model filter.
+ * Returns same shape as the pre-aggregated share_of_voice_data column.
+ */
+async function fetchSOVByProvider(bId: string, from: string, to: string, models: string[], bName?: string): Promise<{ entities: { name: string; mentions: number; type: string }[]; total_mentions: number; calculated_at: string } | null> {
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('id')
+    .eq('brand_id', bId)
+    .eq('status', 'completed')
+    .gte('report_date', from)
+    .lte('report_date', to);
+  if (!reports || reports.length === 0) return null;
+
+  const reportIds = reports.map((r: any) => r.id);
+
+  const { data: results } = await supabase
+    .from('prompt_results')
+    .select('brand_mentioned, competitor_mentions')
+    .in('daily_report_id', reportIds)
+    .in('provider', models)
+    .eq('provider_status', 'ok');
+  if (!results || results.length === 0) return null;
+
+  let brandMentions = 0;
+  const competitorMap: Record<string, number> = {};
+
+  for (const r of results as any[]) {
+    if (r.brand_mentioned) brandMentions++;
+    if (Array.isArray(r.competitor_mentions)) {
+      for (const comp of r.competitor_mentions) {
+        if (comp?.name) {
+          competitorMap[comp.name] = (competitorMap[comp.name] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  const totalMentions = brandMentions + Object.values(competitorMap).reduce((s, v) => s + v, 0);
+  if (totalMentions === 0) return null;
+
+  const entities = [
+    { name: bName || 'Brand', mentions: brandMentions, type: 'brand' as const },
+    ...Object.entries(competitorMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, mentions]) => ({ name, mentions, type: 'competitor' as const })),
+  ];
+
+  return { entities, total_mentions: totalMentions, calculated_at: new Date().toISOString() };
+}
+
+/**
  * For single-model view: compute visibility score from prompt_results.brand_mentioned
  * grouped by report_date instead of using the pre-aggregated daily_reports.visibility_score.
  */
@@ -264,6 +315,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       try {
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
+
+        if (isFiltered) {
+          // Compute SoV from prompt_results filtered by selected providers
+          const [current, previous] = await Promise.all([
+            fetchSOVByProvider(brandId, from, to, selectedModels, brandName),
+            fetchSOVByProvider(brandId, prevFrom, prevTo, selectedModels, brandName),
+          ]);
+          setSovData(current ?? undefined);
+          if (current && previous) {
+            const curBrand = current.entities.find(e => e.type === 'brand');
+            const prevBrand = previous.entities.find(e => e.type === 'brand');
+            const curPct = curBrand ? Math.round((curBrand.mentions / current.total_mentions) * 100) : 0;
+            const prevPct = prevBrand ? Math.round((prevBrand.mentions / previous.total_mentions) * 100) : 0;
+            setSovTrend(curPct - prevPct);
+          } else {
+            setSovTrend(null);
+          }
+          return;
+        }
+
+        // All models: use pre-aggregated share_of_voice_data
         const { data: reports, error } = await supabase
           .from('daily_reports')
           .select('share_of_voice_data')
