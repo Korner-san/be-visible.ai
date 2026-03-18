@@ -97,10 +97,10 @@ async function fetchSOVByProvider(bId: string, from: string, to: string, models:
     .from('prompt_results')
     .select('brand_mentioned, competitor_mentions')
     .in('daily_report_id', reportIds)
-    .in('provider', models)
-    .eq('provider_status', 'ok');
+    .in('provider', models);
   if (!results || results.length === 0) return null;
 
+  const totalResponses = results.length;
   let brandMentions = 0;
   const competitorMap: Record<string, number> = {};
 
@@ -115,14 +115,20 @@ async function fetchSOVByProvider(bId: string, from: string, to: string, models:
     }
   }
 
-  const totalMentions = brandMentions + Object.values(competitorMap).reduce((s, v) => s + v, 0);
+  // If competitors are tracked, use entity-mention sums as the denominator (classic SoV).
+  // If not (e.g. Google AI Overview), fall back to total response count so brand % = mention rate.
+  const competitorMentionTotal = Object.values(competitorMap).reduce((s, v) => s + v, 0);
+  const totalMentions = competitorMentionTotal > 0
+    ? brandMentions + competitorMentionTotal
+    : totalResponses;
+
   if (totalMentions === 0) return null;
 
-  const entities = [
-    { name: bName || 'Brand', mentions: brandMentions, type: 'brand' as const },
+  const entities: { name: string; mentions: number; type: string }[] = [
+    { name: bName || 'Brand', mentions: brandMentions, type: 'brand' },
     ...Object.entries(competitorMap)
       .sort((a, b) => b[1] - a[1])
-      .map(([name, mentions]) => ({ name, mentions, type: 'competitor' as const })),
+      .map(([name, mentions]) => ({ name, mentions, type: 'competitor' })),
   ];
 
   return { entities, total_mentions: totalMentions, calculated_at: new Date().toISOString() };
