@@ -29,6 +29,7 @@ interface ShareOfVoiceProps {
   timePeriodLabel?: string;
   isLoading?: boolean;
   brandId?: string | null;
+  isAllModels?: boolean;
 }
 
 /**
@@ -51,7 +52,7 @@ function buildTwoSliceData(sovData: ShareOfVoiceData): ShareData[] {
   ];
 }
 
-export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend, timePeriodLabel, isLoading, brandId }) => {
+export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend, timePeriodLabel, isLoading, brandId, isAllModels = true }) => {
   const hasRealData = sovData && sovData.entities && sovData.entities.length > 0 && sovData.total_mentions > 0;
   // Only show Incredibuild sample data in demo mode (no brandId).
   // When a real brand is set but SOV hasn't been computed yet (Phase 1), show computing state.
@@ -65,7 +66,10 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Share of voice</h3>
-          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Brand presence in AI responses</p>
+          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+            Brand presence in AI responses
+            {!isAllModels && <span className="ml-1 text-[10px] text-amber-500 font-bold">(all models)</span>}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {trend != null && (

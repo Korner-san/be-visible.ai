@@ -78,63 +78,6 @@ async function fetchMentionRateValue(bId: string, from: string, to: string, mode
 }
 
 /**
- * Compute Share of Voice from prompt_results for a given model filter.
- * Returns same shape as the pre-aggregated share_of_voice_data column.
- */
-async function fetchSOVByProvider(bId: string, from: string, to: string, models: string[], bName?: string): Promise<{ entities: { name: string; mentions: number; type: string }[]; total_mentions: number; calculated_at: string } | null> {
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('id')
-    .eq('brand_id', bId)
-    .eq('status', 'completed')
-    .gte('report_date', from)
-    .lte('report_date', to);
-  if (!reports || reports.length === 0) return null;
-
-  const reportIds = reports.map((r: any) => r.id);
-
-  const { data: results } = await supabase
-    .from('prompt_results')
-    .select('brand_mentioned, competitor_mentions')
-    .in('daily_report_id', reportIds)
-    .in('provider', models);
-  if (!results || results.length === 0) return null;
-
-  const totalResponses = results.length;
-  let brandMentions = 0;
-  const competitorMap: Record<string, number> = {};
-
-  for (const r of results as any[]) {
-    if (r.brand_mentioned) brandMentions++;
-    if (Array.isArray(r.competitor_mentions)) {
-      for (const comp of r.competitor_mentions) {
-        if (comp?.name) {
-          competitorMap[comp.name] = (competitorMap[comp.name] || 0) + 1;
-        }
-      }
-    }
-  }
-
-  // If competitors are tracked, use entity-mention sums as the denominator (classic SoV).
-  // If not (e.g. Google AI Overview), fall back to total response count so brand % = mention rate.
-  const competitorMentionTotal = Object.values(competitorMap).reduce((s, v) => s + v, 0);
-  const totalMentions = competitorMentionTotal > 0
-    ? brandMentions + competitorMentionTotal
-    : totalResponses;
-
-  if (totalMentions === 0) return null;
-
-  const entities: { name: string; mentions: number; type: string }[] = [
-    { name: bName || 'Brand', mentions: brandMentions, type: 'brand' },
-    ...Object.entries(competitorMap)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, mentions]) => ({ name, mentions, type: 'competitor' })),
-  ];
-
-  return { entities, total_mentions: totalMentions, calculated_at: new Date().toISOString() };
-}
-
-/**
  * For single-model view: compute visibility score from prompt_results.brand_mentioned
  * grouped by report_date instead of using the pre-aggregated daily_reports.visibility_score.
  */
@@ -318,31 +261,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     };
 
     // Fetch share of voice + previous period trend
+    // SoV always uses pre-aggregated share_of_voice_data (all providers combined) because
+    // per-result entity extraction is not stored in the DB — only the daily aggregate is.
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       try {
-        const isFiltered = selectedModels.length < ALL_MODELS.length;
-
-        if (isFiltered) {
-          // Compute SoV from prompt_results filtered by selected providers
-          const [current, previous] = await Promise.all([
-            fetchSOVByProvider(brandId, from, to, selectedModels, brandName),
-            fetchSOVByProvider(brandId, prevFrom, prevTo, selectedModels, brandName),
-          ]);
-          setSovData(current ?? undefined);
-          if (current && previous) {
-            const curBrand = current.entities.find(e => e.type === 'brand');
-            const prevBrand = previous.entities.find(e => e.type === 'brand');
-            const curPct = curBrand ? Math.round((curBrand.mentions / current.total_mentions) * 100) : 0;
-            const prevPct = prevBrand ? Math.round((prevBrand.mentions / previous.total_mentions) * 100) : 0;
-            setSovTrend(curPct - prevPct);
-          } else {
-            setSovTrend(null);
-          }
-          return;
-        }
-
-        // All models: use pre-aggregated share_of_voice_data
+        // Always use pre-aggregated share_of_voice_data
         const { data: reports, error } = await supabase
           .from('daily_reports')
           .select('share_of_voice_data')
@@ -443,6 +367,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           timePeriodLabel={timePeriodLabel}
           isLoading={isLoadingSov}
           brandId={brandId}
+          isAllModels={selectedModels.length >= ALL_MODELS.length}
         />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
