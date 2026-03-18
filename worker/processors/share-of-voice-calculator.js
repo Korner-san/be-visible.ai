@@ -10,10 +10,11 @@
  * Uses GPT-4o-mini for entity extraction from response texts.
  *
  * Process:
- * 1. Load all prompt_results with chatgpt_response for the daily report
- * 2. Batch response texts and send to GPT-4o-mini for entity extraction
- * 3. Categorize entities as brand / competitor / other
- * 4. Store result in daily_reports.share_of_voice_data
+ * 1. Load all prompt_results for the daily report (all providers)
+ * 2. Run entity extraction once per provider (chatgpt, google_ai_overview, claude, perplexity)
+ * 3. Run one combined extraction across all providers for the aggregate view
+ * 4. Store per-provider results in daily_reports.share_of_voice_by_provider
+ * 5. Store combined result in daily_reports.share_of_voice_data
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -26,10 +27,18 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
+// Map provider name → response column in prompt_results
+const PROVIDER_RESPONSE_COLUMNS = {
+  chatgpt: 'chatgpt_response',
+  google_ai_overview: 'google_ai_overview_response',
+  claude: 'claude_response',
+  perplexity: 'perplexity_response',
+};
+
 /**
  * Extract entities from response texts using GPT-4o-mini
  * @param {string[]} responseTexts - Array of AI response texts
- * @returns {Object[]} Array of { name, count } objects
+ * @returns {Object[]} Array of { name, mentions } objects
  */
 async function extractEntitiesWithGPT(responseTexts) {
   const combinedText = responseTexts
@@ -87,10 +96,6 @@ ${truncated}`
 
 /**
  * Categorize entities as brand, competitor, or other
- * @param {Object[]} entities - Array of { name, mentions }
- * @param {string} brandName - The brand name
- * @param {string[]} competitorNames - Array of competitor names
- * @returns {Object[]} Categorized entities with type field
  */
 function categorizeEntities(entities, brandName, competitorNames) {
   const brandLower = brandName.toLowerCase();
@@ -102,25 +107,22 @@ function categorizeEntities(entities, brandName, competitorNames) {
   return entities.map(entity => {
     const nameLower = entity.name.toLowerCase();
 
-    // Check if it's the brand
     if (nameLower === brandLower || nameLower.includes(brandLower) || brandLower.includes(nameLower)) {
       return { ...entity, name: brandName, type: 'brand' };
     }
 
-    // Check if it's a known competitor
     for (const [compLower, compOriginal] of Object.entries(competitorMap)) {
       if (nameLower === compLower || nameLower.includes(compLower) || compLower.includes(nameLower)) {
         return { ...entity, name: compOriginal, type: 'competitor' };
       }
     }
 
-    // Otherwise it's a discovered "other" entity
     return { ...entity, type: 'other' };
   });
 }
 
 /**
- * Merge duplicate entities after categorization (e.g. brand matched twice)
+ * Merge duplicate entities after categorization
  */
 function mergeEntities(entities) {
   const merged = {};
@@ -136,9 +138,41 @@ function mergeEntities(entities) {
 }
 
 /**
+ * Run extraction for a set of response texts and return cleaned SoV data.
+ * Returns null if no texts provided.
+ */
+async function buildSovData(responseTexts, brandName, competitorNames, label) {
+  if (!responseTexts || responseTexts.length === 0) {
+    console.log('   ⚠️  No responses for ' + label + ', skipping');
+    return null;
+  }
+
+  console.log('   🤖 Extracting entities for ' + label + ' (' + responseTexts.length + ' responses)...');
+  const rawEntities = await extractEntitiesWithGPT(responseTexts);
+
+  if (rawEntities.length === 0) {
+    console.log('   ⚠️  No entities found for ' + label);
+    return { entities: [], total_mentions: 0, calculated_at: new Date().toISOString() };
+  }
+
+  const categorized = categorizeEntities(rawEntities, brandName, competitorNames);
+  const merged = mergeEntities(categorized);
+  const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
+
+  merged.forEach(e => {
+    const pct = totalMentions > 0 ? ((e.mentions / totalMentions) * 100).toFixed(1) : '0.0';
+    console.log('     [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%)');
+  });
+
+  return {
+    entities: merged.map(e => ({ name: e.name, mentions: e.mentions, type: e.type })),
+    total_mentions: totalMentions,
+    calculated_at: new Date().toISOString()
+  };
+}
+
+/**
  * Calculate share of voice for a daily report
- * @param {string} dailyReportId - The daily report ID
- * @returns {Object} Result with success status and summary
  */
 async function calculateShareOfVoice(dailyReportId) {
   console.log('\n' + '='.repeat(70));
@@ -149,7 +183,6 @@ async function calculateShareOfVoice(dailyReportId) {
 
   try {
     // 1. Get daily report info
-    console.log('📋 Loading daily report info...');
     const { data: report, error: reportError } = await supabase
       .from('daily_reports')
       .select('id, brand_id, report_date')
@@ -159,149 +192,131 @@ async function calculateShareOfVoice(dailyReportId) {
     if (reportError || !report) {
       throw new Error('Failed to fetch daily report: ' + (reportError?.message || 'Not found'));
     }
-
-    console.log('✅ Report loaded');
-    console.log('   Brand ID: ' + report.brand_id);
-    console.log('   Report Date: ' + report.report_date);
+    console.log('✅ Report: ' + report.report_date + ' | Brand: ' + report.brand_id);
 
     // 2. Get brand name
-    console.log('\n🏢 Loading brand info...');
     const { data: brand, error: brandError } = await supabase
       .from('brands')
-      .select('id, name, onboarding_answers')
+      .select('id, name')
       .eq('id', report.brand_id)
       .single();
 
     if (brandError || !brand) {
       throw new Error('Failed to fetch brand: ' + (brandError?.message || 'Not found'));
     }
-
     console.log('✅ Brand: ' + brand.name);
 
     // 3. Get competitor names
-    console.log('\n🎯 Loading competitors...');
-    const { data: competitors, error: competitorsError } = await supabase
+    const { data: competitors } = await supabase
       .from('brand_competitors')
       .select('competitor_name')
       .eq('brand_id', report.brand_id)
       .eq('is_active', true);
 
-    if (competitorsError) {
-      console.log('⚠️  Error loading competitors:', competitorsError.message);
-    }
-
     const competitorNames = (competitors || []).map(c => c.competitor_name);
-    console.log('✅ Found ' + competitorNames.length + ' competitors: ' + competitorNames.join(', '));
+    console.log('✅ Competitors: ' + competitorNames.join(', '));
 
-    // 4. Load all prompt results with responses
-    console.log('\n📝 Loading prompt results...');
+    // 4. Load all prompt results with all provider response columns
+    console.log('\n📝 Loading prompt results (all providers)...');
     const { data: promptResults, error: promptError } = await supabase
       .from('prompt_results')
-      .select('id, chatgpt_response')
-      .eq('daily_report_id', dailyReportId)
-      .not('chatgpt_response', 'is', null);
+      .select('id, provider, chatgpt_response, google_ai_overview_response, claude_response, perplexity_response')
+      .eq('daily_report_id', dailyReportId);
 
     if (promptError) {
       throw new Error('Failed to fetch prompt results: ' + promptError.message);
     }
 
-    const responseTexts = (promptResults || [])
-      .map(pr => pr.chatgpt_response)
-      .filter(text => text && text.trim().length > 0);
+    console.log('✅ Loaded ' + (promptResults || []).length + ' results');
 
-    console.log('✅ Found ' + responseTexts.length + ' responses with text');
+    // 5. Group response texts by provider
+    const byProvider = {};
+    const allTexts = [];
 
-    if (responseTexts.length === 0) {
-      console.log('⚠️  No response texts to analyze');
+    for (const result of (promptResults || [])) {
+      const provider = result.provider;
+      const responseCol = PROVIDER_RESPONSE_COLUMNS[provider];
+      const text = responseCol ? result[responseCol] : null;
+
+      if (!text || !text.trim()) continue;
+
+      if (!byProvider[provider]) byProvider[provider] = [];
+      byProvider[provider].push(text.trim());
+      allTexts.push(text.trim());
+    }
+
+    const activeProviders = Object.keys(byProvider);
+    console.log('Active providers: ' + activeProviders.map(p => p + '(' + byProvider[p].length + ')').join(', '));
+
+    if (allTexts.length === 0) {
+      console.log('⚠️  No response texts found across any provider');
       return { success: true, message: 'No responses to analyze', totalMentions: 0 };
     }
 
-    // 5. Extract entities using GPT-4o-mini
-    console.log('\n🤖 Extracting entities with GPT-4o-mini...');
-    const rawEntities = await extractEntitiesWithGPT(responseTexts);
-    console.log('✅ Extracted ' + rawEntities.length + ' raw entities');
+    // 6. Run entity extraction per provider
+    console.log('\n🔍 Per-provider entity extraction:');
+    const shareOfVoiceByProvider = {};
 
-    if (rawEntities.length === 0) {
-      console.log('⚠️  No entities found in responses');
-      const emptyData = {
-        entities: [],
-        total_mentions: 0,
-        calculated_at: new Date().toISOString()
-      };
+    for (const provider of activeProviders) {
+      console.log('\n  Provider: ' + provider);
+      const sovData = await buildSovData(byProvider[provider], brand.name, competitorNames, provider);
+      if (sovData) {
+        shareOfVoiceByProvider[provider] = sovData;
+      }
+    }
 
-      await supabase
-        .from('daily_reports')
-        .update({ share_of_voice_data: emptyData })
-        .eq('id', dailyReportId);
+    // 7. Run combined extraction (all providers) for the aggregate view
+    console.log('\n🔍 Combined extraction (all providers):');
+    const combinedSov = await buildSovData(allTexts, brand.name, competitorNames, 'ALL');
 
+    if (!combinedSov) {
       return { success: true, message: 'No entities found', totalMentions: 0 };
     }
 
-    // 6. Categorize entities
-    console.log('\n🏷️  Categorizing entities...');
-    const categorized = categorizeEntities(rawEntities, brand.name, competitorNames);
-    const merged = mergeEntities(categorized);
-
-    const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
-
-    console.log('✅ Categorized ' + merged.length + ' entities:');
-    merged.forEach(e => {
-      const pct = totalMentions > 0 ? ((e.mentions / totalMentions) * 100).toFixed(1) : '0.0';
-      console.log('   [' + e.type + '] ' + e.name + ': ' + e.mentions + ' mentions (' + pct + '%)');
-    });
-
-    // 7. Build and save share of voice data
-    const shareOfVoiceData = {
-      entities: merged.map(e => ({
-        name: e.name,
-        mentions: e.mentions,
-        type: e.type
-      })),
-      total_mentions: totalMentions,
-      calculated_at: new Date().toISOString()
-    };
-
-    console.log('\n💾 Saving share of voice data...');
+    // 8. Save both to daily_reports
+    console.log('\n💾 Saving SoV data...');
     const { error: updateError } = await supabase
       .from('daily_reports')
-      .update({ share_of_voice_data: shareOfVoiceData })
+      .update({
+        share_of_voice_data: combinedSov,
+        share_of_voice_by_provider: shareOfVoiceByProvider
+      })
       .eq('id', dailyReportId);
 
     if (updateError) {
-      throw new Error('Failed to save share of voice data: ' + updateError.message);
+      throw new Error('Failed to save SoV data: ' + updateError.message);
     }
 
-    console.log('✅ Share of voice data saved');
+    console.log('✅ Saved share_of_voice_data (combined) and share_of_voice_by_provider');
 
-    // 8. Summary
-    const brandEntity = merged.find(e => e.type === 'brand');
-    const brandMentions = brandEntity ? brandEntity.mentions : 0;
-    const brandShare = totalMentions > 0 ? ((brandMentions / totalMentions) * 100).toFixed(1) : '0.0';
+    // 9. Summary
+    const brandEntity = combinedSov.entities.find(e => e.type === 'brand');
+    const brandShare = combinedSov.total_mentions > 0
+      ? ((brandEntity?.mentions || 0) / combinedSov.total_mentions * 100).toFixed(1)
+      : '0.0';
 
     console.log('\n' + '='.repeat(70));
-    console.log('📊 SHARE OF VOICE SUMMARY');
-    console.log('='.repeat(70));
-    console.log('Total entities: ' + merged.length);
-    console.log('Total mentions: ' + totalMentions);
-    console.log('Brand share: ' + brandShare + '%');
+    console.log('📊 SUMMARY');
+    console.log('  Combined: ' + combinedSov.entities.length + ' entities, ' + combinedSov.total_mentions + ' mentions, brand=' + brandShare + '%');
+    activeProviders.forEach(p => {
+      const d = shareOfVoiceByProvider[p];
+      if (d) console.log('  ' + p + ': ' + d.entities.length + ' entities, ' + d.total_mentions + ' mentions');
+    });
     console.log('='.repeat(70) + '\n');
 
     return {
       success: true,
-      totalEntities: merged.length,
-      totalMentions,
+      totalEntities: combinedSov.entities.length,
+      totalMentions: combinedSov.total_mentions,
       brandShare: parseFloat(brandShare),
-      entities: merged.length
+      providers: activeProviders
     };
 
   } catch (error) {
     console.error('\n❌ SHARE OF VOICE CALCULATION FAILED');
     console.error('Error:', error.message);
     console.error('Stack:', error.stack);
-    return {
-      success: false,
-      error: error.message
-    };
+    return { success: false, error: error.message };
   }
 }
 

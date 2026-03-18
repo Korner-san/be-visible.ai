@@ -261,18 +261,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
     };
 
     // Fetch share of voice + previous period trend
-    // SoV always uses pre-aggregated share_of_voice_data (all providers combined) because
-    // per-result entity extraction is not stored in the DB — only the daily aggregate is.
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       try {
-        // Always use pre-aggregated share_of_voice_data
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
+        // When filtered to a single provider, read share_of_voice_by_provider[provider].
+        // When all models selected, read the combined share_of_voice_data aggregate.
+        const selectCol = isFiltered
+          ? 'share_of_voice_by_provider'
+          : 'share_of_voice_data';
+
         const { data: reports, error } = await supabase
           .from('daily_reports')
-          .select('share_of_voice_data')
+          .select(selectCol)
           .eq('brand_id', brandId)
           .eq('status', 'completed')
-          .not('share_of_voice_data', 'is', null)
           .gte('report_date', from)
           .lte('report_date', to);
 
@@ -281,12 +284,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           return;
         }
 
+        // Helper: extract the relevant SoV blob from a daily_reports row
+        const getSovBlob = (row: any) => {
+          if (isFiltered) {
+            // selectedModels has exactly 1 entry when filtered (could be multiple if partial)
+            // Merge across selected providers
+            const byProvider = row.share_of_voice_by_provider as any;
+            if (!byProvider) return null;
+            const entityMap: Record<string, { name: string; mentions: number; type: string }> = {};
+            let total = 0;
+            for (const provider of selectedModels) {
+              const d = byProvider[provider];
+              if (!d?.entities) continue;
+              for (const e of d.entities) {
+                const key = e.name.toLowerCase();
+                if (entityMap[key]) entityMap[key].mentions += e.mentions;
+                else entityMap[key] = { name: e.name, mentions: e.mentions, type: e.type };
+              }
+              total += d.total_mentions || 0;
+            }
+            if (total === 0) return null;
+            return { entities: Object.values(entityMap), total_mentions: total };
+          } else {
+            return row.share_of_voice_data as any;
+          }
+        };
+
         if (reports && reports.length > 0) {
           const entityMap: Record<string, { name: string; mentions: number; type: string }> = {};
           let totalMentions = 0;
 
           for (const report of reports) {
-            const sov = report.share_of_voice_data as any;
+            const sov = getSovBlob(report);
             if (!sov?.entities) continue;
             for (const entity of sov.entities) {
               const key = entity.name.toLowerCase();
@@ -299,15 +328,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
             totalMentions += sov.total_mentions || 0;
           }
 
-          const entities = Object.values(entityMap).sort((a, b) => b.mentions - a.mentions);
+          if (totalMentions > 0) {
+            const entities = Object.values(entityMap).sort((a, b) => b.mentions - a.mentions);
+            setSovData({ entities, total_mentions: totalMentions, calculated_at: new Date().toISOString() });
+          } else {
+            setSovData(undefined);
+          }
 
-          setSovData({
-            entities,
-            total_mentions: totalMentions,
-            calculated_at: new Date().toISOString(),
-          });
-
-          // Compute SOV trend vs previous period
+          // Trend: compare brand % current vs previous period
           const currentBrandPct = await fetchBrandSOVPct(brandId, from, to);
           const prevBrandPct = await fetchBrandSOVPct(brandId, prevFrom, prevTo);
           if (currentBrandPct !== null && prevBrandPct !== null) {
@@ -367,7 +395,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           timePeriodLabel={timePeriodLabel}
           isLoading={isLoadingSov}
           brandId={brandId}
-          isAllModels={selectedModels.length >= ALL_MODELS.length}
         />
       </div>
       <div className="col-span-12 lg:col-span-7 h-[380px]">
