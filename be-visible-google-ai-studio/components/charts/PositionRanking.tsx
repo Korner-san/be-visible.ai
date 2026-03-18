@@ -125,7 +125,8 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: currentResults } = await supabase
             .from('prompt_results')
             .select('brand_prompt_id, brand_mentioned')
-            .in('daily_report_id', currentIds);
+            .in('daily_report_id', currentIds)
+            .eq('provider_status', 'ok');
 
           for (const r of (currentResults || [])) {
             if (scoreMap[r.brand_prompt_id]) {
@@ -141,7 +142,8 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: prevResults } = await supabase
             .from('prompt_results')
             .select('brand_prompt_id, brand_mentioned')
-            .in('daily_report_id', previousIds);
+            .in('daily_report_id', previousIds)
+            .eq('provider_status', 'ok');
 
           if (prevResults && prevResults.length > 0) {
             const prevMap: Record<string, { mentioned: number; total: number }> = {};
