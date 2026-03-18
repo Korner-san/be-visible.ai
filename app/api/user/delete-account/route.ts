@@ -66,11 +66,38 @@ export async function POST(request: NextRequest) {
         .delete()
         .in('brand_id', brandIds)
 
-      // 5. Delete daily_schedules
+      // 5. Delete daily_schedules owned by this user's brands
       await supabaseAdmin
         .from('daily_schedules')
         .delete()
         .in('brand_id', brandIds)
+
+      // 5b. Clean orphaned prompt IDs from other brands' pending schedule rows
+      if (promptIds.length > 0) {
+        const { data: survivingSchedules } = await supabaseAdmin
+          .from('daily_schedules')
+          .select('id, prompt_ids')
+          .eq('status', 'pending')
+          .not('brand_id', 'in', `(${brandIds.join(',')})`)
+
+        if (survivingSchedules && survivingSchedules.length > 0) {
+          const deletedPromptSet = new Set(promptIds)
+          for (const schedule of survivingSchedules) {
+            const originalIds: string[] = schedule.prompt_ids || []
+            const cleanedIds = originalIds.filter((pid: string) => !deletedPromptSet.has(pid))
+            if (cleanedIds.length === 0) {
+              // Entire batch was for this brand's prompts — delete the row
+              await supabaseAdmin.from('daily_schedules').delete().eq('id', schedule.id)
+            } else if (cleanedIds.length !== originalIds.length) {
+              // Some prompts were removed — update the row
+              await supabaseAdmin
+                .from('daily_schedules')
+                .update({ prompt_ids: cleanedIds, batch_size: cleanedIds.length })
+                .eq('id', schedule.id)
+            }
+          }
+        }
+      }
 
       // 6. Delete brand_competitors
       await supabaseAdmin
