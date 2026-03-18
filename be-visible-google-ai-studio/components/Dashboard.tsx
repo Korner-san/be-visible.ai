@@ -262,6 +262,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
 
     // Fetch share of voice + previous period trend
     const fetchShareOfVoice = async () => {
+      setSovData(undefined);
+      setSovTrend(null);
       setIsLoadingSov(true);
       try {
         const isFiltered = selectedModels.length < ALL_MODELS.length;
