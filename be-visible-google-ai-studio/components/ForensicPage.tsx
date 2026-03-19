@@ -38,6 +38,17 @@ interface PromptDetail {
   claude_status: string;
 }
 
+interface ModelExecution {
+  status: string;
+  prompts_attempted: number;
+  prompts_ok: number;
+  prompts_no_result: number;
+  prompts_failed: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
 interface ScheduleItem {
   id: string;
   schedule_date: string;
@@ -50,6 +61,11 @@ interface ScheduleItem {
   account_last_visual_state: string | null;
   session_id_assigned: string | null;
   prompts: PromptDetail[];
+  modelExecutions: {
+    chatgpt: ModelExecution | null;
+    google_ai_overview: ModelExecution | null;
+    claude: ModelExecution | null;
+  };
 }
 
 interface StorageStateHealth {
@@ -113,6 +129,32 @@ const ApiModelBadge: React.FC<{ status: string }> = ({ status }) => {
     return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">Error</span>;
   // not_run or unknown
   return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-400 border border-gray-200">—</span>;
+};
+
+const ModelExecBadge: React.FC<{ exec: ModelExecution | null }> = ({ exec }) => {
+  if (!exec) return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-300 border border-gray-200">—</span>;
+  const { status, prompts_ok, prompts_attempted, error_message } = exec;
+  if (status === 'pending')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-500 border border-gray-200">Pending</span>;
+  if (status === 'running')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 animate-pulse">Running</span>;
+  if (status === 'skipped')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-400">Skipped</span>;
+  if (status === 'stalled')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700">Stalled</span>;
+  if (status === 'failed')
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700" title={error_message || 'Failed'}>
+        Failed
+      </span>
+    );
+  if (status === 'completed') {
+    const all = prompts_attempted || 0;
+    const ok = prompts_ok || 0;
+    const color = ok === all ? 'bg-emerald-100 text-emerald-700' : ok > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+    return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${color}`}>{ok}/{all} OK</span>;
+  }
+  return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-400">{status}</span>;
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -554,10 +596,14 @@ export const ForensicPage: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{schedule.account_assigned || 'N/A'}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{schedule.proxy_assigned || 'N/A'}</td>
-                          <td className="px-4 py-3" colSpan={3}>
-                            {(schedule.status === 'completed' || schedule.status === 'failed')
-                              ? <VisualStateBadge state={schedule.account_last_visual_state} />
-                              : <span className="text-slate-300">—</span>}
+                          <td className="px-4 py-3">
+                            <ModelExecBadge exec={schedule.modelExecutions?.chatgpt ?? null} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <ModelExecBadge exec={schedule.modelExecutions?.google_ai_overview ?? null} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <ModelExecBadge exec={schedule.modelExecutions?.claude ?? null} />
                           </td>
                         </tr>
                         {isExpanded && schedule.prompts.map((prompt, idx) => (

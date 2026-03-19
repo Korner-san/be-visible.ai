@@ -297,6 +297,20 @@ export async function GET(request: NextRequest) {
         }, { status: 500 })
       }
 
+      // Fetch all BME rows for these schedules in one query
+      const scheduleIds = (schedulingQueue || []).map((s: any) => s.id)
+      const bmeBySchedule: Record<string, Record<string, any>> = {}
+      if (scheduleIds.length > 0) {
+        const { data: bmeRows } = await supabase
+          .from('batch_model_executions')
+          .select('schedule_id, model, status, prompts_attempted, prompts_ok, prompts_no_result, prompts_failed, started_at, completed_at, error_message')
+          .in('schedule_id', scheduleIds)
+        for (const row of (bmeRows || []) as any[]) {
+          if (!bmeBySchedule[row.schedule_id]) bmeBySchedule[row.schedule_id] = {}
+          bmeBySchedule[row.schedule_id][row.model] = row
+        }
+      }
+
       // Enrich with prompt details
       enrichedQueue = await Promise.all(
         (schedulingQueue || []).map(async (schedule: any) => {
@@ -399,6 +413,16 @@ export async function GET(request: NextRequest) {
             batchVisualState = forensicRow?.visual_state ?? null
           }
 
+          // Compute stalled status: running for >30 min = stalled (display only)
+          const stalledCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+          const bme = bmeBySchedule[schedule.id] || {}
+          const normalizeBME = (row: any) => {
+            if (!row) return null
+            let status = row.status
+            if (status === 'running' && row.started_at && row.started_at < stalledCutoff) status = 'stalled'
+            return { ...row, status }
+          }
+
           return {
             id: schedule.id,
             schedule_date: schedule.schedule_date,
@@ -411,7 +435,12 @@ export async function GET(request: NextRequest) {
             proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
             account_last_visual_state: batchVisualState,
             session_id_assigned: schedule.chatgpt_accounts?.browserless_session_id,
-            prompts: enrichedPrompts
+            prompts: enrichedPrompts,
+            modelExecutions: {
+              chatgpt:            normalizeBME(bme['chatgpt'] || null),
+              google_ai_overview: normalizeBME(bme['google_ai_overview'] || null),
+              claude:             normalizeBME(bme['claude'] || null),
+            },
           }
         })
       )
