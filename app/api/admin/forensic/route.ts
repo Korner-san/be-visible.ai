@@ -588,6 +588,11 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
+        _debug: {
+          scheduleCount: (enrichedQueue || []).length,
+          firstItemKeys: enrichedQueue?.[0] ? Object.keys(enrichedQueue[0]) : [],
+          firstModelExec: enrichedQueue?.[0]?.modelExecutions ?? 'MISSING',
+        },
         data: {
           storageStateHealth: storageStateHealthAll || [],
           sessionMatrix: sessionsResult.data || [],
