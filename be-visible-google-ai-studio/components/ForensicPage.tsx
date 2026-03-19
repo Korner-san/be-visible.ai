@@ -210,7 +210,10 @@ export const ForensicPage: React.FC = () => {
       }
 
       const json = await res.json();
-      setData(json.data ?? json);
+      const parsed = json.data ?? json;
+      console.log('[FORENSIC DEBUG] schedulingQueue count:', parsed?.schedulingQueue?.length);
+      console.log('[FORENSIC DEBUG] first schedule modelExecutions:', JSON.stringify(parsed?.schedulingQueue?.[0]?.modelExecutions));
+      setData(parsed);
       setLastRefresh(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -478,6 +481,9 @@ export const ForensicPage: React.FC = () => {
             <div className="px-8 py-6 border-b border-gray-100">
               <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
               <p className="text-xs text-slate-400 mt-1">Today &amp; tomorrow's batches — click a row to expand and see all prompts</p>
+              <p className="text-xs text-orange-400 mt-1 font-mono">
+                [debug] {data.schedulingQueue.length} batches · first batch modelExec: {data.schedulingQueue[0]?.modelExecutions ? JSON.stringify({c: data.schedulingQueue[0].modelExecutions.chatgpt?.status, g: data.schedulingQueue[0].modelExecutions.google_ai_overview?.status, cl: data.schedulingQueue[0].modelExecutions.claude?.status}) : 'null/undefined'}
+              </p>
             </div>
 
             {/* Summary bar */}
