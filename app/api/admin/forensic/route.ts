@@ -589,6 +589,36 @@ export async function GET(request: NextRequest) {
 
       const systemCapacity = await getSystemCapacity(supabase)
 
+      // Re-compute BME and forcibly patch modelExecutions onto schedule items.
+      // This runs in the 'all' block which is confirmed to execute latest code.
+      const freshScheduleIds = (enrichedQueue || []).map((s: any) => s.id).filter(Boolean)
+      if (freshScheduleIds.length > 0) {
+        const { data: bmeRowsFresh } = await supabase
+          .from('batch_model_executions')
+          .select('schedule_id, model, status, prompts_attempted, prompts_ok, prompts_no_result, prompts_failed, started_at, completed_at, error_message')
+          .in('schedule_id', freshScheduleIds)
+        const bmeFresh: Record<string, Record<string, any>> = {}
+        for (const row of (bmeRowsFresh || []) as any[]) {
+          if (!bmeFresh[row.schedule_id]) bmeFresh[row.schedule_id] = {}
+          bmeFresh[row.schedule_id][row.model] = row
+        }
+        const stalledCutoffFresh = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+        const normBME = (row: any) => {
+          if (!row) return null
+          let st = row.status
+          if (st === 'running' && row.started_at && row.started_at < stalledCutoffFresh) st = 'stalled'
+          return { ...row, status: st }
+        }
+        for (const item of (enrichedQueue || [])) {
+          const bme = bmeFresh[item.id] || {}
+          item.modelExecutions = {
+            chatgpt:            normBME(bme['chatgpt'] || null),
+            google_ai_overview: normBME(bme['google_ai_overview'] || null),
+            claude:             normBME(bme['claude'] || null),
+          }
+        }
+      }
+
       return NextResponse.json({
         success: true,
         _debug: {

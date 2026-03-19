@@ -212,9 +212,6 @@ export const ForensicPage: React.FC = () => {
 
       const json = await res.json();
       const parsed = json.data ?? json;
-      console.log('[FORENSIC DEBUG] _debug from API:', JSON.stringify(json._debug));
-      console.log('[FORENSIC DEBUG] first schedule keys:', Object.keys(parsed?.schedulingQueue?.[0] || {}));
-      console.log('[FORENSIC DEBUG] first modelExec:', JSON.stringify(parsed?.schedulingQueue?.[0]?.modelExecutions));
       setData(parsed);
       setLastRefresh(new Date());
     } catch (err) {
@@ -483,9 +480,7 @@ export const ForensicPage: React.FC = () => {
             <div className="px-8 py-6 border-b border-gray-100">
               <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
               <p className="text-xs text-slate-400 mt-1">Today &amp; tomorrow's batches — click a row to expand and see all prompts</p>
-              <p className="text-xs text-orange-400 mt-1 font-mono">
-                [debug] {data.schedulingQueue.length} batches · modelExec field present: {String(!!data.schedulingQueue[0]?.modelExecutions)} · keys: {JSON.stringify(Object.keys(data.schedulingQueue[0] || {}))}
-              </p>
+
             </div>
 
             {/* Summary bar */}
