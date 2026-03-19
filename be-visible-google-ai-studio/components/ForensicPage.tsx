@@ -200,8 +200,9 @@ export const ForensicPage: React.FC = () => {
       setError(null);
 
       // All data fetched via server-side API using service role key (bypasses RLS for global visibility)
-      const res = await fetch('/api/admin/forensic', {
+      const res = await fetch(`/api/admin/forensic?t=${Date.now()}`, {
         headers: { 'x-forensic-password': 'Korneret' },
+        cache: 'no-store',
       });
 
       if (!res.ok) {

@@ -595,7 +595,7 @@ export async function GET(request: NextRequest) {
           schedulingQueue: enrichedQueue || [],
           systemCapacity
         }
-      })
+      }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
     // Table E: System Capacity
