@@ -212,6 +212,28 @@ export const ForensicPage: React.FC = () => {
 
       const json = await res.json();
       const parsed = json.data ?? json;
+
+      // Fetch BME data from dedicated endpoint (bypasses any route caching)
+      const bmeRes = await fetch(`/api/admin/forensic/bme?t=${Date.now()}`, { cache: 'no-store' });
+      if (bmeRes.ok) {
+        const bmeJson = await bmeRes.json();
+        const bmeMap: Record<string, Record<string, any>> = bmeJson.data || {};
+        const stalledCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const normBME = (row: any) => {
+          if (!row) return null;
+          const status = (row.status === 'running' && row.started_at && row.started_at < stalledCutoff) ? 'stalled' : row.status;
+          return { ...row, status };
+        };
+        for (const s of (parsed.schedulingQueue || [])) {
+          const bme = bmeMap[s.id] || {};
+          s.modelExecutions = {
+            chatgpt:            normBME(bme['chatgpt'] || null),
+            google_ai_overview: normBME(bme['google_ai_overview'] || null),
+            claude:             normBME(bme['claude'] || null),
+          };
+        }
+      }
+
       setData(parsed);
       setLastRefresh(new Date());
     } catch (err) {
