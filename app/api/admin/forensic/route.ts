@@ -301,10 +301,15 @@ export async function GET(request: NextRequest) {
       const scheduleIds = (schedulingQueue || []).map((s: any) => s.id)
       const bmeBySchedule: Record<string, Record<string, any>> = {}
       if (scheduleIds.length > 0) {
-        const { data: bmeRows } = await supabase
+        const { data: bmeRows, error: bmeError } = await supabase
           .from('batch_model_executions')
           .select('schedule_id, model, status, prompts_attempted, prompts_ok, prompts_no_result, prompts_failed, started_at, completed_at, error_message')
           .in('schedule_id', scheduleIds)
+        if (bmeError) {
+          console.error('[FORENSIC] BME query failed:', bmeError.message, bmeError.code)
+        } else {
+          console.log('[FORENSIC] BME rows fetched:', (bmeRows || []).length, 'for', scheduleIds.length, 'schedules')
+        }
         for (const row of (bmeRows || []) as any[]) {
           if (!bmeBySchedule[row.schedule_id]) bmeBySchedule[row.schedule_id] = {}
           bmeBySchedule[row.schedule_id][row.model] = row
