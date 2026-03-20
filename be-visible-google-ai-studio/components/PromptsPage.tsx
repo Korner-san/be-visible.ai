@@ -41,6 +41,8 @@ interface PromptsPageProps {
   brandId: string | null;
   brandName?: string;
   timeRangeDays: number;
+  selectedModels?: string[];
+  customDateRange?: { from: string; to: string };
 }
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
@@ -98,7 +100,7 @@ const HeaderWithInfo = ({ title, info, align = 'right' }: { title: string, info:
   );
 };
 
-export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays }) => {
+export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
@@ -125,9 +127,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     const promptId = selectedEntity.type === 'prompt' ? selectedEntity.data.id : null;
     if (promptId?.startsWith('p-')) return; // unsaved prompt, no stats
     setPopupLoading(true);
+    const modelsParam = selectedModels && selectedModels.length > 0 ? `&models=${selectedModels.join(',')}` : '';
+    const dateParams = customDateRange && popupDays === timeRangeDays
+      ? `&from=${customDateRange.from}&to=${customDateRange.to}`
+      : `&days=${popupDays}`;
     const url = promptId
-      ? `/api/prompts/stats?brandId=${brandId}&days=${popupDays}&promptId=${promptId}`
-      : `/api/prompts/stats?brandId=${brandId}&days=${popupDays}`;
+      ? `/api/prompts/stats?brandId=${brandId}${dateParams}&promptId=${promptId}${modelsParam}`
+      : `/api/prompts/stats?brandId=${brandId}${dateParams}${modelsParam}`;
     fetch(url)
       .then(r => r.json())
       .then(data => {

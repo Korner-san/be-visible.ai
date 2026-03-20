@@ -260,7 +260,11 @@ function AppContent() {
     if (!activeBrandId || appView !== 'AUTHENTICATED_READY') return;
     const fetchStats = async () => {
       try {
-        const statsRes = await fetch(`/api/prompts/stats?brandId=${activeBrandId}&days=${timeRangeDays}`);
+        const modelsParam = selectedModels.join(',');
+        const dateParams = timeRange === TimeRange.CUSTOM && customFrom && customTo
+          ? `&from=${customFrom}&to=${customTo}`
+          : `&days=${timeRangeDays}`;
+        const statsRes = await fetch(`/api/prompts/stats?brandId=${activeBrandId}${dateParams}&models=${modelsParam}`);
         if (!statsRes.ok) return;
         const statsData = await statsRes.json();
         if (statsData.success && statsData.stats) {
@@ -275,7 +279,7 @@ function AppContent() {
       }
     };
     fetchStats();
-  }, [activeBrandId, appView, timeRangeDays]);
+  }, [activeBrandId, appView, timeRangeDays, selectedModels.join(','), customFrom, customTo]);
 
   // ── Callback: onboarding completed → show live progress screen ───────────
   // Skip WaitingScreen entirely — go straight to OnboardingProgressScreen
@@ -449,7 +453,7 @@ function AppContent() {
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} selectedModels={selectedModels} />;
       case 'Prompts':
-        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} />;
+        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} />;
       case 'Improve':
         return <ImprovePage />;
       case 'Integrations':

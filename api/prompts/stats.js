@@ -36,13 +36,26 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const { brandId, days: daysParam, promptId } = req.query;
+  const { brandId, days: daysParam, promptId, models: modelsParam, from: fromParam, to: toParam } = req.query;
   if (!brandId) return res.status(400).json({ success: false, error: 'Missing brandId' });
 
   const days = parseInt(daysParam) || 30;
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+  let cutoffStr, toStr;
+  if (fromParam && toParam) {
+    cutoffStr = fromParam;
+    toStr = toParam;
+  } else {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    cutoffStr = cutoffDate.toISOString().split('T')[0];
+    toStr = new Date().toISOString().split('T')[0];
+  }
+
+  const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+  const selectedModels = modelsParam
+    ? modelsParam.split(',').filter(m => ALL_MODELS.includes(m))
+    : ALL_MODELS;
+  if (selectedModels.length === 0) selectedModels.push(...ALL_MODELS);
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -72,6 +85,7 @@ module.exports = async function handler(req, res) {
     .eq('brand_id', brandId)
     .eq('status', 'completed')
     .gte('report_date', cutoffStr)
+    .lte('report_date', toStr)
     .order('report_date', { ascending: false })
     .limit(90);
 
@@ -87,6 +101,7 @@ module.exports = async function handler(req, res) {
     .from('prompt_results')
     .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, brand_position, brand_mention_count, prompt_text, created_at')
     .in('daily_report_id', reportIds)
+    .in('provider', selectedModels)
     .not('chatgpt_response', 'is', null)
     .order('created_at', { ascending: false });
 
