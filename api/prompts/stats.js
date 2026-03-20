@@ -99,10 +99,10 @@ module.exports = async function handler(req, res) {
   // 3. Fetch prompt_results (optionally filtered to one prompt)
   let resultsQuery = supabase
     .from('prompt_results')
-    .select('id, brand_prompt_id, daily_report_id, chatgpt_response, chatgpt_citations, brand_mentioned, brand_position, brand_mention_count, prompt_text, created_at')
+    .select('id, brand_prompt_id, daily_report_id, provider, chatgpt_response, google_ai_overview_response, claude_response, chatgpt_citations, brand_mentioned, brand_position, brand_mention_count, prompt_text, created_at')
     .in('daily_report_id', reportIds)
     .in('provider', selectedModels)
-    .not('chatgpt_response', 'is', null)
+    .eq('provider_status', 'ok')
     .order('created_at', { ascending: false });
 
   if (promptId) resultsQuery = resultsQuery.eq('brand_prompt_id', promptId);
@@ -124,9 +124,13 @@ module.exports = async function handler(req, res) {
       grouped[pid] = { runs: [], recentResults: [] };
     }
 
+    const responseText = row.provider === 'google_ai_overview' ? (row.google_ai_overview_response || '')
+      : row.provider === 'claude' ? (row.claude_response || '')
+      : (row.chatgpt_response || '');
+
     const mentioned = row.brand_mentioned != null
       ? row.brand_mentioned
-      : (row.chatgpt_response || '').toLowerCase().includes(brandNameLower);
+      : responseText.toLowerCase().includes(brandNameLower);
 
     const citations = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : [];
     const citationCount = citations.length;
@@ -146,7 +150,7 @@ module.exports = async function handler(req, res) {
       grouped[pid].recentResults.push({
         id: row.id,
         promptText: row.prompt_text || '',
-        response: row.chatgpt_response || '',
+        response: responseText,
         mentioned,
         citationCount,
         citations: citations,
@@ -205,7 +209,7 @@ module.exports = async function handler(req, res) {
     const domainMap = {};
     let grandTotalMentions = 0;
     allResultsForPrompt.forEach((row, runIdx) => {
-      const urls = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : [];
+      const urls = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : []; // chatgpt_citations stores citations for all providers
       const domainsInRun = new Set();
       urls.forEach(url => {
         const domain = (url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
