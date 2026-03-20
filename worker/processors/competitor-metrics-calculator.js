@@ -1,13 +1,13 @@
 /**
  * Competitor Metrics Calculator
  *
- * For each daily report, scans all AI responses for competitor mentions
- * and calculates per-competitor:
- * - visibility_score: % of responses mentioning the competitor (0-100)
- * - mention_rate: same as visibility_score (% mentioned)
- * - mention_count: number of responses mentioning the competitor
- * - Also pulls citation_share from citation_share_stats if available
- * - Also pulls share_of_voice from share_of_voice_data if available
+ * Formula (same as brand): visibilityScore = (mentionRate × 0.4) + (positionScore × 0.3) + (citationShare × 0.3)
+ *   mentionRate    = mentioned ? 100 : 0
+ *   positionScore  = mentioned && entity_rank != null ? max(0, 100 - (entity_rank-1)×10) : 0
+ *   citationShare  = totalCits > 0 ? (compCits / totalCits × 100) : 0
+ *
+ * entity_rank is read from competitor_mention_details[].entity_rank (set by brand-analyzer.js)
+ * compCits counts citations matching the competitor's domain
  *
  * Stores result in daily_reports.competitor_metrics jsonb
  */
@@ -18,30 +18,24 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-/**
- * Check if a competitor name appears in the response text (case-insensitive)
- */
-function isCompetitorMentioned(responseText, competitorName) {
-  if (!responseText || !competitorName) return false;
-  const lower = responseText.toLowerCase();
-  const compLower = competitorName.toLowerCase();
+function positionScore(pos) {
+  if (pos == null) return 0;
+  return Math.max(0, 100 - (pos - 1) * 10);
+}
 
-  // Direct match
-  if (lower.includes(compLower)) return true;
+function computeVisScore(mentioned, entityRank, compCits, totalCits) {
+  const m = mentioned ? 100 : 0;
+  const p = mentioned ? positionScore(entityRank) : 0;
+  const c = totalCits > 0 ? (compCits / totalCits) * 100 : 0;
+  return (m * 0.4) + (p * 0.3) + (c * 0.3);
+}
 
-  // Common variants
-  const variants = [];
-  if (compLower === 'gitlab ci') {
-    variants.push('gitlab ci/cd', 'gitlab-ci', 'gitlab ci');
-  } else if (compLower === 'travis ci') {
-    variants.push('travis-ci', 'travisci');
-  } else if (compLower === 'circleci') {
-    variants.push('circle ci', 'circle-ci');
-  } else if (compLower === 'jenkins') {
-    variants.push('jenkins ci', 'jenkins pipeline');
-  }
+function avg(arr) {
+  return arr.length ? parseFloat((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : 0;
+}
 
-  return variants.some(v => lower.includes(v));
+function stripDomain(url) {
+  return (url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
 }
 
 /**
@@ -68,14 +62,16 @@ async function calculateCompetitorMetrics(dailyReportId) {
 
     console.log('✅ Report: ' + report.report_date);
 
-    // 2. Load brand info
+    // 2. Load brand info + domain
     const { data: brand } = await supabase
       .from('brands')
-      .select('id, name')
+      .select('id, name, domain')
       .eq('id', report.brand_id)
       .single();
 
     console.log('✅ Brand: ' + (brand ? brand.name : 'Unknown'));
+
+    const brandDomain = stripDomain(brand?.domain || '');
 
     // 3. Load competitors
     const { data: competitors, error: compError } = await supabase
@@ -91,21 +87,27 @@ async function calculateCompetitorMetrics(dailyReportId) {
 
     console.log('✅ Competitors: ' + competitors.map(c => c.competitor_name).join(', '));
 
-    // 4. Load all prompt results with responses
+    // Pre-build competitor domain map
+    const compDomainMap = {};
+    for (const comp of competitors) {
+      compDomainMap[comp.id] = stripDomain(comp.competitor_domain || '');
+    }
+
+    // 4. Load all ok prompt results with position + competitor details + citations
     const { data: promptResults, error: prError } = await supabase
       .from('prompt_results')
-      .select('id, chatgpt_response, brand_mentioned')
+      .select('id, provider, brand_mentioned, brand_position, competitor_mention_details, chatgpt_citations')
       .eq('daily_report_id', dailyReportId)
-      .not('chatgpt_response', 'is', null);
+      .eq('provider_status', 'ok');
 
     if (prError) {
       throw new Error('Failed to fetch prompt results: ' + prError.message);
     }
 
-    const responses = (promptResults || []).filter(pr => pr.chatgpt_response && pr.chatgpt_response.trim().length > 0);
-    const totalResponses = responses.length;
+    const allResults = promptResults || [];
+    const totalResponses = allResults.length;
 
-    console.log('✅ Found ' + totalResponses + ' responses to scan');
+    console.log('✅ Found ' + totalResponses + ' ok results to scan (across all providers)');
 
     if (totalResponses === 0) {
       const emptyMetrics = {
@@ -133,22 +135,89 @@ async function calculateCompetitorMetrics(dailyReportId) {
       return { success: true, message: 'No responses', competitorCount: competitors.length };
     }
 
-    // 5. Scan each response for each competitor
-    const competitorMentions = {};
-    for (const comp of competitors) {
-      competitorMentions[comp.id] = { mentioned: 0, total: totalResponses };
+    // 5. Accumulate per-run 40/30/30 scores for brand + each competitor
+    const brandScores = [];
+    const competitorScores = {};
+    for (const comp of competitors) competitorScores[comp.id] = [];
+
+    for (const pr of allResults) {
+      const citations = Array.isArray(pr.chatgpt_citations) ? pr.chatgpt_citations : [];
+      const totalCits = citations.length;
+
+      // Brand
+      const brandCits = brandDomain
+        ? citations.filter(u => (u || '').toLowerCase().includes(brandDomain)).length
+        : 0;
+      brandScores.push(computeVisScore(pr.brand_mentioned, pr.brand_position, brandCits, totalCits));
+
+      // Competitors
+      const compDetails = Array.isArray(pr.competitor_mention_details) ? pr.competitor_mention_details : [];
+      for (const comp of competitors) {
+        const detail = compDetails.find(d =>
+          d.name && d.name.toLowerCase() === comp.competitor_name.toLowerCase()
+        );
+        const mentioned = detail ? detail.count > 0 : false;
+        const entityRank = detail?.entity_rank ?? null;
+        const compDomain = compDomainMap[comp.id];
+        const compCits = compDomain
+          ? citations.filter(u => (u || '').toLowerCase().includes(compDomain)).length
+          : 0;
+        competitorScores[comp.id].push(computeVisScore(mentioned, entityRank, compCits, totalCits));
+      }
     }
 
-    let brandMentionCount = 0;
+    // 5b. Per-provider breakdown using same 40/30/30
+    const PROVIDERS = ['chatgpt', 'google_ai_overview', 'claude'];
+    const byProvider = {};
 
-    for (const pr of responses) {
-      if (pr.brand_mentioned) brandMentionCount++;
+    for (const provider of PROVIDERS) {
+      const provResults = allResults.filter(pr => pr.provider === provider);
+      if (provResults.length === 0) continue;
 
-      for (const comp of competitors) {
-        if (isCompetitorMentioned(pr.chatgpt_response, comp.competitor_name)) {
-          competitorMentions[comp.id].mentioned++;
+      const brandProvScores = [];
+      const compProvScores = {};
+      for (const comp of competitors) compProvScores[comp.id] = [];
+
+      for (const pr of provResults) {
+        const citations = Array.isArray(pr.chatgpt_citations) ? pr.chatgpt_citations : [];
+        const totalCits = citations.length;
+
+        const brandCits = brandDomain
+          ? citations.filter(u => (u || '').toLowerCase().includes(brandDomain)).length : 0;
+        brandProvScores.push(computeVisScore(pr.brand_mentioned, pr.brand_position, brandCits, totalCits));
+
+        const compDetails = Array.isArray(pr.competitor_mention_details) ? pr.competitor_mention_details : [];
+        for (const comp of competitors) {
+          const detail = compDetails.find(d =>
+            d.name && d.name.toLowerCase() === comp.competitor_name.toLowerCase()
+          );
+          const mentioned = detail ? detail.count > 0 : false;
+          const entityRank = detail?.entity_rank ?? null;
+          const compDomain = compDomainMap[comp.id];
+          const compCits = compDomain
+            ? citations.filter(u => (u || '').toLowerCase().includes(compDomain)).length : 0;
+          compProvScores[comp.id].push(computeVisScore(mentioned, entityRank, compCits, totalCits));
         }
       }
+
+      byProvider[provider] = {
+        brand_visibility_score: avg(brandProvScores),
+        brand_mention_count: provResults.filter(r => r.brand_mentioned).length,
+        total_responses: provResults.length,
+        competitors: competitors.map(comp => {
+          const compDetails = (pr) => Array.isArray(pr.competitor_mention_details) ? pr.competitor_mention_details : [];
+          const mentionCount = provResults.filter(r =>
+            compDetails(r).some(d => d.name?.toLowerCase() === comp.competitor_name.toLowerCase() && d.count > 0)
+          ).length;
+          return {
+            name: comp.competitor_name,
+            competitor_id: comp.id,
+            visibility_score: avg(compProvScores[comp.id]),
+            mention_count: mentionCount,
+            total_responses: provResults.length,
+          };
+        }),
+      };
     }
 
     // 6. Get citation share data if available
@@ -188,33 +257,31 @@ async function calculateCompetitorMetrics(dailyReportId) {
       }
     }
 
-    // 8. Build metrics
-    const brandVisScore = totalResponses > 0
-      ? parseFloat(((brandMentionCount / totalResponses) * 100).toFixed(1))
-      : 0;
-
-    const brandSovPct = brand
-      ? (sovMap[brand.name.toLowerCase()] || null)
-      : null;
+    // 8. Build final metrics
+    const brandVisScore = avg(brandScores);
+    const brandMentionCount = allResults.filter(r => r.brand_mentioned).length;
+    const brandMentionRate = totalResponses > 0
+      ? parseFloat(((brandMentionCount / totalResponses) * 100).toFixed(1)) : 0;
+    const brandSovPct = brand ? (sovMap[brand.name.toLowerCase()] || null) : null;
 
     const competitorMetrics = competitors.map(comp => {
-      const mentions = competitorMentions[comp.id];
-      const visScore = mentions.total > 0
-        ? parseFloat(((mentions.mentioned / mentions.total) * 100).toFixed(1))
-        : 0;
-
-      const compSov = sovMap[comp.competitor_name.toLowerCase()] || null;
-      const compCitation = citationShareMap[comp.id] || null;
+      const visScore = avg(competitorScores[comp.id]);
+      const mentionCount = allResults.filter(r => {
+        const cd = Array.isArray(r.competitor_mention_details) ? r.competitor_mention_details : [];
+        return cd.some(d => d.name?.toLowerCase() === comp.competitor_name.toLowerCase() && d.count > 0);
+      }).length;
+      const mentionRate = totalResponses > 0
+        ? parseFloat(((mentionCount / totalResponses) * 100).toFixed(1)) : 0;
 
       return {
         name: comp.competitor_name,
         competitor_id: comp.id,
         visibility_score: visScore,
-        mention_rate: visScore,
-        mention_count: mentions.mentioned,
-        total_responses: mentions.total,
-        citation_share: compCitation,
-        share_of_voice: compSov
+        mention_rate: mentionRate,
+        mention_count: mentionCount,
+        total_responses: totalResponses,
+        citation_share: citationShareMap[comp.id] || null,
+        share_of_voice: sovMap[comp.competitor_name.toLowerCase()] || null
       };
     });
 
@@ -222,10 +289,11 @@ async function calculateCompetitorMetrics(dailyReportId) {
       competitors: competitorMetrics,
       brand_visibility_score: brandVisScore,
       brand_mention_count: brandMentionCount,
-      brand_mention_rate: brandVisScore,
+      brand_mention_rate: brandMentionRate,
       brand_citation_share: brandCitationShare,
       brand_share_of_voice: brandSovPct,
       total_responses: totalResponses,
+      by_provider: byProvider,
       calculated_at: new Date().toISOString()
     };
 
@@ -244,9 +312,9 @@ async function calculateCompetitorMetrics(dailyReportId) {
     console.log('\n' + '='.repeat(70));
     console.log('📊 COMPETITOR METRICS SUMMARY');
     console.log('='.repeat(70));
-    console.log('Brand (' + (brand ? brand.name : '?') + '): vis=' + brandVisScore + '%, mentions=' + brandMentionCount + '/' + totalResponses);
+    console.log('Brand (' + (brand ? brand.name : '?') + '): vis=' + brandVisScore + ' (mention=' + brandMentionRate + '%)');
     competitorMetrics.forEach(cm => {
-      console.log('  ' + cm.name + ': vis=' + cm.visibility_score + '%, mentions=' + cm.mention_count + '/' + cm.total_responses +
+      console.log('  ' + cm.name + ': vis=' + cm.visibility_score + ' (mention=' + cm.mention_rate + '%)' +
         (cm.citation_share !== null ? ', citation=' + cm.citation_share + '%' : '') +
         (cm.share_of_voice !== null ? ', sov=' + cm.share_of_voice + '%' : ''));
     });

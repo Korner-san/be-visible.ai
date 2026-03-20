@@ -78,13 +78,14 @@ async function fetchMentionRateValue(bId: string, from: string, to: string, mode
 }
 
 /**
- * For single-model view: compute visibility score from prompt_results.brand_mentioned
- * grouped by report_date instead of using the pre-aggregated daily_reports.visibility_score.
+ * For filtered-model view: read pre-computed 40/30/30 visibility scores from
+ * daily_reports.visibility_score_by_provider (set by visibility-score-calculator.js).
+ * If multiple models selected, averages their per-provider scores.
  */
 async function fetchVisibilityByProvider(bId: string, from: string, to: string, models: string[]): Promise<{ date: string; score: number }[]> {
   const { data: reports } = await supabase
     .from('daily_reports')
-    .select('id, report_date')
+    .select('report_date, visibility_score, visibility_score_by_provider')
     .eq('brand_id', bId)
     .eq('status', 'completed')
     .gte('report_date', from)
@@ -92,32 +93,20 @@ async function fetchVisibilityByProvider(bId: string, from: string, to: string, 
     .order('report_date', { ascending: true });
   if (!reports || reports.length === 0) return [];
 
-  const reportIds = reports.map((r: any) => r.id);
-  const reportDateMap = new Map(reports.map((r: any) => [r.id, r.report_date as string]));
+  const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+  const isAllModels = ALL_MODELS.every(m => models.includes(m)) && models.length === ALL_MODELS.length;
 
-  const { data: results } = await supabase
-    .from('prompt_results')
-    .select('daily_report_id, brand_mentioned')
-    .in('daily_report_id', reportIds)
-    .in('provider', models);
-  if (!results || results.length === 0) return [];
-
-  const byDate = new Map<string, { total: number; mentioned: number }>();
-  for (const r of results as any[]) {
-    const date = reportDateMap.get(r.daily_report_id);
-    if (!date) continue;
-    const cur = byDate.get(date) || { total: 0, mentioned: 0 };
-    cur.total++;
-    if (r.brand_mentioned) cur.mentioned++;
-    byDate.set(date, cur);
-  }
-
-  return Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, { total, mentioned }]) => ({
-      date,
-      score: total > 0 ? parseFloat(((mentioned / total) * 100).toFixed(1)) : 0,
-    }));
+  return reports.map((r: any) => {
+    let score: number;
+    if (isAllModels) {
+      score = r.visibility_score ?? 0;
+    } else {
+      const byProv = r.visibility_score_by_provider || {};
+      const vals = models.map((m: string) => byProv[m]).filter((v: any) => v != null) as number[];
+      score = vals.length > 0 ? parseFloat((vals.reduce((a: number, b: number) => a + b, 0) / vals.length).toFixed(1)) : 0;
+    }
+    return { date: r.report_date as string, score };
+  });
 }
 
 async function fetchBrandSOVPct(bId: string, from: string, to: string): Promise<number | null> {

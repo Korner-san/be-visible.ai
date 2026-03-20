@@ -144,7 +144,13 @@ module.exports = async function handler(req, res) {
     const reportDate = reportDateMap[row.daily_report_id] || '';
 
     const mentionCount = row.brand_mention_count || 0;
-    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount });
+    // Per-run 40/30/30 visibility score
+    const runM = mentioned ? 100 : 0;
+    const runP = (mentioned && position != null) ? Math.max(0, 100 - (position - 1) * 10) : 0;
+    const runC = citationCount > 0 ? (brandCitationCount / citationCount) * 100 : 0;
+    const runScore = (runM * 0.4) + (runP * 0.3) + (runC * 0.3);
+
+    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount, score: runScore });
 
     if (grouped[pid].recentResults.length < 5) {
       grouped[pid].recentResults.push({
@@ -181,22 +187,25 @@ module.exports = async function handler(req, res) {
       ? Math.round((totalBrandCitations / totalCitations) * 1000) / 10  // 1 decimal %
       : 0;
 
-    // Daily history for chart
+    // Daily history for chart (avg 40/30/30 score per date)
     const byDate = {};
     for (const run of runs) {
-      if (run.reportDate && !byDate[run.reportDate]) {
-        byDate[run.reportDate] = run.mentioned ? 100 : 0;
-      }
+      if (!run.reportDate) continue;
+      if (!byDate[run.reportDate]) byDate[run.reportDate] = [];
+      byDate[run.reportDate].push(run.score);
     }
     const history = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, visibility]) => ({ date: date.slice(5), visibility }));
+      .map(([date, scores]) => ({
+        date: date.slice(5),
+        visibility: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+      }));
 
-    // Trend: last 7 vs previous 7
+    // Trend: last 7 vs previous 7 (using 40/30/30 scores)
     const recent7 = runs.slice(0, 7);
     const prev7 = runs.slice(7, 14);
-    const recentVis = recent7.length ? (recent7.filter(r => r.mentioned).length / recent7.length) * 100 : 0;
-    const prevVis = prev7.length ? (prev7.filter(r => r.mentioned).length / prev7.length) * 100 : 0;
+    const recentVis = recent7.length ? recent7.reduce((s, r) => s + r.score, 0) / recent7.length : 0;
+    const prevVis = prev7.length ? prev7.reduce((s, r) => s + r.score, 0) / prev7.length : 0;
     const visibilityTrend = Math.round(recentVis - prevVis);
 
     // Citation domain breakdown (for Citation sources tab)
@@ -234,8 +243,13 @@ module.exports = async function handler(req, res) {
       .sort((a, b) => b.mentions - a.mentions)
       .slice(0, 15);
 
+    // Visibility score = avg of per-run 40/30/30 scores
+    const visibilityScore = total > 0
+      ? Math.round(runs.reduce((s, r) => s + r.score, 0) / total)
+      : 0;
+
     stats[pid] = {
-      visibilityScore: total > 0 ? Math.round((mentionedCount / total) * 100) : 0,
+      visibilityScore,
       visibilityTrend,
       avgPosition,
       mentionRate,
