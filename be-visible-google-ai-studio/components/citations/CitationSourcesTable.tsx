@@ -124,6 +124,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
   const [currentPage, setCurrentPage] = useState(0);
   const [loadingUrls, setLoadingUrls] = useState<Set<string>>(new Set());
   const [loadedDomains, setLoadedDomains] = useState<Set<string>>(new Set());
+  const [totalDomainCount, setTotalDomainCount] = useState<number | null>(null);
 
   const fetchDomainUrls = useCallback(async (domain: string, rowId: string) => {
     if (!brandId || !hasRealData || loadedDomains.has(domain)) return;
@@ -171,6 +172,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
     if (!brandId) {
       setData(MOCK_DATA);
       setHasRealData(false);
+      setTotalDomainCount(null);
       return;
     }
 
@@ -189,9 +191,10 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
           });
 
           if (error || !rows || rows.length === 0) {
-            setData(MOCK_DATA); setHasRealData(false); return;
+            setData(MOCK_DATA); setHasRealData(false); setTotalDomainCount(null); return;
           }
 
+          setTotalDomainCount(Number(rows[0]?.total_domains) || rows.length);
           const totalActivePrompts = Number(rows[0]?.total_active_prompts) || 1;
           const sourceData: SourceData[] = rows.map((row: any, idx: number) => ({
             id: String(idx),
@@ -261,9 +264,11 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
             setData(MOCK_DATA); setHasRealData(false); return;
           }
 
+          const allDomainCount = Object.keys(domainMap).length;
+          setTotalDomainCount(allDomainCount);
           const sourceData: SourceData[] = Object.entries(domainMap)
             .sort(([, a], [, b]) => b.mentions - a.mentions)
-            .slice(0, 100)
+            .slice(0, 500)
             .map(([domain, { urls, mentions, promptIds }], idx) => ({
               id: String(idx),
               domain,
@@ -459,9 +464,14 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
       {/* Pagination Footer */}
       <div className="py-3.5 px-5 bg-white flex items-center justify-between border-t border-gray-200">
         <span className="text-[10px] font-bold text-gray-400 tabular-nums">
-          {data.length > 0
-            ? `${currentPage * PAGE_SIZE + 1}–${Math.min((currentPage + 1) * PAGE_SIZE, data.length)} of ${data.length} domains`
-            : 'No domains'}
+          {data.length > 0 ? (
+            <>
+              {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, data.length)} of {data.length.toLocaleString()}
+              {totalDomainCount !== null && totalDomainCount > data.length && (
+                <span className="text-gray-300"> · {totalDomainCount.toLocaleString()} total</span>
+              )} domains
+            </>
+          ) : 'No domains'}
         </span>
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
