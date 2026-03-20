@@ -134,26 +134,37 @@ const ApiModelBadge: React.FC<{ status: string }> = ({ status }) => {
 
 const ModelExecBadge: React.FC<{ exec: ModelExecution | null }> = ({ exec }) => {
   if (!exec) return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-300 border border-gray-200">—</span>;
-  const { status, prompts_ok, prompts_attempted, error_message } = exec;
+  const { status, prompts_ok, prompts_attempted, prompts_no_result, prompts_failed, error_message } = exec;
   if (status === 'pending')
     return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-500 border border-gray-200">Pending</span>;
   if (status === 'running')
     return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 animate-pulse">Running</span>;
   if (status === 'skipped')
-    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-400">Skipped</span>;
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-400" title={error_message || 'Skipped — no daily report found'}>Skipped</span>;
   if (status === 'stalled')
-    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700">Stalled</span>;
-  if (status === 'failed')
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700" title="Still marked running after 30+ minutes — likely crashed">Stalled</span>;
+  if (status === 'failed') {
+    const failTooltip = error_message
+      ? error_message
+      : `All ${prompts_attempted || 0} prompt${(prompts_attempted || 0) !== 1 ? 's' : ''} failed`;
     return (
-      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700" title={error_message || 'Failed'}>
-        Failed
+      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 cursor-help" title={failTooltip}>
+        Failed ⓘ
       </span>
     );
+  }
   if (status === 'completed') {
     const all = prompts_attempted || 0;
     const ok = prompts_ok || 0;
+    const noResult = prompts_no_result || 0;
+    const failed = prompts_failed || 0;
+    const parts = [`${ok} ok`];
+    if (noResult > 0) parts.push(`${noResult} no result`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    parts.push(`${all} total`);
+    const tooltip = parts.join(' · ');
     const color = ok === all ? 'bg-emerald-100 text-emerald-700' : ok > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
-    return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${color}`}>{ok}/{all} OK</span>;
+    return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${color} cursor-help`} title={tooltip}>{ok}/{all} OK</span>;
   }
   return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-400">{status}</span>;
 };
