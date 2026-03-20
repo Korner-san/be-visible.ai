@@ -363,8 +363,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           if (!cm) return null;
           // No model filter → combined data
           if (!isFiltered) return cm;
-          // Old report without per-provider breakdown → can only show combined
-          if (!cm.by_provider) return cm;
+          // Old report without per-provider breakdown → no data available for this filter; exclude it
+          if (!cm.by_provider) return null;
 
           if (selectedModels.length === 1) {
             const provData = cm.by_provider[selectedModels[0]];
