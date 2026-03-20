@@ -48,7 +48,10 @@ const MOCK_DATA: SourceData[] = [
   },
 ];
 
-function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+
+function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
+  if (customDateRange) return customDateRange;
   const to = new Date();
   const from = new Date();
   switch (timeRange) {
@@ -65,6 +68,8 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
 interface CitationSourcesTableProps {
   brandId?: string | null;
   timeRange?: TimeRange;
+  customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
 }
 
 const DomainLogo = ({ domain }: { domain: string }) => {
@@ -111,7 +116,7 @@ const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: 
 
 const PAGE_SIZE = 15;
 
-export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
+export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange, selectedModels = ALL_MODELS }) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [data, setData] = useState<SourceData[]>(MOCK_DATA);
   const [isLoading, setIsLoading] = useState(false);
@@ -125,7 +130,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
 
     setLoadingUrls(prev => new Set(prev).add(rowId));
     try {
-      const { from, to } = getDateRange(timeRange);
+      const { from, to } = getDateRange(timeRange, customDateRange);
       const { data: urls, error } = await supabase.rpc('get_citation_source_urls', {
         p_brand_id: brandId,
         p_domain: domain,
@@ -160,7 +165,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
         return next;
       });
     }
-  }, [brandId, timeRange, hasRealData, loadedDomains]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, hasRealData, loadedDomains]);
 
   useEffect(() => {
     if (!brandId) {
@@ -172,50 +177,108 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const { from, to } = getDateRange(timeRange);
+        const { from, to } = getDateRange(timeRange, customDateRange);
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
 
-        const { data: rows, error } = await supabase.rpc('get_citation_sources', {
-          p_brand_id: brandId,
-          p_from_date: from,
-          p_to_date: to,
-        });
+        if (!isFiltered) {
+          // Unfiltered: use RPC
+          const { data: rows, error } = await supabase.rpc('get_citation_sources', {
+            p_brand_id: brandId,
+            p_from_date: from,
+            p_to_date: to,
+          });
 
-        if (error) {
-          console.error('Citation sources RPC error:', error);
-          setData(MOCK_DATA);
-          setHasRealData(false);
-          setIsLoading(false);
-          return;
-        }
+          if (error || !rows || rows.length === 0) {
+            setData(MOCK_DATA); setHasRealData(false); return;
+          }
 
-        if (!rows || rows.length === 0) {
-          setData(MOCK_DATA);
-          setHasRealData(false);
-          setIsLoading(false);
-          return;
-        }
-
-        const totalActivePrompts = Number(rows[0]?.total_active_prompts) || 1;
-
-        const sourceData: SourceData[] = rows.map((row: any, idx: number) => {
-          const promptCount = Number(row.prompt_coverage) || 0;
-          const coveragePct = Math.round((promptCount / totalActivePrompts) * 100);
-
-          return {
+          const totalActivePrompts = Number(rows[0]?.total_active_prompts) || 1;
+          const sourceData: SourceData[] = rows.map((row: any, idx: number) => ({
             id: String(idx),
             domain: row.domain || 'unknown',
             uniqueUrls: Number(row.urls_count) || 0,
             mentions: Number(row.mentions_count) || 0,
-            promptCoverage: coveragePct,
+            promptCoverage: Math.round((Number(row.prompt_coverage) || 0) / totalActivePrompts * 100),
             subUrls: [],
-          };
-        });
+          }));
 
-        setData(sourceData);
-        setHasRealData(true);
-        setCurrentPage(0);
-        setLoadedDomains(new Set());
-        setExpandedRows(new Set());
+          setData(sourceData);
+          setHasRealData(true);
+          setCurrentPage(0);
+          setLoadedDomains(new Set());
+          setExpandedRows(new Set());
+        } else {
+          // Filtered: compute from prompt_results for selected provider(s)
+          const { data: reportRows } = await supabase
+            .from('daily_reports')
+            .select('id')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .gte('report_date', from)
+            .lte('report_date', to);
+
+          if (!reportRows || reportRows.length === 0) {
+            setData(MOCK_DATA); setHasRealData(false); return;
+          }
+
+          const reportIds = reportRows.map((r: any) => r.id);
+
+          const [prResult, promptCountResult] = await Promise.all([
+            supabase
+              .from('prompt_results')
+              .select('brand_prompt_id, chatgpt_citations')
+              .in('provider', selectedModels)
+              .in('daily_report_id', reportIds)
+              .not('chatgpt_citations', 'is', null),
+            supabase
+              .from('brand_prompts')
+              .select('id', { count: 'exact', head: true })
+              .eq('brand_id', brandId)
+              .eq('status', 'active'),
+          ]);
+
+          if (!prResult.data || prResult.data.length === 0) {
+            setData(MOCK_DATA); setHasRealData(false); return;
+          }
+
+          const totalActivePrompts = (promptCountResult.count as number) || 1;
+          const domainMap: Record<string, { urls: Set<string>; mentions: number; promptIds: Set<string> }> = {};
+
+          for (const pr of prResult.data) {
+            const urls = (pr.chatgpt_citations as string[]) || [];
+            for (const rawUrl of urls) {
+              try {
+                const hostname = new URL(rawUrl).hostname.replace(/^www\./, '');
+                if (!domainMap[hostname]) domainMap[hostname] = { urls: new Set(), mentions: 0, promptIds: new Set() };
+                domainMap[hostname].urls.add(rawUrl);
+                domainMap[hostname].mentions++;
+                if (pr.brand_prompt_id) domainMap[hostname].promptIds.add(pr.brand_prompt_id);
+              } catch {}
+            }
+          }
+
+          if (Object.keys(domainMap).length === 0) {
+            setData(MOCK_DATA); setHasRealData(false); return;
+          }
+
+          const sourceData: SourceData[] = Object.entries(domainMap)
+            .sort(([, a], [, b]) => b.mentions - a.mentions)
+            .slice(0, 100)
+            .map(([domain, { urls, mentions, promptIds }], idx) => ({
+              id: String(idx),
+              domain,
+              uniqueUrls: urls.size,
+              mentions,
+              promptCoverage: Math.round((promptIds.size / totalActivePrompts) * 100),
+              subUrls: [],
+            }));
+
+          setData(sourceData);
+          setHasRealData(true);
+          setCurrentPage(0);
+          setLoadedDomains(new Set());
+          setExpandedRows(new Set());
+        }
       } catch (err) {
         console.error('Citation sources fetch error:', err);
         setData(MOCK_DATA);
@@ -226,7 +289,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
     };
 
     fetchData();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
   const toggleRow = (id: string) => {
     const newExpanded = new Set(expandedRows);

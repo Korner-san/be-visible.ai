@@ -9,24 +9,25 @@ interface CitationsPageProps {
   brandId?: string | null;
   timeRange?: TimeRange;
   customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
 }
 
-export const CitationsPage: React.FC<CitationsPageProps> = ({ onNavigateToAcademy, brandId, timeRange, customDateRange }) => {
+export const CitationsPage: React.FC<CitationsPageProps> = ({ onNavigateToAcademy, brandId, timeRange, customDateRange, selectedModels }) => {
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* Top Combined Dashboard Row - Adjusted to 7/5 split for more distribution impact */}
       <div className="grid grid-cols-12 gap-6 items-stretch">
         <div className="col-span-12 lg:col-span-7 h-[340px]">
-          <CitationShareChart brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} />
+          <CitationShareChart brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} selectedModels={selectedModels} />
         </div>
         <div className="col-span-12 lg:col-span-5 h-[340px]">
-          <AIPreferenceDistribution brandId={brandId} timeRange={timeRange} />
+          <AIPreferenceDistribution brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} selectedModels={selectedModels} />
         </div>
       </div>
 
       {/* Main Sources Table */}
       <div className="w-full">
-        <CitationSourcesTable brandId={brandId} timeRange={timeRange} />
+        <CitationSourcesTable brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} selectedModels={selectedModels} />
       </div>
     </div>
   );

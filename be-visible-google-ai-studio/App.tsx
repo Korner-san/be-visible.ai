@@ -447,7 +447,7 @@ function AppContent() {
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
       case 'Citations':
-        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} />;
+        return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} selectedModels={selectedModels} />;
       case 'Prompts':
         return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} />;
       case 'Improve':

@@ -92,7 +92,10 @@ const MOCK_DATA: ContentTypeData[] = [
   },
 ];
 
-function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+
+function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
+  if (customDateRange) return customDateRange;
   const to = new Date();
   const from = new Date();
   switch (timeRange) {
@@ -109,6 +112,8 @@ function getDateRange(timeRange: TimeRange): { from: string; to: string } {
 interface AIPreferenceDistributionProps {
   brandId?: string | null;
   timeRange?: TimeRange;
+  customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
 }
 
 const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: string, align?: 'left' | 'right' | 'center' }) => {
@@ -135,7 +140,7 @@ const HeaderWithInfo = ({ title, info, align = 'left' }: { title: string, info: 
   );
 };
 
-export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS }) => {
+export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange, selectedModels = ALL_MODELS }) => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [data, setData] = useState<ContentTypeData[]>(MOCK_DATA);
   const [isLoading, setIsLoading] = useState(false);
@@ -152,13 +157,15 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const { from, to } = getDateRange(timeRange);
+        const { from, to } = getDateRange(timeRange, customDateRange);
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
+        // When filtered to a single provider, pass it to the RPC (requires p_provider support in the DB function)
+        const providerParam = isFiltered && selectedModels.length === 1 ? selectedModels[0] : null;
 
-        const { data: rows, error } = await supabase.rpc('get_content_type_stats', {
-          p_brand_id: brandId,
-          p_from_date: from,
-          p_to_date: to,
-        });
+        const rpcParams: any = { p_brand_id: brandId, p_from_date: from, p_to_date: to };
+        if (providerParam) rpcParams.p_provider = providerParam;
+
+        const { data: rows, error } = await supabase.rpc('get_content_type_stats', rpcParams);
 
         if (error) {
           console.error('Content type stats RPC error:', error);
@@ -203,7 +210,7 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
     };
 
     fetchData();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
   const toggleRow = (type: string) => {
     const next = new Set(expandedRows);

@@ -5,6 +5,8 @@ import { HelpCircle } from 'lucide-react';
 import { TimeRange } from '../../types';
 import { supabase } from '../../lib/supabase';
 
+const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+
 const MOCK_DATA = [
   { date: 'Dec 10', value: 12 },
   { date: 'Dec 12', value: 14 },
@@ -25,6 +27,7 @@ interface CitationShareChartProps {
   brandId?: string | null;
   timeRange?: TimeRange;
   customDateRange?: { from: string; to: string };
+  selectedModels?: string[];
 }
 
 function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
@@ -69,7 +72,7 @@ async function fetchAvgCitationShare(brandId: string, from: string, to: string):
   return parseFloat(avg.toFixed(1));
 }
 
-export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange }) => {
+export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange, selectedModels = ALL_MODELS }) => {
   const [data, setData] = useState(MOCK_DATA);
   const [avgShare, setAvgShare] = useState(24.8);
   const [trend, setTrend] = useState<number | null>(null);
@@ -92,65 +95,101 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
       try {
         const { from, to } = getDateRange(timeRange, customDateRange);
         const { from: prevFrom, to: prevTo } = getPreviousPeriod(from, to);
+        const isFiltered = selectedModels.length < ALL_MODELS.length;
 
-        const [statsResult, brandResult, prevAvg] = await Promise.all([
-          supabase
-            .from('citation_share_stats')
-            .select('report_date, citation_share, citation_count, total_citations, rank')
-            .eq('brand_id', brandId)
-            .eq('domain_type', 'brand')
-            .gte('report_date', from)
-            .lte('report_date', to)
-            .order('report_date', { ascending: true }),
-          supabase
-            .from('brands')
-            .select('domain')
-            .eq('id', brandId)
-            .single(),
-          fetchAvgCitationShare(brandId, prevFrom, prevTo),
-        ]);
+        // Always fetch brand domain
+        const brandResult = await supabase.from('brands').select('domain').eq('id', brandId).single();
+        const domain = brandResult.data?.domain || '';
+        if (domain) setBrandDomain(domain);
 
-        if (brandResult.data?.domain) {
-          setBrandDomain(brandResult.data.domain);
-        }
+        if (!isFiltered) {
+          // Unfiltered path: use precomputed citation_share_stats
+          const [statsResult, prevAvg] = await Promise.all([
+            supabase
+              .from('citation_share_stats')
+              .select('report_date, citation_share, citation_count, total_citations, rank')
+              .eq('brand_id', brandId)
+              .eq('domain_type', 'brand')
+              .gte('report_date', from)
+              .lte('report_date', to)
+              .order('report_date', { ascending: true }),
+            fetchAvgCitationShare(brandId, prevFrom, prevTo),
+          ]);
 
-        if (statsResult.error) {
-          console.error('Error fetching citation share stats:', statsResult.error);
-          setHasRealData(false);
-          setData(MOCK_DATA);
-          setAvgShare(24.8);
-          setTrend(null);
-          setIsLoading(false);
-          return;
-        }
+          if (statsResult.error || !statsResult.data || statsResult.data.length === 0) {
+            setHasRealData(false); setData(MOCK_DATA); setAvgShare(24.8); setTrend(null);
+            return;
+          }
 
-        const rows = statsResult.data || [];
-        if (rows.length === 0) {
-          setHasRealData(false);
-          setData(MOCK_DATA);
-          setAvgShare(24.8);
-          setTrend(null);
-          setIsLoading(false);
-          return;
-        }
-
-        const chartData = rows.map((row: any) => {
-          const d = new Date(row.report_date);
-          const formatted = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-          return { date: formatted, value: parseFloat((row.citation_share ?? 0).toFixed(1)) };
-        });
-
-        const avg = rows.reduce((sum: number, r: any) => sum + (r.citation_share ?? 0), 0) / rows.length;
-        const currentAvg = parseFloat(avg.toFixed(1));
-
-        setData(chartData);
-        setAvgShare(currentAvg);
-        setHasRealData(true);
-
-        if (prevAvg !== null) {
-          setTrend(parseFloat((currentAvg - prevAvg).toFixed(1)));
+          const rows = statsResult.data;
+          const chartData = rows.map((row: any) => ({
+            date: new Date(row.report_date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+            value: parseFloat((row.citation_share ?? 0).toFixed(1)),
+          }));
+          const currentAvg = parseFloat((rows.reduce((s: number, r: any) => s + (r.citation_share ?? 0), 0) / rows.length).toFixed(1));
+          setData(chartData);
+          setAvgShare(currentAvg);
+          setHasRealData(true);
+          setTrend(prevAvg !== null ? parseFloat((currentAvg - prevAvg).toFixed(1)) : null);
         } else {
-          setTrend(null);
+          // Filtered path: compute citation share from prompt_results for selected provider(s)
+          if (!domain) { setHasRealData(false); setData(MOCK_DATA); setAvgShare(24.8); setTrend(null); return; }
+
+          // Get report IDs + dates for the period
+          const { data: reportRows } = await supabase
+            .from('daily_reports')
+            .select('id, report_date')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .gte('report_date', from)
+            .lte('report_date', to);
+
+          if (!reportRows || reportRows.length === 0) {
+            setHasRealData(false); setData(MOCK_DATA); setAvgShare(24.8); setTrend(null); return;
+          }
+
+          const reportIdToDate: Record<string, string> = {};
+          for (const r of reportRows) reportIdToDate[r.id] = r.report_date;
+          const reportIds = Object.keys(reportIdToDate);
+
+          const { data: prData } = await supabase
+            .from('prompt_results')
+            .select('daily_report_id, chatgpt_citations')
+            .in('provider', selectedModels)
+            .in('daily_report_id', reportIds)
+            .not('chatgpt_citations', 'is', null);
+
+          if (!prData || prData.length === 0) {
+            setHasRealData(false); setData(MOCK_DATA); setAvgShare(24.8); setTrend(null); return;
+          }
+
+          // Aggregate per date: brand citations vs total
+          const dateAgg: Record<string, { brand: number; total: number }> = {};
+          for (const pr of prData) {
+            const date = reportIdToDate[pr.daily_report_id];
+            if (!date) continue;
+            if (!dateAgg[date]) dateAgg[date] = { brand: 0, total: 0 };
+            const urls = (pr.chatgpt_citations as string[]) || [];
+            dateAgg[date].total += urls.length;
+            dateAgg[date].brand += urls.filter(url => {
+              try { return new URL(url).hostname.includes(domain); } catch { return false; }
+            }).length;
+          }
+
+          const chartData = Object.entries(dateAgg)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, { brand, total }]) => ({
+              date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+              value: total > 0 ? parseFloat(((brand / total) * 100).toFixed(1)) : 0,
+            }));
+
+          if (chartData.length === 0) { setHasRealData(false); setData(MOCK_DATA); setAvgShare(24.8); setTrend(null); return; }
+
+          const currentAvg = parseFloat((chartData.reduce((s, d) => s + d.value, 0) / chartData.length).toFixed(1));
+          setData(chartData);
+          setAvgShare(currentAvg);
+          setHasRealData(true);
+          setTrend(null); // Previous period trend for filtered mode not computed
         }
       } catch (err) {
         console.error('Citation share fetch error:', err);
@@ -164,7 +203,7 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
     };
 
     fetchData();
-  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
   // Helper to ensure exactly 7 equidistant ticks
   const getTicks = (dataset: any[], count: number) => {
