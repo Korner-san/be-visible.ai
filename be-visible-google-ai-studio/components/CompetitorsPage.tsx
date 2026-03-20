@@ -346,16 +346,36 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           return;
         }
 
+        // Helper: build a zero-metrics object (provider had no results for this report)
+        const zeroSlice = (cm: any) => ({
+          brand_visibility_score: 0,
+          brand_mention_count: 0,
+          total_responses: 0,
+          brand_citation_share: null,
+          competitors: (cm?.competitors || []).map((c: any) => ({
+            ...c, visibility_score: 0, mention_rate: 0, mention_count: 0, total_responses: 0, citation_share: null,
+          })),
+        });
+
         // Helper: extract the relevant metrics slice from a competitor_metrics blob
         // When filtered to specific models, use by_provider data; otherwise use combined
         const getMetricsSlice = (cm: any): any => {
-          if (!isFiltered || !cm?.by_provider) return cm;
+          if (!cm) return null;
+          // No model filter → combined data
+          if (!isFiltered) return cm;
+          // Old report without per-provider breakdown → can only show combined
+          if (!cm.by_provider) return cm;
+
           if (selectedModels.length === 1) {
-            return cm.by_provider[selectedModels[0]] || cm;
+            const provData = cm.by_provider[selectedModels[0]];
+            // Provider ran but had no results → return zeros (don't fall back to combined)
+            return provData ?? zeroSlice(cm);
           }
-          // Multiple providers selected — merge them
+
+          // Multiple providers selected — merge only the ones that have data
           const provs = selectedModels.map((p: string) => cm.by_provider[p]).filter(Boolean);
-          if (provs.length === 0) return cm;
+          if (provs.length === 0) return zeroSlice(cm);
+
           let brandMentions = 0, totalResp = 0;
           const compMentions: Record<string, number> = {};
           for (const p of provs) {
@@ -382,21 +402,21 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           };
         };
 
-        // Deduplicate by report_date
+        // Deduplicate by report_date (pick report with highest combined brand_visibility_score)
         const bestByDate = new Map<string, any>();
         for (const r of reports) {
           const cm = r.competitor_metrics as any;
-          const slice = getMetricsSlice(cm);
-          const score = slice?.brand_visibility_score ?? -1;
+          const score = cm?.brand_visibility_score ?? -1;
           const existing = bestByDate.get(r.report_date);
-          const existingScore = getMetricsSlice((existing?.competitor_metrics as any))?.brand_visibility_score ?? -1;
+          const existingScore = (existing?.competitor_metrics as any)?.brand_visibility_score ?? -1;
           if (score > existingScore) bestByDate.set(r.report_date, r);
         }
         const dedupedReports = Array.from(bestByDate.values())
           .sort((a, b) => a.report_date.localeCompare(b.report_date));
 
-        const firstSlice = getMetricsSlice(dedupedReports[0].competitor_metrics as any);
-        const compNames = (firstSlice?.competitors || []).map((c: any) => c.name);
+        // Use combined competitor list for names (always available regardless of filter)
+        const firstCm = dedupedReports[0].competitor_metrics as any;
+        const compNames = (firstCm?.competitors || []).map((c: any) => c.name);
         setCompetitorNames(compNames);
 
         const { data: brandData } = await supabase.from('brands').select('name').eq('id', brandId).single();
