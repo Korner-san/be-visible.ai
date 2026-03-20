@@ -34,11 +34,15 @@ interface DetectedEntity {
   visibilityScore: number;
 }
 
+const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
+
 interface CompetitorsPageProps {
   brandId?: string | null;
   timeRange?: TimeRange;
   competitors?: Competitor[];
   onAddCompetitor?: (comp: Competitor) => void;
+  selectedModels?: string[];
+  customDateRange?: { from: string; to: string };
 }
 
 interface SovSlice {
@@ -56,7 +60,8 @@ interface CompetitorRow {
   trend?: number | null;
 }
 
-function getDateRange(timeRange: TimeRange): { from: string; to: string } {
+function getDateRange(timeRange: TimeRange, customDateRange?: { from: string; to: string }): { from: string; to: string } {
+  if (customDateRange) return customDateRange;
   const to = new Date();
   const from = new Date();
   switch (timeRange) {
@@ -105,7 +110,8 @@ const TrendBadge = ({ trend, size = 'sm' }: { trend: number | null | undefined; 
 };
 
 export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
-  brandId, timeRange = TimeRange.THIRTY_DAYS, competitors = [], onAddCompetitor
+  brandId, timeRange = TimeRange.THIRTY_DAYS, competitors = [], onAddCompetitor,
+  selectedModels = ALL_MODELS, customDateRange,
 }) => {
   // SOV state
   const [sovSlices, setSovSlices] = useState<SovSlice[]>([]);
@@ -132,29 +138,34 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   useEffect(() => {
     if (!brandId) return;
 
-    const { from, to } = getDateRange(timeRange);
+    const { from, to } = getDateRange(timeRange, customDateRange);
     const { from: prevFrom, to: prevTo } = getPreviousPeriod(from, to);
+    const isFiltered = selectedModels.length < ALL_MODELS.length;
+    // When filtered to a single provider, use that; otherwise merge all selected providers
+    const activeProvider = isFiltered && selectedModels.length === 1 ? selectedModels[0] : null;
 
     // Fetch share of voice + detected entities + SOV trends
     const fetchShareOfVoice = async () => {
       setIsLoadingSov(true);
       setIsLoadingEntities(true);
       try {
+        // When filtered, read share_of_voice_by_provider; otherwise read combined share_of_voice_data
+        const sovColumn = isFiltered ? 'share_of_voice_by_provider' : 'share_of_voice_data';
         const [{ data: reports, error }, { data: prevReports }] = await Promise.all([
           supabase
             .from('daily_reports')
-            .select('share_of_voice_data')
+            .select(isFiltered ? 'share_of_voice_by_provider' : 'share_of_voice_data')
             .eq('brand_id', brandId)
             .eq('status', 'completed')
-            .not('share_of_voice_data', 'is', null)
+            .not(sovColumn, 'is', null)
             .gte('report_date', from)
             .lte('report_date', to),
           supabase
             .from('daily_reports')
-            .select('share_of_voice_data')
+            .select(isFiltered ? 'share_of_voice_by_provider' : 'share_of_voice_data')
             .eq('brand_id', brandId)
             .eq('status', 'completed')
-            .not('share_of_voice_data', 'is', null)
+            .not(sovColumn, 'is', null)
             .gte('report_date', prevFrom)
             .lte('report_date', prevTo),
         ]);
@@ -170,7 +181,31 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         let totalMentions = 0;
 
         for (const report of reports) {
-          const sov = report.share_of_voice_data as any;
+          // When filtered: merge selected providers from share_of_voice_by_provider
+          let sov: any;
+          if (isFiltered) {
+            const byProvider = report.share_of_voice_by_provider as any;
+            if (!byProvider) continue;
+            // Merge entities across selected providers
+            const mergedMap: Record<string, { name: string; mentions: number; type: string }> = {};
+            let mergedTotal = 0;
+            for (const provider of selectedModels) {
+              const provSov = byProvider[provider];
+              if (!provSov?.entities) continue;
+              for (const entity of provSov.entities) {
+                const key = entity.name.toLowerCase();
+                if (mergedMap[key]) {
+                  mergedMap[key].mentions += entity.mentions;
+                } else {
+                  mergedMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type };
+                }
+              }
+              mergedTotal += provSov.total_mentions || 0;
+            }
+            sov = { entities: Object.values(mergedMap), total_mentions: mergedTotal };
+          } else {
+            sov = report.share_of_voice_data as any;
+          }
           if (!sov?.entities) continue;
           const seenInReport = new Set<string>();
           for (const entity of sov.entities) {
@@ -221,7 +256,25 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           const prevTempMap: Record<string, number> = {};
           let prevTotal = 0;
           for (const report of prevReports) {
-            const sov = report.share_of_voice_data as any;
+            let sov: any;
+            if (isFiltered) {
+              const byProvider = report.share_of_voice_by_provider as any;
+              if (!byProvider) continue;
+              const mergedMap: Record<string, number> = {};
+              let mergedTotal = 0;
+              for (const provider of selectedModels) {
+                const provSov = byProvider[provider];
+                if (!provSov?.entities) continue;
+                for (const entity of provSov.entities) {
+                  const key = entity.name.toLowerCase();
+                  mergedMap[key] = (mergedMap[key] || 0) + entity.mentions;
+                }
+                mergedTotal += provSov.total_mentions || 0;
+              }
+              sov = { entities: Object.entries(mergedMap).map(([k, v]) => ({ name: k, mentions: v })), total_mentions: mergedTotal };
+            } else {
+              sov = report.share_of_voice_data as any;
+            }
             if (!sov?.entities) continue;
             for (const entity of sov.entities) {
               const key = entity.name.toLowerCase();
@@ -293,20 +346,57 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           return;
         }
 
+        // Helper: extract the relevant metrics slice from a competitor_metrics blob
+        // When filtered to specific models, use by_provider data; otherwise use combined
+        const getMetricsSlice = (cm: any): any => {
+          if (!isFiltered || !cm?.by_provider) return cm;
+          if (selectedModels.length === 1) {
+            return cm.by_provider[selectedModels[0]] || cm;
+          }
+          // Multiple providers selected — merge them
+          const provs = selectedModels.map((p: string) => cm.by_provider[p]).filter(Boolean);
+          if (provs.length === 0) return cm;
+          let brandMentions = 0, totalResp = 0;
+          const compMentions: Record<string, number> = {};
+          for (const p of provs) {
+            brandMentions += p.brand_mention_count || 0;
+            totalResp += p.total_responses || 0;
+            for (const c of (p.competitors || [])) {
+              compMentions[c.name] = (compMentions[c.name] || 0) + (c.mention_count || 0);
+            }
+          }
+          const brandVis = totalResp > 0 ? parseFloat(((brandMentions / totalResp) * 100).toFixed(1)) : 0;
+          const firstProv = provs[0];
+          return {
+            brand_visibility_score: brandVis,
+            brand_mention_count: brandMentions,
+            total_responses: totalResp,
+            brand_citation_share: cm.brand_citation_share,
+            competitors: (firstProv.competitors || []).map((c: any) => ({
+              ...c,
+              mention_count: compMentions[c.name] || 0,
+              total_responses: totalResp,
+              visibility_score: totalResp > 0 ? parseFloat((((compMentions[c.name] || 0) / totalResp) * 100).toFixed(1)) : 0,
+              citation_share: (cm.competitors || []).find((orig: any) => orig.name === c.name)?.citation_share ?? null,
+            })),
+          };
+        };
+
         // Deduplicate by report_date
         const bestByDate = new Map<string, any>();
         for (const r of reports) {
           const cm = r.competitor_metrics as any;
-          const score = cm?.brand_visibility_score ?? -1;
+          const slice = getMetricsSlice(cm);
+          const score = slice?.brand_visibility_score ?? -1;
           const existing = bestByDate.get(r.report_date);
-          const existingScore = (existing?.competitor_metrics as any)?.brand_visibility_score ?? -1;
+          const existingScore = getMetricsSlice((existing?.competitor_metrics as any))?.brand_visibility_score ?? -1;
           if (score > existingScore) bestByDate.set(r.report_date, r);
         }
         const dedupedReports = Array.from(bestByDate.values())
           .sort((a, b) => a.report_date.localeCompare(b.report_date));
 
-        const firstMetrics = dedupedReports[0].competitor_metrics as any;
-        const compNames = (firstMetrics.competitors || []).map((c: any) => c.name);
+        const firstSlice = getMetricsSlice(dedupedReports[0].competitor_metrics as any);
+        const compNames = (firstSlice?.competitors || []).map((c: any) => c.name);
         setCompetitorNames(compNames);
 
         const { data: brandData } = await supabase.from('brands').select('name').eq('id', brandId).single();
@@ -315,11 +405,11 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
         // Build trend line data
         const trend: any[] = dedupedReports.map(r => {
-          const cm = r.competitor_metrics as any;
+          const slice = getMetricsSlice(r.competitor_metrics as any);
           const dateLabel = new Date(r.report_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           const point: any = { date: dateLabel };
-          point[bName] = cm.brand_visibility_score || 0;
-          for (const comp of (cm.competitors || [])) {
+          point[bName] = slice?.brand_visibility_score || 0;
+          for (const comp of (slice?.competitors || [])) {
             point[comp.name] = comp.visibility_score || 0;
           }
           return point;
@@ -335,14 +425,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           citationAgg[name] = { totalShare: 0, count: 0 };
         }
         for (const r of dedupedReports) {
-          const cm = r.competitor_metrics as any;
-          mentionAgg[bName].totalMentions += cm.brand_mention_count || 0;
-          mentionAgg[bName].totalResponses += cm.total_responses || 0;
-          if (cm.brand_citation_share != null) {
-            citationAgg[bName].totalShare += cm.brand_citation_share;
+          const slice = getMetricsSlice(r.competitor_metrics as any);
+          if (!slice) continue;
+          mentionAgg[bName].totalMentions += slice.brand_mention_count || 0;
+          mentionAgg[bName].totalResponses += slice.total_responses || 0;
+          if (slice.brand_citation_share != null) {
+            citationAgg[bName].totalShare += slice.brand_citation_share;
             citationAgg[bName].count++;
           }
-          for (const comp of (cm.competitors || [])) {
+          for (const comp of (slice.competitors || [])) {
             if (mentionAgg[comp.name]) {
               mentionAgg[comp.name].totalMentions += comp.mention_count || 0;
               mentionAgg[comp.name].totalResponses += comp.total_responses || 0;
@@ -363,15 +454,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         }
         if (prevReports && prevReports.length > 0) {
           for (const r of prevReports) {
-            const cm = r.competitor_metrics as any;
-            if (!cm) continue;
-            prevMentionAgg[bName].totalMentions += cm.brand_mention_count || 0;
-            prevMentionAgg[bName].totalResponses += cm.total_responses || 0;
-            if (cm.brand_citation_share != null) {
-              prevCitationAgg[bName].totalShare += cm.brand_citation_share;
+            const slice = getMetricsSlice(r.competitor_metrics as any);
+            if (!slice) continue;
+            prevMentionAgg[bName].totalMentions += slice.brand_mention_count || 0;
+            prevMentionAgg[bName].totalResponses += slice.total_responses || 0;
+            if (slice.brand_citation_share != null) {
+              prevCitationAgg[bName].totalShare += slice.brand_citation_share;
               prevCitationAgg[bName].count++;
             }
-            for (const comp of (cm.competitors || [])) {
+            for (const comp of (slice.competitors || [])) {
               if (prevMentionAgg[comp.name]) {
                 prevMentionAgg[comp.name].totalMentions += comp.mention_count || 0;
                 prevMentionAgg[comp.name].totalResponses += comp.total_responses || 0;
@@ -433,7 +524,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
     fetchShareOfVoice();
     fetchCompetitorMetrics();
-  }, [brandId, timeRange]);
+  }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
   const showSample = !brandId;
 

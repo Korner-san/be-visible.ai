@@ -441,6 +441,8 @@ function AppContent() {
           timeRange={timeRange}
           competitors={competitors}
           onAddCompetitor={(comp) => setCompetitors(prev => [...prev, comp])}
+          selectedModels={selectedModels}
+          customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined}
         />;
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
