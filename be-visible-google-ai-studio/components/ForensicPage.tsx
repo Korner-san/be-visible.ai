@@ -3,6 +3,7 @@ import {
   RefreshCw, Loader2, AlertCircle, CheckCircle, Clock,
   ChevronDown, ChevronRight, Lock
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -213,18 +214,38 @@ export const ForensicPage: React.FC = () => {
       const json = await res.json();
       const parsed = json.data ?? json;
 
-      // Fetch BME data from dedicated endpoint (bypasses any route caching)
+      // Fetch BME data directly from Supabase (browser-side, bypasses all API/Next.js caching)
       try {
-        const bmeRes = await fetch(`/api/admin/forensic/bme?t=${Date.now()}`, { cache: 'no-store' });
-        if (bmeRes.ok) {
-          const bmeJson = await bmeRes.json();
-          const bmeMap: Record<string, Record<string, any>> = bmeJson.data || {};
+        const today = new Date().toISOString().split('T')[0];
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+        const { data: schedRows } = await supabase
+          .from('daily_schedules')
+          .select('id')
+          .gte('schedule_date', yesterday)
+          .lte('schedule_date', today);
+
+        const scheduleIds = (schedRows || []).map((s: any) => s.id);
+
+        if (scheduleIds.length > 0) {
+          const { data: bmeRows } = await supabase
+            .from('batch_model_executions')
+            .select('schedule_id, model, status, prompts_attempted, prompts_ok, prompts_no_result, prompts_failed, started_at, completed_at, error_message')
+            .in('schedule_id', scheduleIds);
+
+          const bmeMap: Record<string, Record<string, any>> = {};
+          for (const row of (bmeRows || []) as any[]) {
+            if (!bmeMap[row.schedule_id]) bmeMap[row.schedule_id] = {};
+            bmeMap[row.schedule_id][row.model] = row;
+          }
+
           const stalledCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
           const normBME = (row: any) => {
             if (!row) return null;
             const status = (row.status === 'running' && row.started_at && row.started_at < stalledCutoff) ? 'stalled' : row.status;
             return { ...row, status };
           };
+
           for (const s of (parsed.schedulingQueue || [])) {
             const bme = bmeMap[s.id] || {};
             s.modelExecutions = {
@@ -235,7 +256,7 @@ export const ForensicPage: React.FC = () => {
           }
         }
       } catch (_bmeErr) {
-        // BME fetch failed — badges will show as dashes, main data still loads
+        // silently ignore — badges show as dashes if this fails
       }
 
       setData(parsed);
