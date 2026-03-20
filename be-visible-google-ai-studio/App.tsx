@@ -78,6 +78,7 @@ function AppContent() {
   const [competitors, setCompetitors] = useState<Competitor[]>(initialCompetitors);
   const [dashboardKey, setDashboardKey] = useState(0);
   const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'google_ai_overview', 'claude']);
+  const [promptsLoading, setPromptsLoading] = useState(false);
 
   // Load competitors from DB when brand is known
   useEffect(() => {
@@ -259,6 +260,7 @@ function AppContent() {
   useEffect(() => {
     if (!activeBrandId || appView !== 'AUTHENTICATED_READY') return;
     const fetchStats = async () => {
+      setPromptsLoading(true);
       try {
         const modelsParam = selectedModels.join(',');
         const dateParams = timeRange === TimeRange.CUSTOM && customFrom && customTo
@@ -276,6 +278,8 @@ function AppContent() {
         }
       } catch (e) {
         console.warn('[App] Could not fetch prompt stats:', e);
+      } finally {
+        setPromptsLoading(false);
       }
     };
     fetchStats();
@@ -453,7 +457,7 @@ function AppContent() {
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} selectedModels={selectedModels} />;
       case 'Prompts':
-        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} />;
+        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} isLoading={promptsLoading} />;
       case 'Improve':
         return <ImprovePage />;
       case 'Integrations':

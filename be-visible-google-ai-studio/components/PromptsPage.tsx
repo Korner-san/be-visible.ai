@@ -43,6 +43,7 @@ interface PromptsPageProps {
   timeRangeDays: number;
   selectedModels?: string[];
   customDateRange?: { from: string; to: string };
+  isLoading?: boolean;
 }
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
@@ -100,7 +101,7 @@ const HeaderWithInfo = ({ title, info, align = 'right' }: { title: string, info:
   );
 };
 
-export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange }) => {
+export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange, isLoading }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
@@ -573,7 +574,19 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
   return (
     <>
-      <div className="space-y-6 animate-fadeIn pb-20 font-sans relative">
+      {isLoading && (
+        <div className="fixed top-0 left-0 right-0 z-50 overflow-hidden" style={{ height: '2px' }}>
+          <div
+            className="h-full bg-brand-brown"
+            style={{
+              width: '40%',
+              animation: 'prompts-loading-bar 1.2s ease-in-out infinite',
+            }}
+          />
+          <style>{`@keyframes prompts-loading-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
+        </div>
+      )}
+      <div className={`space-y-6 animate-fadeIn pb-20 font-sans relative transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none select-none' : 'opacity-100'}`}>
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
           <div className="relative w-full md:w-96">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
