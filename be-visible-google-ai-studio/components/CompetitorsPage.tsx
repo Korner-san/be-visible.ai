@@ -7,16 +7,16 @@ import { TrendingUp, HelpCircle, Plus, Check, Loader2, Radar } from 'lucide-reac
 import { TimeRange, Competitor } from '../types';
 import { supabase } from '../lib/supabase';
 
-// Competitor color palette: Purple, Deep Red, Red, Orange, Yellow
-const COMPETITOR_COLORS = ['#481643', '#970e33', '#d90226', '#7B3218', '#4A2012'];
+// Competitor color palette
+const COMPETITOR_COLORS = ['#FFBD00', '#FB5607', '#D90226', '#970E33', '#481643'];
 
 // Mock data used when no real data is available
 const MOCK_COMPETITORS = [
-  { name: 'Incredibuild', score: 94, mentionRate: 78, voice: 45, citation: 35, color: '#481643', website: 'incredibuild.com' },
-  { name: 'GitLab CI', score: 82, mentionRate: 65, voice: 25, citation: 22, color: '#970e33', website: 'gitlab.com' },
-  { name: 'CircleCI', score: 79, mentionRate: 61, voice: 15, citation: 18, color: '#d90226', website: 'circleci.com' },
-  { name: 'Travis CI', score: 71, mentionRate: 52, voice: 10, citation: 15, color: '#fb5607', website: 'travis-ci.com' },
-  { name: 'Jenkins', score: 65, mentionRate: 48, voice: 5, citation: 10, color: '#ffbd00', website: 'jenkins.io' },
+  { name: 'Incredibuild', score: 94, mentionRate: 78, voice: 45, citation: 35, color: '#FFBD00', website: 'incredibuild.com' },
+  { name: 'GitLab CI', score: 82, mentionRate: 65, voice: 25, citation: 22, color: '#FB5607', website: 'gitlab.com' },
+  { name: 'CircleCI', score: 79, mentionRate: 61, voice: 15, citation: 18, color: '#D90226', website: 'circleci.com' },
+  { name: 'Travis CI', score: 71, mentionRate: 52, voice: 10, citation: 15, color: '#970E33', website: 'travis-ci.com' },
+  { name: 'Jenkins', score: 65, mentionRate: 48, voice: 5, citation: 10, color: '#481643', website: 'jenkins.io' },
 ];
 
 const MOCK_TREND = [
@@ -87,7 +87,7 @@ function getPreviousPeriod(from: string, to: string): { from: string; to: string
   };
 }
 
-const COMP_COLORS = ['#874B34', '#BC633A', '#E7B373', '#963D1F', '#2C1308', '#64748b'];
+const COMP_COLORS = ['#FFBD00', '#FB5607', '#D90226', '#970E33', '#481643', '#64748b'];
 
 // Small trend badge — green for improvement, warm orange/brown for deterioration
 const TrendBadge = ({ trend, size = 'sm' }: { trend: number | null | undefined; size?: 'sm' | 'xs' }) => {
