@@ -152,7 +152,7 @@ module.exports = async function handler(req, res) {
 
     grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount, score: runScore });
 
-    if (grouped[pid].recentResults.length < 5) {
+    if (grouped[pid].recentResults.length < 15) {
       grouped[pid].recentResults.push({
         id: row.id,
         promptText: row.prompt_text || '',
@@ -161,6 +161,8 @@ module.exports = async function handler(req, res) {
         citationCount,
         citations: citations,
         date: reportDate,
+        provider: row.provider,
+        position: (mentioned && row.brand_position != null) ? row.brand_position : null,
       });
     }
   }

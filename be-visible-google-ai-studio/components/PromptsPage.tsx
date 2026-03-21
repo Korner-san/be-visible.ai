@@ -239,12 +239,18 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
     if (!source || source.length === 0) return [];
 
+    const providerLabel = (p: string) => {
+      if (p === 'google_ai_overview') return 'Google AIO';
+      if (p === 'claude') return 'Claude';
+      return 'ChatGPT';
+    };
+
     return source.map((r: any) => ({
       id: r.id,
       time: r.date || '—',
-      model: 'ChatGPT',
+      model: providerLabel(r.provider || 'chatgpt'),
       mentioned: r.mentioned,
-      position: r.mentioned ? 1 : '-',
+      position: r.position != null ? r.position : '-',
       promptText: r.promptText,
       response: r.response,
       mentions: [],
@@ -879,14 +885,6 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                          trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'citationShare'}
                          onClick={() => setActiveChartMetric('citationShare')}
-                       />
-                       <MetricCard
-                         label="Total citations"
-                         value={popupStats?.citations ?? selectedEntity.data.citations}
-                         trend="across all runs"
-                         trendColor="text-slate-400"
-                         isHighlighted={activeChartMetric === 'mentions'}
-                         onClick={() => setActiveChartMetric('mentions')}
                        />
                      </div>
                    </div>
