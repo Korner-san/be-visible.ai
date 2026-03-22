@@ -16,6 +16,7 @@ interface OnboardingFormData {
   keyFeatures: string[]
   useCases: string[]
   competitors: string[]
+  competitorDomains: string[]
   uniqueSellingProps: string[]
   businessSummary: string
   businessLabel: string
@@ -98,7 +99,7 @@ const findCompetitorsWithPerplexity = async (
   businessSummary: string,
   marketScope: string,
   marketCountry: string | null
-): Promise<string[]> => {
+): Promise<{ name: string; domain: string }[]> => {
   if (!process.env.PERPLEXITY_API_KEY) {
     console.warn('PERPLEXITY_API_KEY not set — skipping competitor search')
     return []
@@ -106,17 +107,24 @@ const findCompetitorsWithPerplexity = async (
 
   const isLocal = marketScope === 'local' && marketCountry
   const marketContext = isLocal ? `in ${marketCountry}` : 'globally'
-  const marketFilter = isLocal
-    ? `List only companies with real presence or focus in the ${marketCountry} market.`
-    : `List the leading companies worldwide that compete directly with this type of business.`
 
-  const query = `Here is a description of the company we need competitors for:
+  const query = `I need to find the top real competitor companies for the following business:
 
 ${businessSummary}
 
-Who are the top competitors of this business operating ${marketContext}? ${marketFilter}
+Search the web and find up to 6 SPECIFIC named companies that directly compete with this business ${marketContext}.
 
-Return ONLY a JSON array of up to 6 competitor company names, no other text. Example: ["Company A", "Company B", "Company C"]`
+STRICT RULES:
+- Every result must be a real individual company with its own brand name and website (e.g. "Grey Israel", "McCann Tel Aviv", "Leo Burnett")
+- Do NOT return industry category descriptions like "digital marketing agencies" or "advertising firms" — these are completely invalid and will be rejected
+- Each result must include the company's exact website domain
+
+Return ONLY a JSON array of objects, no other text, no explanation:
+[
+  {"name": "Grey Israel", "domain": "grey.com"},
+  {"name": "McCann Tel Aviv", "domain": "mccann.co.il"},
+  {"name": "Leo Burnett Israel", "domain": "leoburnett.com"}
+]`
 
   try {
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -129,7 +137,7 @@ Return ONLY a JSON array of up to 6 competitor company names, no other text. Exa
         model: 'llama-3.1-sonar-large-128k-online',
         messages: [{ role: 'user', content: query }],
         temperature: 0.2,
-        max_tokens: 500
+        max_tokens: 600
       })
     })
 
@@ -142,13 +150,21 @@ Return ONLY a JSON array of up to 6 competitor company names, no other text. Exa
     const content = result.choices?.[0]?.message?.content?.trim()
     if (!content) return []
 
-    const jsonMatch = content.match(/\[[\s\S]*?\]/)
+    console.log('🔍 [PERPLEXITY] Raw response:', content.substring(0, 500))
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/)
     if (!jsonMatch) return []
 
     const parsed = JSON.parse(jsonMatch[0])
-    return Array.isArray(parsed)
-      ? parsed.filter((c: any) => typeof c === 'string' && c.trim()).slice(0, 4)
-      : []
+    if (!Array.isArray(parsed)) return []
+
+    return parsed
+      .filter((c: any) => c && typeof c.name === 'string' && c.name.trim() && typeof c.domain === 'string' && c.domain.trim())
+      .slice(0, 4)
+      .map((c: any) => ({
+        name: c.name.trim(),
+        domain: c.domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
+      }))
   } catch (err) {
     console.error('Perplexity competitor search failed:', err)
     return []
@@ -351,8 +367,11 @@ Respond ONLY with the JSON object, no additional text.
       ]),
       // Perplexity results are the source of truth; fall back to GPT if Perplexity returned nothing
       competitors: perplexityCompetitors.length > 0
-        ? perplexityCompetitors
-        : ensureArray(gptResult.competitors, 4, ['Competitor A', 'Competitor B', 'Competitor C', 'Competitor D']),
+        ? perplexityCompetitors.map(c => c.name)
+        : ensureArray(gptResult.competitors, 4, []),
+      competitorDomains: perplexityCompetitors.length > 0
+        ? perplexityCompetitors.map(c => c.domain)
+        : [],
       uniqueSellingProps: ensureArray(gptResult.uniqueSellingProps, 4, [
         'Faster implementation', 'Better support', 'More affordable', 'Industry-specific features'
       ]),

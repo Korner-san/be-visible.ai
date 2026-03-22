@@ -43,6 +43,7 @@ interface OnboardingData {
   keyFeatures: string[];
   useCases: string[];
   competitors: string[];
+  competitorDomains: string[];
   uniqueSellingProps: string[];
   businessSummary?: string;
   businessLabel?: string;
@@ -76,6 +77,7 @@ const emptyData: OnboardingData = {
   keyFeatures: ['', '', '', ''],
   useCases: ['', '', '', ''],
   competitors: ['', '', '', ''],
+  competitorDomains: ['', '', '', ''],
   uniqueSellingProps: ['', '', '', ''],
 };
 
@@ -190,10 +192,10 @@ const HexagonIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const CompetitorLogo = ({ name }: { name: string }) => {
+const CompetitorLogo = ({ name, domain }: { name: string; domain?: string }) => {
   const [error, setError] = useState(false);
-  const isDomain = name.includes('.') && !name.includes(' ');
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${isDomain ? name : name.toLowerCase().replace(/\s/g, '') + '.com'}&sz=64`;
+  const resolvedDomain = domain || (name.includes('.') && !name.includes(' ') ? name : name.toLowerCase().replace(/\s/g, '') + '.com');
+  const faviconUrl = `https://www.google.com/s2/favicons?domain=${resolvedDomain}&sz=64`;
 
   if (error || !name) {
     return (
@@ -382,6 +384,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             keyFeatures: bd.keyFeatures?.length ? bd.keyFeatures.slice(0, 4) : prev.keyFeatures,
             useCases: bd.useCases?.length ? bd.useCases.slice(0, 4) : prev.useCases,
             competitors: bd.competitors?.length ? bd.competitors.slice(0, 4) : prev.competitors,
+            competitorDomains: bd.competitorDomains?.length ? bd.competitorDomains.slice(0, 4) : prev.competitorDomains,
             // uniqueSellingProps intentionally NOT auto-filled — shown as suggestion chips instead
             businessSummary: bd.businessSummary || prev.businessSummary,
             businessLabel: bd.businessLabel || prev.businessLabel,
@@ -981,7 +984,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(data.competitors as string[]).map((comp, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <CompetitorLogo name={comp} />
+                  <CompetitorLogo name={comp} domain={data.competitorDomains?.[i]} />
                   <input type="text" value={comp}
                     onChange={(e) => handleArrayChange('competitors', i, e.target.value)}
                     placeholder="Brand name"
