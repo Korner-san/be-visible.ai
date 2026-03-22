@@ -920,10 +920,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
   );
 };
 
-// Renders AI response text with basic markdown formatting (bold, headers, lists, paragraphs)
+// Renders AI response text with markdown-like formatting.
+// Handles: N) section headers (with separators), ## headings, - bullets,
+// indented sub-bullets, em-dash "Lead – description" items, bold/italic inline.
 const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null;
 
+  // Render inline **bold** and *italic*
   const renderInline = (str: string): React.ReactNode[] => {
     const parts = str.split(/(\*\*(?:[^*]|\*(?!\*))+\*\*|\*[^*]+\*)/g);
     return parts.map((part, i) => {
@@ -938,48 +941,102 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
   const lines = text.split('\n');
   const result: React.ReactNode[] = [];
   let ulItems: React.ReactNode[] = [];
-  let olItems: React.ReactNode[] = [];
+  let sectionCount = 0;
   let k = 0;
 
   const flushUl = () => {
     if (ulItems.length) {
-      result.push(<ul key={k++} className="list-disc pl-5 space-y-1.5 my-3 text-slate-700">{ulItems}</ul>);
+      result.push(<ul key={k++} className="my-2 space-y-1.5 list-none p-0">{ulItems}</ul>);
       ulItems = [];
     }
   };
-  const flushOl = () => {
-    if (olItems.length) {
-      result.push(<ol key={k++} className="list-decimal pl-5 space-y-1.5 my-3 text-slate-700">{olItems}</ol>);
-      olItems = [];
-    }
-  };
-  const flush = () => { flushUl(); flushOl(); };
 
   for (const line of lines) {
-    const headingMatch = line.match(/^(#{1,3}) (.+)/);
-    if (headingMatch) {
-      flush();
-      const level = headingMatch[1].length;
+    // --- horizontal rule
+    if (/^[-*_]{3,}$/.test(line.trim())) {
+      flushUl();
+      result.push(<hr key={k++} className="my-5 border-gray-200" />);
+    }
+    // ## Markdown headings
+    else if (/^#{1,3} /.test(line)) {
+      flushUl();
+      const level = line.match(/^(#{1,3})/)![1].length;
+      const content = line.replace(/^#{1,3} /, '');
       const cls = level === 1
         ? 'text-[15px] font-black text-slate-900 mt-6 mb-2 leading-snug'
         : level === 2
         ? 'text-sm font-black text-slate-900 mt-5 mb-1.5 leading-snug'
         : 'text-sm font-bold text-slate-800 mt-4 mb-1 leading-snug';
-      result.push(<div key={k++} className={cls}>{renderInline(headingMatch[2])}</div>);
-    } else if (/^[-*•] /.test(line)) {
-      flushOl();
-      ulItems.push(<li key={k++} className="leading-relaxed">{renderInline(line.replace(/^[-*•] /, ''))}</li>);
-    } else if (/^\d+[.)]\s/.test(line)) {
+      result.push(<div key={k++} className={cls}>{renderInline(content)}</div>);
+    }
+    // N) or N. numbered section headers — preserve original number, add separator before 2nd+
+    else if (/^\d+[.)]\s/.test(line)) {
       flushUl();
-      olItems.push(<li key={k++} className="leading-relaxed">{renderInline(line.replace(/^\d+[.)]\s/, ''))}</li>);
-    } else if (line.trim() === '') {
-      flush();
-    } else {
-      flush();
+      sectionCount++;
+      const m = line.match(/^(\d+[.)]) (.+)$/);
+      if (m) {
+        result.push(
+          <div key={k++} className={sectionCount > 1 ? 'mt-1' : ''}>
+            {sectionCount > 1 && <hr className="mb-4 border-gray-200" />}
+            <div className="flex gap-2 items-baseline text-sm font-bold text-slate-900 leading-snug mb-1">
+              <span className="text-slate-400 shrink-0 tabular-nums font-semibold">{m[1]}</span>
+              <span>{renderInline(m[2])}</span>
+            </div>
+          </div>
+        );
+      }
+    }
+    // Indented sub-bullet (2+ spaces + - or *)
+    else if (/^ {2,}[-*] /.test(line)) {
+      const content = line.replace(/^ +[-*] /, '');
+      ulItems.push(
+        <li key={k++} className="flex items-start gap-2 leading-relaxed text-slate-600 ml-5">
+          <span className="mt-[7px] shrink-0 w-1 h-1 rounded-full bg-slate-300 inline-block" />
+          <span>{renderInline(content)}</span>
+        </li>
+      );
+    }
+    // Top-level bullet: - item or * item
+    else if (/^[-*•] /.test(line)) {
+      const content = line.replace(/^[-*•] /, '');
+      ulItems.push(
+        <li key={k++} className="flex items-start gap-2.5 leading-relaxed text-slate-700">
+          <span className="mt-[8px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+          <span>{renderInline(content)}</span>
+        </li>
+      );
+    }
+    // Em-dash item: "Short lead – description" — bold the lead term, rest is normal
+    // Matches ChatGPT's plain-text list items like "Build duration – total time from..."
+    else if (line.length < 160 && /^.{1,50}\s[–—]\s/.test(line)) {
+      const m = line.match(/^(.{1,50}?)\s([–—])\s(.+)$/);
+      if (m) {
+        ulItems.push(
+          <li key={k++} className="flex items-start gap-2.5 leading-relaxed text-slate-700">
+            <span className="mt-[8px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+            <span>
+              <strong className="font-semibold text-slate-900">{renderInline(m[1])}</strong>
+              {' '}{m[2]}{' '}
+              {renderInline(m[3])}
+            </span>
+          </li>
+        );
+      } else {
+        flushUl();
+        result.push(<p key={k++} className="text-slate-700 leading-relaxed">{renderInline(line)}</p>);
+      }
+    }
+    // Empty line
+    else if (line.trim() === '') {
+      flushUl();
+    }
+    // Regular paragraph
+    else {
+      flushUl();
       result.push(<p key={k++} className="text-slate-700 leading-relaxed">{renderInline(line)}</p>);
     }
   }
-  flush();
+  flushUl();
 
   return <div className="space-y-2">{result}</div>;
 };
