@@ -47,7 +47,7 @@ Market: ${marketDescription}
 
   const systemPrompt = `You are a prompt generator helping a brand appear in AI search results (e.g. ChatGPT or Perplexity).
 
-Your goal: generate exactly 25 realistic search prompts or questions that people might type or say to an AI assistant — WITHOUT knowing this brand — but whose answers would logically include this brand.
+Your goal: generate exactly 30 realistic search prompts or questions that people might type or say to an AI assistant — WITHOUT knowing this brand — but whose answers would logically include this brand.
 
 Do NOT include the brand name or any competitor names in any prompt.
 
@@ -56,41 +56,43 @@ BRAND CONTEXT:
 ${structuredInput}
 
 ---
-GENERATE EXACTLY 25 PROMPTS IN TWO PARTS:
+GENERATE EXACTLY 30 PROMPTS IN TWO PARTS:
 
-PART 1 — "Best In Category" (exactly 5 prompts)
-These are the most direct, obvious questions someone asks when searching for the best provider in this type of business.
-Use the businessLabel and market info. Vary the phrasing using these patterns:
-- "Who are the best [businessLabel]?"
-- "What are the top [businessLabel]?"
-- "Which companies offer the best [service in this category]?"
-- "Who are the leading providers of [this type of solution]?"
-- "What are the most reliable [businessLabel] available [in this market]?"
-If market is local, include the country in some of the prompts (e.g. "in Germany", "in Israel").
+PART 1 — Labeled discovery prompts (exactly 5 prompts)
+These are the most direct, obvious questions someone asks when searching for a provider or solution in this type of business.
+Use the businessLabel and market info. Use EXACTLY these 5 phrasing patterns (one prompt per pattern):
+1. "Who are the best [businessLabel]?" — use this pattern (include market/country if local)
+2. "What are the top [businessLabel]?" — use this pattern (vary the angle slightly)
+3. "Who provides [specific service or solution this business offers]?" — focus on what they provide
+4. "Which company [does/offers/handles] [what this business does]?" — company-specific search
+5. "How can I find a solution to [the core problem this business solves]?" — problem-framing search
+
 Category for all 5: "Best In Category"
 promptType for all 5: "Labeled"
+If market is local, naturally include the country in prompts 1 and 2.
 
-PART 2 — Dynamic prompts (exactly 20 prompts)
-For each prompt, derive a SPECIFIC category name from the actual topics of this business (e.g. "Build Performance", "Developer Productivity", "Material Sourcing"). Do NOT use generic labels like "Discovery" or "General".
+PART 2 — Dynamic categorized prompts (exactly 25 prompts)
+For each prompt, derive a SPECIFIC category name from the actual topic it relates to in this business (e.g. "Build Performance", "Developer Productivity", "Material Sourcing", "Cost Reduction").
+IMPORTANT: The category must reflect the actual subject of THAT specific prompt — not a generic label like "Discovery" or "General". Different prompts may share a category if they genuinely cover the same topic.
 
-Distribute the 20 prompts EXACTLY as follows:
+Distribute the 25 prompts EXACTLY as follows:
 
-5 CONVERSATIONAL — promptType: "Conversational"
-Simulate a user mid-conversation with ChatGPT: 2-4 sentences, first-person, informal. They describe their specific situation and pain point before asking. No formal search query phrasing. Imperfect grammar is fine. Each must be different in situation and angle.
+6 CONVERSATIONAL — promptType: "Conversational"
+Simulate a user mid-conversation with ChatGPT: 2-4 sentences, first-person, informal. They describe their specific situation and pain point before asking. No formal search query phrasing. Imperfect grammar is fine. Each must cover a different situation or use case.
 
-5 STANDARD-CHECK — promptType: "Standard Check"
-Questions that check how things normally work in this field: "How does X typically work in this industry?", "What is the standard approach for Y?", "How do teams in [industry] usually handle Z?"
+7 STANDARD-CHECK — promptType: "Standard Check"
+Questions that check how things normally work: "How does X typically work in this industry?", "What is the standard approach for Y?", "How do companies in [industry] usually handle Z?", "What do most [industry] teams do when..."
 
-5 SOLUTION-LANDSCAPE — promptType: "Solution Landscape"
-Questions about how solutions in the market address specific scenarios or use cases: "How do solutions in the market handle [use case from the provided list]?", "How do leading tools in this space approach [specific challenge]?"
-Use the actual use cases and features provided above.
+6 SOLUTION-LANDSCAPE — promptType: "Solution Landscape"
+Questions about how solutions in the market address specific scenarios: "How do solutions in the market handle [use case]?", "How do leading tools in this space approach [challenge]?", "What do [type of solution] typically include when it comes to [feature area]?"
+Draw directly from the use cases and features provided.
 
-5 GOAL-ORIENTED — promptType: "Goal Oriented"
-Questions about how tools or solutions help achieve specific goals: "How do [type of tools] help teams achieve [goal from the provided data]?", "What approaches help businesses reach [specific goal]?"
-Use the actual goals and outcomes from the context above.
+6 GOAL-ORIENTED — promptType: "Goal Oriented"
+Questions about how tools or approaches help achieve specific outcomes: "How do [type of tools] help teams achieve [goal]?", "What approaches help businesses [reach specific goal]?", "How can [industry] companies improve [metric or outcome]?"
+Draw directly from the goals and outcomes provided.
 
 ---
-Return ONLY a valid JSON object with a "prompts" field containing an array of exactly 25 objects.
+Return ONLY a valid JSON object with a "prompts" field containing an array of exactly 30 objects.
 Each object must have: "prompt" (string), "category" (string), "promptType" (string).
 No markdown, no code blocks, raw JSON only.`
 
@@ -99,7 +101,7 @@ No markdown, no code blocks, raw JSON only.`
       model: "gpt-4o",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: "Generate the 25 prompts based on the brand context provided. Return only valid JSON." }
+        { role: "user", content: "Generate the 30 prompts based on the brand context provided. Return only valid JSON." }
       ],
       temperature: 0.75,
       max_tokens: 4000,
