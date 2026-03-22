@@ -115,9 +115,11 @@ ${businessSummary}
 Search the web and find up to 6 SPECIFIC named companies that directly compete with this business ${marketContext}.
 
 STRICT RULES:
-- Every result must be a real individual company with its own brand name and website (e.g. "Grey Israel", "McCann Tel Aviv", "Leo Burnett")
-- Do NOT return industry category descriptions like "digital marketing agencies" or "advertising firms" — these are completely invalid and will be rejected
-- Each result must include the company's exact website domain
+- RESPOND IN ENGLISH ONLY — regardless of the language of the business description above
+- Every result must be a real, individual named company (e.g. "Grey Israel", "McCann Tel Aviv", "Leo Burnett Israel") — NOT a category or type of company
+- Do NOT return industry descriptions like "digital marketing agencies", "advertising firms", "PR companies", or any other category name — these are invalid and will be rejected
+- Each result must be a specific business entity with its own website and domain
+- Include the exact website domain for each company
 
 Return ONLY a JSON array of objects, no other text, no explanation:
 [
