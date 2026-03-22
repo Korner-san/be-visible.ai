@@ -262,6 +262,10 @@ ${tldCountryHint ? `TLD country hint: ${tldCountryHint}` : ''}
 Respond ONLY with a valid JSON object in exactly this format:
 
 {
+  "businessSummary": "A 2-3 sentence paragraph synthesizing who this company is, what they actually do (even if their branding is vague — infer the real activity), what problem they solve, and where they operate (local market or global). This should be clear enough that someone reading it immediately understands the type of business.",
+  "businessLabel": "A concise categorical label that accurately describes what type of business this is, even if the website uses vague branding. Examples: 'build acceleration software for enterprise C++ development teams', 'plastic manufacturing factory serving the German industrial market', 'B2B SaaS HR platform for Israeli mid-size companies'. Be specific and accurate.",
+  "marketScope": "local or global — local if the business primarily serves one country, global if it serves multiple countries or has no geographic restriction",
+  "marketCountry": "country name if marketScope is local (e.g. 'Israel', 'Germany'), null if global",
   "brandName": "exact brand name found on the website",
   "industry": "the industry/sector this brand operates in",
   "problemSolved": "what main problem does this brand solve for customers",
@@ -270,11 +274,7 @@ Respond ONLY with a valid JSON object in exactly this format:
   "keyFeatures": ["feature 1", "feature 2", "feature 3", "feature 4"],
   "useCases": ["use case 1", "use case 2", "use case 3", "use case 4"],
   "productCategory": "what product or service category this brand belongs to",
-  "uniqueSellingProps": ["unique point 1", "unique point 2", "unique point 3", "unique point 4"],
-  "businessSummary": "A 2-3 sentence paragraph synthesizing who this company is, what they actually do (even if their branding is vague — infer the real activity), what problem they solve, and where they operate (local market or global). This should be clear enough that someone reading it immediately understands the type of business.",
-  "businessLabel": "A concise categorical label that accurately describes what type of business this is, even if the website uses vague branding. Examples: 'build acceleration software for enterprise C++ development teams', 'plastic manufacturing factory serving the German industrial market', 'B2B SaaS HR platform for Israeli mid-size companies'. Be specific and accurate.",
-  "marketScope": "local or global — local if the business primarily serves one country, global if it serves multiple countries or has no geographic restriction",
-  "marketCountry": "country name if marketScope is local (e.g. 'Israel', 'Germany'), null if global"
+  "uniqueSellingProps": ["unique point 1", "unique point 2", "unique point 3", "unique point 4"]
 }
 
 Guidelines:
@@ -299,7 +299,7 @@ Respond ONLY with the JSON object, no additional text.
           { role: "user", content: extractionPrompt }
         ],
         temperature: 0.3,
-        max_tokens: 1800,
+        max_tokens: 2500,
       })
 
       const responseContent = completion.choices[0]?.message?.content
