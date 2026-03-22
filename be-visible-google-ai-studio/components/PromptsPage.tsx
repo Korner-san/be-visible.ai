@@ -981,9 +981,9 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
       if (m) {
         const showHr = sectionCount > 1 || hasContentBefore;
         result.push(
-          <div key={k++}>
-            {showHr && <hr className="mb-5 border-gray-200" />}
-            <div className="flex gap-2.5 items-baseline font-black text-slate-900 leading-snug mb-1" style={{ fontSize: '18px' }}>
+          <div key={k++} className="mt-6">
+            {showHr && <hr className="mb-6 border-gray-200" />}
+            <div className="flex gap-2.5 items-baseline font-black text-slate-900 leading-snug mb-4" style={{ fontSize: '18px' }}>
               <span className="shrink-0 tabular-nums">{m[1]}</span>
               <span>{renderInline(m[2])}</span>
             </div>
@@ -1040,7 +1040,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
         );
       } else {
         flushUl();
-        result.push(<p key={k++} className="mb-4 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
+        result.push(<p key={k++} className="mb-2 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
       }
     }
     // Empty line
@@ -1051,12 +1051,12 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
     else {
       flushUl();
       hasContentBefore = true;
-      result.push(<p key={k++} className="mb-4 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
+      result.push(<p key={k++} className="mb-2 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
     }
   }
   flushUl();
 
-  return <div className="space-y-2">{result}</div>;
+  return <div className="space-y-4">{result}</div>;
 };
 
 const PromptTrendBadge = ({ trend }: { trend: number }) => (
