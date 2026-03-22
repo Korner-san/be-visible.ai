@@ -342,8 +342,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           <div className="flex items-center gap-2 text-[11px] font-black text-slate-900 uppercase tracking-widest">
             <ChevronDown size={14} /> Response
           </div>
-          <div className="p-8 bg-white border border-gray-100 rounded-2xl shadow-sm text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
-            {run.response}
+          <div className="p-8 bg-white border border-gray-100 rounded-2xl shadow-sm text-sm">
+            <MarkdownResponse text={run.response} />
           </div>
         </div>
 
@@ -918,6 +918,70 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       )}
     </>
   );
+};
+
+// Renders AI response text with basic markdown formatting (bold, headers, lists, paragraphs)
+const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+
+  const renderInline = (str: string): React.ReactNode[] => {
+    const parts = str.split(/(\*\*(?:[^*]|\*(?!\*))+\*\*|\*[^*]+\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4)
+        return <strong key={i} className="font-semibold text-slate-900">{part.slice(2, -2)}</strong>;
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2)
+        return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  const lines = text.split('\n');
+  const result: React.ReactNode[] = [];
+  let ulItems: React.ReactNode[] = [];
+  let olItems: React.ReactNode[] = [];
+  let k = 0;
+
+  const flushUl = () => {
+    if (ulItems.length) {
+      result.push(<ul key={k++} className="list-disc pl-5 space-y-1.5 my-3 text-slate-700">{ulItems}</ul>);
+      ulItems = [];
+    }
+  };
+  const flushOl = () => {
+    if (olItems.length) {
+      result.push(<ol key={k++} className="list-decimal pl-5 space-y-1.5 my-3 text-slate-700">{olItems}</ol>);
+      olItems = [];
+    }
+  };
+  const flush = () => { flushUl(); flushOl(); };
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,3}) (.+)/);
+    if (headingMatch) {
+      flush();
+      const level = headingMatch[1].length;
+      const cls = level === 1
+        ? 'text-[15px] font-black text-slate-900 mt-6 mb-2 leading-snug'
+        : level === 2
+        ? 'text-sm font-black text-slate-900 mt-5 mb-1.5 leading-snug'
+        : 'text-sm font-bold text-slate-800 mt-4 mb-1 leading-snug';
+      result.push(<div key={k++} className={cls}>{renderInline(headingMatch[2])}</div>);
+    } else if (/^[-*•] /.test(line)) {
+      flushOl();
+      ulItems.push(<li key={k++} className="leading-relaxed">{renderInline(line.replace(/^[-*•] /, ''))}</li>);
+    } else if (/^\d+[.)]\s/.test(line)) {
+      flushUl();
+      olItems.push(<li key={k++} className="leading-relaxed">{renderInline(line.replace(/^\d+[.)]\s/, ''))}</li>);
+    } else if (line.trim() === '') {
+      flush();
+    } else {
+      flush();
+      result.push(<p key={k++} className="text-slate-700 leading-relaxed">{renderInline(line)}</p>);
+    }
+  }
+  flush();
+
+  return <div className="space-y-2">{result}</div>;
 };
 
 const PromptTrendBadge = ({ trend }: { trend: number }) => (
