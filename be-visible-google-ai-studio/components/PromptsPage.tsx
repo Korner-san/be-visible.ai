@@ -799,9 +799,9 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                      <div className="col-span-12 lg:col-span-7 bg-white rounded-[24px] border-2 border-gray-200 shadow-sm p-6 flex flex-col h-[300px]">
                        <div className="flex items-start justify-between mb-2">
                          <span className="text-[10px] font-black text-gray-400 tracking-widest">
-                            {activeChartMetric === 'visibility' ? 'Visibility trend' : 
-                             activeChartMetric === 'avgPosition' ? 'Position trend' : 
-                             activeChartMetric === 'citationShare' ? 'Citation share trend' : 'Mentions trend'}
+                            {activeChartMetric === 'visibility' ? 'Visibility trend' :
+                             activeChartMetric === 'avgPosition' ? 'Position trend' :
+                             activeChartMetric === 'citationShare' ? 'Citation share trend' : 'Mention rate trend'}
                          </span>
                          <div className="flex items-center gap-2 text-brand-brown font-black text-[10px]">
                            <Sparkles size={12} /> Ai trends
@@ -875,8 +875,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                          value={`${popupStats?.mentionRate ?? selectedEntity.data.mentionRate ?? 0}%`}
                          trend="% of runs brand was mentioned"
                          trendColor="text-slate-400"
-                         isHighlighted={false}
-                         onClick={() => {}}
+                         isHighlighted={activeChartMetric === 'mentionRate'}
+                         onClick={() => setActiveChartMetric('mentionRate')}
                        />
                        <MetricCard
                          label="Citation share"

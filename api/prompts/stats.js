@@ -189,18 +189,31 @@ module.exports = async function handler(req, res) {
       ? Math.round((totalBrandCitations / totalCitations) * 1000) / 10  // 1 decimal %
       : 0;
 
-    // Daily history for chart (avg 40/30/30 score per date)
+    // Daily history for chart — all four metrics per date
     const byDate = {};
     for (const run of runs) {
       if (!run.reportDate) continue;
-      if (!byDate[run.reportDate]) byDate[run.reportDate] = [];
-      byDate[run.reportDate].push(run.score);
+      if (!byDate[run.reportDate]) byDate[run.reportDate] = { scores: [], positions: [], mentioned: 0, total: 0, brandCits: 0, totalCits: 0 };
+      const d = byDate[run.reportDate];
+      d.scores.push(run.score);
+      d.total++;
+      if (run.mentioned) d.mentioned++;
+      if (run.position != null) d.positions.push(run.position);
+      d.brandCits += run.brandCitationCount;
+      d.totalCits += run.citationCount;
     }
     const history = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, scores]) => ({
+      .map(([date, d]) => ({
         date: date.slice(5),
-        visibility: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        visibility: Math.round(d.scores.reduce((a, b) => a + b, 0) / d.scores.length),
+        mentionRate: d.total > 0 ? Math.round((d.mentioned / d.total) * 100) : 0,
+        avgPosition: d.positions.length > 0
+          ? Math.round(d.positions.reduce((a, b) => a + b, 0) / d.positions.length * 10) / 10
+          : null,
+        citationShare: d.totalCits > 0
+          ? Math.round((d.brandCits / d.totalCits) * 1000) / 10
+          : 0,
       }));
 
     // Trend: last 7 vs previous 7 (using 40/30/30 scores)

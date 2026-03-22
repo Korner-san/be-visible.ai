@@ -71,7 +71,7 @@ export interface PromptStats {
   }>;
 }
 
-export type MetricType = 'visibility' | 'avgPosition' | 'citationShare' | 'mentions';
+export type MetricType = 'visibility' | 'avgPosition' | 'citationShare' | 'mentionRate';
 
 export interface Competitor {
   id: string;
