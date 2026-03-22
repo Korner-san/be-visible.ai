@@ -342,7 +342,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           <div className="flex items-center gap-2 text-[11px] font-black text-slate-900 uppercase tracking-widest">
             <ChevronDown size={14} /> Response
           </div>
-          <div className="p-8 bg-white border border-gray-100 rounded-2xl shadow-sm text-sm">
+          <div className="p-8 bg-white border border-gray-100 rounded-2xl shadow-sm">
             <MarkdownResponse text={run.response} />
           </div>
         </div>
@@ -921,8 +921,9 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 };
 
 // Renders AI response text with markdown-like formatting.
-// Handles: N) section headers (with separators), ## headings, - bullets,
-// indented sub-bullets, em-dash "Lead – description" items, bold/italic inline.
+// NOTE: Bold/bullet detection is limited because the ChatGPT executor saves
+// plain textContent (no HTML tags). Fixing bold + bullets fully requires the
+// executor to extract innerHTML and convert <strong>/<li> to markdown.
 const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null;
 
@@ -942,6 +943,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
   const result: React.ReactNode[] = [];
   let ulItems: React.ReactNode[] = [];
   let sectionCount = 0;
+  let hasContentBefore = false; // tracks whether any content precedes the first N) section
   let k = 0;
 
   const flushUl = () => {
@@ -960,60 +962,75 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
     // ## Markdown headings
     else if (/^#{1,3} /.test(line)) {
       flushUl();
+      hasContentBefore = true;
       const level = line.match(/^(#{1,3})/)![1].length;
       const content = line.replace(/^#{1,3} /, '');
       const cls = level === 1
-        ? 'text-[15px] font-black text-slate-900 mt-6 mb-2 leading-snug'
+        ? 'text-2xl font-black text-slate-900 mt-6 mb-2 leading-snug'
         : level === 2
-        ? 'text-sm font-black text-slate-900 mt-5 mb-1.5 leading-snug'
-        : 'text-sm font-bold text-slate-800 mt-4 mb-1 leading-snug';
+        ? 'text-xl font-black text-slate-900 mt-5 mb-1.5 leading-snug'
+        : 'text-base font-bold text-slate-800 mt-4 mb-1 leading-snug';
       result.push(<div key={k++} className={cls}>{renderInline(content)}</div>);
     }
-    // N) or N. numbered section headers — preserve original number, add separator before 2nd+
+    // N) or N. numbered section headers — preserve original number
+    // Add <hr> before every section: also before section 1 when intro content precedes it
     else if (/^\d+[.)]\s/.test(line)) {
       flushUl();
       sectionCount++;
       const m = line.match(/^(\d+[.)]) (.+)$/);
       if (m) {
+        const showHr = sectionCount > 1 || hasContentBefore;
         result.push(
-          <div key={k++} className={sectionCount > 1 ? 'mt-1' : ''}>
-            {sectionCount > 1 && <hr className="mb-4 border-gray-200" />}
-            <div className="flex gap-2 items-baseline text-sm font-bold text-slate-900 leading-snug mb-1">
-              <span className="text-slate-400 shrink-0 tabular-nums font-semibold">{m[1]}</span>
+          <div key={k++}>
+            {showHr && <hr className="mb-5 border-gray-200" />}
+            <div className="flex gap-2.5 items-baseline font-black text-slate-900 leading-snug mb-1" style={{ fontSize: '18px' }}>
+              <span className="shrink-0 tabular-nums">{m[1]}</span>
               <span>{renderInline(m[2])}</span>
             </div>
           </div>
         );
       }
     }
+    // Short colon-terminated label: "What to include in a dashboard:" — sub-header
+    // These lose their bold in plain-text extraction; we restore it by pattern
+    else if (/^[A-Z][^:]{5,60}:$/.test(line.trim())) {
+      flushUl();
+      hasContentBefore = true;
+      result.push(
+        <p key={k++} className="font-semibold text-slate-900 mt-3 mb-0.5" style={{ fontSize: '15px' }}>
+          {renderInline(line.trim())}
+        </p>
+      );
+    }
     // Indented sub-bullet (2+ spaces + - or *)
     else if (/^ {2,}[-*] /.test(line)) {
       const content = line.replace(/^ +[-*] /, '');
       ulItems.push(
-        <li key={k++} className="flex items-start gap-2 leading-relaxed text-slate-600 ml-5">
-          <span className="mt-[7px] shrink-0 w-1 h-1 rounded-full bg-slate-300 inline-block" />
+        <li key={k++} className="flex items-start gap-2 text-slate-600 ml-5" style={{ fontSize: '16px', lineHeight: '1.6' }}>
+          <span className="mt-[9px] shrink-0 w-1 h-1 rounded-full bg-slate-300 inline-block" />
           <span>{renderInline(content)}</span>
         </li>
       );
     }
     // Top-level bullet: - item or * item
     else if (/^[-*•] /.test(line)) {
+      hasContentBefore = true;
       const content = line.replace(/^[-*•] /, '');
       ulItems.push(
-        <li key={k++} className="flex items-start gap-2.5 leading-relaxed text-slate-700">
-          <span className="mt-[8px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+        <li key={k++} className="flex items-start gap-2.5 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>
+          <span className="mt-[10px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-500 inline-block" />
           <span>{renderInline(content)}</span>
         </li>
       );
     }
-    // Em-dash item: "Short lead – description" — bold the lead term, rest is normal
-    // Matches ChatGPT's plain-text list items like "Build duration – total time from..."
+    // Em-dash item: "Short lead – description" → bold lead, bullet point
     else if (line.length < 160 && /^.{1,50}\s[–—]\s/.test(line)) {
+      hasContentBefore = true;
       const m = line.match(/^(.{1,50}?)\s([–—])\s(.+)$/);
       if (m) {
         ulItems.push(
-          <li key={k++} className="flex items-start gap-2.5 leading-relaxed text-slate-700">
-            <span className="mt-[8px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+          <li key={k++} className="flex items-start gap-2.5 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>
+            <span className="mt-[10px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-500 inline-block" />
             <span>
               <strong className="font-semibold text-slate-900">{renderInline(m[1])}</strong>
               {' '}{m[2]}{' '}
@@ -1023,7 +1040,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
         );
       } else {
         flushUl();
-        result.push(<p key={k++} className="text-slate-700 leading-relaxed">{renderInline(line)}</p>);
+        result.push(<p key={k++} className="text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
       }
     }
     // Empty line
@@ -1033,7 +1050,8 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
     // Regular paragraph
     else {
       flushUl();
-      result.push(<p key={k++} className="text-slate-700 leading-relaxed">{renderInline(line)}</p>);
+      hasContentBefore = true;
+      result.push(<p key={k++} className="text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
     }
   }
   flushUl();
