@@ -44,6 +44,10 @@ interface OnboardingData {
   useCases: string[];
   competitors: string[];
   uniqueSellingProps: string[];
+  businessSummary?: string;
+  businessLabel?: string;
+  marketScope?: string;
+  marketCountry?: string | null;
 }
 
 interface GeneratedPrompt {
@@ -237,6 +241,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
 
+  // ── USP suggestions (from website scan — shown as chips, not auto-filled) ──
+  const [uspSuggestions, setUspSuggestions] = useState<string[]>([]);
+  // Maps suggestionIndex → fieldIndex (which field it was placed into)
+  const [suggestionFieldMap, setSuggestionFieldMap] = useState<Map<number, number>>(new Map());
+
   // ── View: 'onboarding' | 'edit-prompts' ───────────────────────────────────
   const [view, setView] = useState<'onboarding' | 'edit-prompts'>('onboarding');
 
@@ -373,8 +382,16 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             keyFeatures: bd.keyFeatures?.length ? bd.keyFeatures.slice(0, 4) : prev.keyFeatures,
             useCases: bd.useCases?.length ? bd.useCases.slice(0, 4) : prev.useCases,
             competitors: bd.competitors?.length ? bd.competitors.slice(0, 4) : prev.competitors,
-            uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
+            // uniqueSellingProps intentionally NOT auto-filled — shown as suggestion chips instead
+            businessSummary: bd.businessSummary || prev.businessSummary,
+            businessLabel: bd.businessLabel || prev.businessLabel,
+            marketScope: bd.marketScope || prev.marketScope,
+            marketCountry: bd.marketCountry ?? prev.marketCountry,
           }));
+          // Populate USP suggestions (user clicks to accept, not auto-filled)
+          if (bd.uniqueSellingProps?.length) {
+            setUspSuggestions(bd.uniqueSellingProps.slice(0, 6));
+          }
           setPrefilled(true);
         } else {
           setWebsiteAnalysisError('Could not auto-fill from website. Fill in the fields manually.');
@@ -531,6 +548,32 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       console.error('[OnboardingPage] Generation error:', err);
       setGenerationError(err instanceof Error ? err.message : 'Failed to generate prompts. Please try again.');
       setIsGenerating(false);
+    }
+  };
+
+  // ── USP suggestion chip click ────────────────────────────────────────────────
+  const handleUspSuggestionClick = (suggestionIndex: number, text: string) => {
+    const currentUsps = [...data.uniqueSellingProps];
+    if (suggestionFieldMap.has(suggestionIndex)) {
+      // Deselect: clear the field this chip filled
+      const fieldIndex = suggestionFieldMap.get(suggestionIndex)!;
+      currentUsps[fieldIndex] = '';
+      setData(prev => {
+        const updated = [...prev.uniqueSellingProps];
+        updated[fieldIndex] = '';
+        return { ...prev, uniqueSellingProps: updated };
+      });
+      setSuggestionFieldMap(prev => { const m = new Map(prev); m.delete(suggestionIndex); return m; });
+    } else {
+      // Select: fill first empty field
+      let targetIndex = currentUsps.findIndex(v => !v.trim());
+      if (targetIndex === -1) targetIndex = currentUsps.length - 1; // replace last if all filled
+      setData(prev => {
+        const updated = [...prev.uniqueSellingProps];
+        updated[targetIndex] = text;
+        return { ...prev, uniqueSellingProps: updated };
+      });
+      setSuggestionFieldMap(prev => new Map([...prev, [suggestionIndex, targetIndex]]));
     }
   };
 
@@ -871,13 +914,13 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         return (
           <div className="animate-fadeIn">
             {beVisibleBadge}
-            <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">What tasks does your product help users complete?</h2>
-            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">List the main tasks your product assists with</p>
+            <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">What actions does your product help users complete?</h2>
+            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">List the main actions your product assists with</p>
             <div className="grid grid-cols-1 gap-3 max-h-[220px] overflow-y-auto custom-scrollbar pr-2">
               {(data.tasksHelped as string[]).map((task, i) => (
                 <input key={i} type="text" value={task}
                   onChange={(e) => handleArrayChange('tasksHelped', i, e.target.value)}
-                  placeholder={`Task ${i + 1}`}
+                  placeholder={`Action ${i + 1}`}
                   className="w-full px-4 py-2 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] transition-all bg-white text-sm" />
               ))}
             </div>
@@ -963,6 +1006,37 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                   className="w-full px-4 py-2.5 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] text-sm" />
               ))}
             </div>
+            {uspSuggestions.length > 0 && (
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  Suggestions based on your website{' '}
+                  <span className="font-normal normal-case text-slate-400">— optional, click to add</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {uspSuggestions.map((suggestion, i) => {
+                    const isUsed = suggestionFieldMap.has(i);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleUspSuggestionClick(i, suggestion)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all ${
+                          isUsed
+                            ? 'bg-brand-brown/10 border-brand-brown/30 text-brand-brown opacity-60'
+                            : 'bg-white border-gray-200 text-slate-700 hover:border-brand-brown/40 hover:bg-brand-brown/5 cursor-pointer'
+                        }`}
+                      >
+                        {isUsed
+                          ? <CheckCircle2 size={13} className="shrink-0" />
+                          : <span className="shrink-0 text-amber-500 text-xs">💡</span>
+                        }
+                        <span className={isUsed ? 'line-through' : ''}>{suggestion}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         );
 
