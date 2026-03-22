@@ -957,7 +957,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
     // --- horizontal rule
     if (/^[-*_]{3,}$/.test(line.trim())) {
       flushUl();
-      result.push(<hr key={k++} className="my-5 border-gray-200" />);
+      result.push(<hr key={k++} className="my-8 border-gray-200" />);
     }
     // ## Markdown headings
     else if (/^#{1,3} /.test(line)) {
@@ -966,10 +966,10 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
       const level = line.match(/^(#{1,3})/)![1].length;
       const content = line.replace(/^#{1,3} /, '');
       const cls = level === 1
-        ? 'text-2xl font-black text-slate-900 mt-6 mb-2 leading-snug'
+        ? 'text-2xl font-black text-slate-900 mt-8 mb-3 leading-snug'
         : level === 2
-        ? 'text-xl font-black text-slate-900 mt-5 mb-1.5 leading-snug'
-        : 'text-base font-bold text-slate-800 mt-4 mb-1 leading-snug';
+        ? 'text-xl font-black text-slate-900 mt-7 mb-2 leading-snug'
+        : 'text-base font-bold text-slate-800 mt-6 mb-2 leading-snug';
       result.push(<div key={k++} className={cls}>{renderInline(content)}</div>);
     }
     // N) or N. numbered section headers — preserve original number
@@ -1040,7 +1040,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
         );
       } else {
         flushUl();
-        result.push(<p key={k++} className="text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
+        result.push(<p key={k++} className="mb-4 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
       }
     }
     // Empty line
@@ -1051,7 +1051,7 @@ const MarkdownResponse: React.FC<{ text: string }> = ({ text }) => {
     else {
       flushUl();
       hasContentBefore = true;
-      result.push(<p key={k++} className="text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
+      result.push(<p key={k++} className="mb-4 text-slate-700" style={{ fontSize: '16px', lineHeight: '1.6' }}>{renderInline(line)}</p>);
     }
   }
   flushUl();
