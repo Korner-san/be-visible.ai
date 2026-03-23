@@ -299,7 +299,6 @@ Respond ONLY with the JSON object, no additional text.
           { role: "user", content: extractionPrompt }
         ],
         temperature: 0.3,
-        max_tokens: 2500,
       })
 
       const responseContent = completion.choices[0]?.message?.content
