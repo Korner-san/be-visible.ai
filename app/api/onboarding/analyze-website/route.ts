@@ -102,10 +102,21 @@ const findCompetitorsWithPerplexity = async (
   brandName: string,
   businessLabel: string,
   industry: string
-): Promise<{ name: string; domain: string }[]> => {
+): Promise<{ competitors: { name: string; domain: string }[]; debug: any }> => {
+  const perplexityDebug: any = {
+    apiKeyPresent: !!process.env.PERPLEXITY_API_KEY,
+    query: null,
+    httpStatus: null,
+    rawResponse: null,
+    jsonExtracted: null,
+    parsedArray: null,
+    finalResult: null,
+    error: null
+  }
+
   if (!process.env.PERPLEXITY_API_KEY) {
-    console.warn('PERPLEXITY_API_KEY not set — skipping competitor search')
-    return []
+    perplexityDebug.error = 'PERPLEXITY_API_KEY not set — skipped'
+    return { competitors: [], debug: perplexityDebug }
   }
 
   const isLocal = marketScope === 'local' && marketCountry
@@ -133,7 +144,7 @@ Return ONLY a JSON array of objects, no other text:
   {"name": "Leo Burnett Israel", "domain": "leoburnett.com"}
 ]`
 
-  console.log('📡 [PERPLEXITY REQUEST] Full query sent:\n' + query)
+  perplexityDebug.query = query
 
   try {
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -156,30 +167,38 @@ Return ONLY a JSON array of objects, no other text:
       })
     })
 
+    perplexityDebug.httpStatus = response.status
+
     if (!response.ok) {
-      console.error('📡 [PERPLEXITY ERROR] HTTP status:', response.status, await response.text())
-      return []
+      const errText = await response.text()
+      perplexityDebug.error = `HTTP ${response.status}: ${errText}`
+      return { competitors: [], debug: perplexityDebug }
     }
 
     const result = await response.json()
     const content = result.choices?.[0]?.message?.content?.trim()
-    console.log('📡 [PERPLEXITY RESPONSE] Full raw response:\n' + content)
+    perplexityDebug.rawResponse = content || null
 
     if (!content) {
-      console.log('📡 [PERPLEXITY RESPONSE] Empty content — returning []')
-      return []
+      perplexityDebug.error = 'Empty content from Perplexity'
+      return { competitors: [], debug: perplexityDebug }
     }
 
     const jsonMatch = content.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
-      console.log('📡 [PERPLEXITY RESPONSE] No JSON array found in response')
-      return []
+      perplexityDebug.error = 'No JSON array found in response'
+      return { competitors: [], debug: perplexityDebug }
     }
 
-    console.log('📡 [PERPLEXITY RESPONSE] JSON extracted:', jsonMatch[0])
+    perplexityDebug.jsonExtracted = jsonMatch[0]
 
     const parsed = JSON.parse(jsonMatch[0])
-    if (!Array.isArray(parsed)) return []
+    perplexityDebug.parsedArray = parsed
+
+    if (!Array.isArray(parsed)) {
+      perplexityDebug.error = 'Parsed value is not an array'
+      return { competitors: [], debug: perplexityDebug }
+    }
 
     const filtered = parsed
       .filter((c: any) => c && typeof c.name === 'string' && c.name.trim())
@@ -189,11 +208,11 @@ Return ONLY a JSON array of objects, no other text:
         domain: (typeof c.domain === 'string' ? c.domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') : '')
       }))
 
-    console.log('📡 [PERPLEXITY RESULT] Final competitors after filter/map:', JSON.stringify(filtered))
-    return filtered
+    perplexityDebug.finalResult = filtered
+    return { competitors: filtered, debug: perplexityDebug }
   } catch (err) {
-    console.error('📡 [PERPLEXITY ERROR] Exception:', err)
-    return []
+    perplexityDebug.error = err instanceof Error ? err.message : String(err)
+    return { competitors: [], debug: perplexityDebug }
   }
 }
 
@@ -215,8 +234,15 @@ export async function POST(request: NextRequest) {
     const normalizedUrl = normalizeUrl(url)
     const domain = extractDomain(normalizedUrl)
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 Analyzing website:', normalizedUrl)
+    const _debug: any = {
+      timestamp: new Date().toISOString(),
+      url: normalizedUrl,
+      domain,
+      step1_websiteFetch: null,
+      step2_gptExtraction: null,
+      step3_computed: null,
+      step4_perplexity: null,
+      step5_finalAnswers: null
     }
 
     // Check for duplicate brand
@@ -247,7 +273,9 @@ export async function POST(request: NextRequest) {
     let content: string
     try {
       content = await fetchWebsiteContent(normalizedUrl)
+      _debug.step1_websiteFetch = { success: true, contentLength: content.length, contentPreview: content.substring(0, 300) }
     } catch (error) {
+      _debug.step1_websiteFetch = { success: false, error: error instanceof Error ? error.message : String(error) }
       if (error instanceof Error && error.message === 'BLOCKED_ACCESS') {
         return NextResponse.json({
           success: false,
@@ -311,8 +339,6 @@ Guidelines:
 Respond ONLY with the JSON object, no additional text.
 `
 
-    console.log('📡 [GPT-4o-mini REQUEST] model=gpt-4o-mini url=' + normalizedUrl + ' contentLength=' + content.length)
-
     let gptResult: any
     try {
       const completion = await openai.chat.completions.create({
@@ -330,17 +356,30 @@ Respond ONLY with the JSON object, no additional text.
       const responseContent = completion.choices[0]?.message?.content
       if (!responseContent) throw new Error('No response from OpenAI')
 
-      console.log('📡 [GPT-4o-mini RESPONSE] finish_reason=' + completion.choices[0]?.finish_reason + ' tokens=' + completion.usage?.completion_tokens)
-      console.log('📡 [GPT-4o-mini RESPONSE] raw:\n' + responseContent)
+      _debug.step2_gptExtraction = {
+        model: 'gpt-4o-mini',
+        finishReason: completion.choices[0]?.finish_reason,
+        completionTokens: completion.usage?.completion_tokens,
+        rawResponse: responseContent
+      }
 
       const cleanedResponse = responseContent.trim()
       const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/)
       if (!jsonMatch) throw new Error('No JSON found in response')
 
       gptResult = JSON.parse(jsonMatch[0])
-      console.log('📡 [GPT-4o-mini PARSED] brandName=' + gptResult.brandName + ' businessSummary=' + JSON.stringify(gptResult.businessSummary) + ' businessLabel=' + JSON.stringify(gptResult.businessLabel) + ' marketScope=' + gptResult.marketScope + ' marketCountry=' + gptResult.marketCountry)
+
+      _debug.step2_gptExtraction.parsedFields = {
+        brandName: gptResult.brandName,
+        businessSummary: gptResult.businessSummary,
+        businessLabel: gptResult.businessLabel,
+        marketScope: gptResult.marketScope,
+        marketCountry: gptResult.marketCountry,
+        industry: gptResult.industry,
+        problemSolved: gptResult.problemSolved
+      }
     } catch (parseError) {
-      console.error('Error parsing OpenAI response:', parseError)
+      _debug.step2_gptExtraction = { error: parseError instanceof Error ? parseError.message : String(parseError) }
       throw new Error('Failed to parse AI response as JSON')
     }
 
@@ -358,14 +397,18 @@ Respond ONLY with the JSON object, no additional text.
       ? gptResult.marketCountry
       : (tldCountryHint && marketScope === 'local' ? tldCountryHint : null)
 
-    console.log('📡 [COMPUTED] businessSummary=' + JSON.stringify(businessSummary))
-    console.log('📡 [COMPUTED] businessLabel=' + JSON.stringify(businessLabel))
-    console.log('📡 [COMPUTED] marketScope=' + marketScope + ' marketCountry=' + marketCountry)
-    console.log('📡 [COMPUTED] brandName passed to Perplexity=' + JSON.stringify(gptResult.brandName || domain))
-    console.log('📡 [COMPUTED] industry passed to Perplexity=' + JSON.stringify(gptResult.industry || ''))
+    _debug.step3_computed = {
+      businessSummary,
+      businessSummarySource: (typeof gptResult.businessSummary === 'string' && gptResult.businessSummary.trim()) ? 'gpt' : 'fallback',
+      businessLabel,
+      marketScope,
+      marketCountry,
+      brandNameForPerplexity: gptResult.brandName || domain,
+      industryForPerplexity: gptResult.industry || ''
+    }
 
     // Search for real competitors via Perplexity
-    const perplexityCompetitors = await findCompetitorsWithPerplexity(
+    const { competitors: perplexityCompetitors, debug: perplexityDebug } = await findCompetitorsWithPerplexity(
       businessSummary,
       marketScope,
       marketCountry,
@@ -373,6 +416,7 @@ Respond ONLY with the JSON object, no additional text.
       businessLabel,
       gptResult.industry || ''
     )
+    _debug.step4_perplexity = perplexityDebug
 
     // Validate and build final brand data
     const ensureArray = (arr: any, count: number, fallback: string[]): string[] => {
@@ -446,10 +490,20 @@ Respond ONLY with the JSON object, no additional text.
     const brandId = pendingBrands[0].id
     const existingAnswers = pendingBrands[0].onboarding_answers || {}
 
+    _debug.step5_finalAnswers = {
+      competitors: validatedBrandData.competitors,
+      competitorDomains: validatedBrandData.competitorDomains,
+      businessSummary: validatedBrandData.businessSummary,
+      businessLabel: validatedBrandData.businessLabel,
+      marketScope: validatedBrandData.marketScope,
+      marketCountry: validatedBrandData.marketCountry
+    }
+
     const mergedAnswers = {
       ...existingAnswers,
       ...validatedBrandData,
-      websiteUrl: normalizedUrl
+      websiteUrl: normalizedUrl,
+      _debug
     }
 
     const { error: updateError } = await supabase
