@@ -95,7 +95,9 @@ Primary language of the market: ${language}
 Generate up to 6 search queries optimized for finding direct competitors of this exact business — matching its niche, services, and target audience.
 
 Rules:
-- For local/national businesses: include geography in 2-3 queries, use local language for 1-2 queries
+- For local/national businesses: include geography in most queries
+- If the market language is not English: generate 4-5 queries in that language and at most 1 in English
+- If the market language is English: generate all queries in English
 - For global businesses: focus on category, use case, and service similarity
 - Vary the angle across queries (category, service, audience, problem solved)
 - Do NOT generate broad industry queries — keep them niche-specific
