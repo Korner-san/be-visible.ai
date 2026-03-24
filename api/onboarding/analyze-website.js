@@ -2,11 +2,24 @@
  * Vercel Serverless Function: /api/onboarding/analyze-website
  *
  * Phase A: GPT-4o-mini extracts brand info + businessSummary/businessLabel/marketScope/marketCountry
- * Phase B: Perplexity uses businessSummary to find up to 6 real competitors with domains
+ * Phase B: Competitor discovery pipeline
+ *   Step 1 — GPT-4o-mini generates niche search queries
+ *   Step 2 — Tavily runs those queries, extracts candidate domains
+ *   Step 3 — GPT-4o-mini scores each candidate against the original business
+ *   Step 4 — Rank by weighted score, return top 6
  */
 
 const OpenAI = require('openai');
-const { createClient } = require('@supabase/supabase-js');
+
+const DOMAIN_BLOCKLIST = new Set([
+  'wikipedia.org', 'linkedin.com', 'facebook.com', 'instagram.com',
+  'twitter.com', 'x.com', 'youtube.com', 'tiktok.com',
+  'g2.com', 'capterra.com', 'trustpilot.com', 'crunchbase.com',
+  'glassdoor.com', 'indeed.com', 'yelp.com', 'tripadvisor.com',
+  'amazon.com', 'google.com', 'bing.com', 'yahoo.com',
+  'reddit.com', 'quora.com', 'medium.com', 'substack.com',
+  'forbes.com', 'techcrunch.com', 'businessinsider.com', 'wsj.com',
+]);
 
 const allowedOrigins = [
   process.env.ALLOWED_ORIGIN,
@@ -31,6 +44,14 @@ const normalizeUrl = (url) => {
   return url;
 };
 
+const extractDomain = (url) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
 const fetchWebsiteContent = async (url) => {
   try {
     const controller = new AbortController();
@@ -44,92 +65,223 @@ const fetchWebsiteContent = async (url) => {
     });
     clearTimeout(timeout);
     const html = await response.text();
-    const text = html
+    return html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 8000);
-    return text;
   } catch (err) {
     console.error('[analyze-website] Fetch error:', err.message);
     return '';
   }
 };
 
-// Phase B — Perplexity competitor search
-const fetchPerplexityCompetitors = async (businessSummary, marketScope, marketCountry) => {
-  const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
-  if (!perplexityApiKey) {
-    console.error('[analyze-website] PERPLEXITY_API_KEY not set');
-    return [];
-  }
+// ─── Phase B: Step 1 — Generate search queries ────────────────────────────────
 
-  const isLocal = marketScope === 'local' && marketCountry;
+const generateSearchQueries = async (openai, businessSummary, businessLabel, marketScope, marketCountry, language) => {
+  const marketLine = marketScope === 'local' && marketCountry
+    ? `Market: ${marketCountry} (local/national business)`
+    : 'Market: Global';
 
-  const userPrompt = isLocal
-    ? `Here is a description of the company I need competitors for:\n\n${businessSummary}\n\nFind the top competitors of this business that operate in ${marketCountry}.\nList only companies with real presence or meaningful focus in the ${marketCountry} market.\nDo not include generic category names — only real company names.\nReturn ONLY a valid JSON array of up to 6 objects with "name" and "domain" fields, nothing else.\nExample format: [{"name": "Company A", "domain": "companya.com"}, {"name": "Company B", "domain": "companyb.com"}]`
-    : `Here is a description of the company I need competitors for:\n\n${businessSummary}\n\nFind the top global competitors in this space.\nList the leading companies worldwide that compete directly with this type of business.\nDo not include generic category names — only real company names.\nReturn ONLY a valid JSON array of up to 6 objects with "name" and "domain" fields, nothing else.\nExample format: [{"name": "Company A", "domain": "companya.com"}, {"name": "Company B", "domain": "companyb.com"}]`;
+  const systemPrompt = `You are a competitive intelligence expert. Generate Google search queries to find direct competitors of a specific business. Queries should target different angles: business category, services, target audience, and geography when relevant. Return only valid JSON.`;
+
+  const userPrompt = `Business type: ${businessLabel}
+Description: ${businessSummary}
+${marketLine}
+Primary language of the market: ${language}
+
+Generate up to 6 search queries optimized for finding direct competitors of this exact business — matching its niche, services, and target audience.
+
+Rules:
+- For local/national businesses: include geography in 2-3 queries, use local language for 1-2 queries
+- For global businesses: focus on category, use case, and service similarity
+- Vary the angle across queries (category, service, audience, problem solved)
+- Do NOT generate broad industry queries — keep them niche-specific
+
+Return ONLY valid JSON:
+{"queries": ["query 1", "query 2", "query 3", "query 4", "query 5", "query 6"]}`;
 
   try {
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${perplexityApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'sonar-pro',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a market research expert. Return only valid JSON arrays as instructed, no additional text or explanation.',
-          },
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 600,
-      }),
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.4,
+      max_tokens: 400,
+      response_format: { type: 'json_object' },
     });
 
-    if (!response.ok) {
-      console.error('[analyze-website] Perplexity API error:', response.status);
-      return [];
-    }
+    const raw = completion.choices[0]?.message?.content?.trim();
+    if (!raw) return [];
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) return [];
-
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) return [];
-
-    const competitors = parsed
-      .filter((item) => item && typeof item === 'object' && item.name)
-      .map((item) => ({
-        name: String(item.name).trim(),
-        domain: String(item.domain || '')
-          .trim()
-          .replace(/^https?:\/\//, '')
-          .replace(/^www\./, '')
-          .replace(/\/$/, ''),
-      }))
-      .slice(0, 6);
-
-    console.log(`[analyze-website] Perplexity returned ${competitors.length} competitors`);
-    return competitors;
+    const parsed = JSON.parse(raw);
+    const queries = Array.isArray(parsed.queries) ? parsed.queries.filter(q => typeof q === 'string' && q.trim()) : [];
+    console.log(`[analyze-website] Step 1 — generated ${queries.length} queries:`, queries);
+    return queries;
   } catch (err) {
-    console.error('[analyze-website] Perplexity call failed:', err.message);
+    console.error('[analyze-website] Query generation failed:', err.message);
     return [];
   }
 };
+
+// ─── Phase B: Step 2 — Search candidates via Tavily ───────────────────────────
+
+const searchCandidates = async (queries, originalDomain) => {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (!tavilyKey) {
+    console.error('[analyze-website] TAVILY_API_KEY not set');
+    return [];
+  }
+
+  const results = await Promise.all(
+    queries.map(async (query) => {
+      try {
+        const res = await fetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: tavilyKey,
+            query,
+            search_depth: 'basic',
+            max_results: 5,
+            include_answer: false,
+          }),
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.results || [];
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  // Flatten, extract domains, score by frequency (more queries = higher rank)
+  const domainScore = {};
+  const domainMeta = {};
+
+  for (const queryResults of results) {
+    for (const item of queryResults) {
+      const domain = extractDomain(item.url);
+      if (!domain) continue;
+      if (domain === originalDomain) continue;
+      if (DOMAIN_BLOCKLIST.has(domain)) continue;
+
+      domainScore[domain] = (domainScore[domain] || 0) + 1;
+      if (!domainMeta[domain]) {
+        domainMeta[domain] = {
+          domain,
+          title: item.title || domain,
+          snippet: (item.content || item.snippet || '').slice(0, 300),
+        };
+      }
+    }
+  }
+
+  const candidates = Object.entries(domainScore)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([domain]) => domainMeta[domain]);
+
+  console.log(`[analyze-website] Step 2 — ${candidates.length} unique candidates found`);
+  return candidates;
+};
+
+// ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
+
+const scoreCandidates = async (openai, candidates, businessSummary, businessLabel, marketScope) => {
+  if (!candidates.length) return [];
+
+  const systemPrompt = `You are a competitive intelligence analyst. Score how similar a candidate business is to a reference business. Return only valid JSON, no explanation outside the JSON.`;
+
+  const scores = await Promise.all(
+    candidates.map(async (candidate) => {
+      const userPrompt = `Reference business:
+Type: ${businessLabel}
+Description: ${businessSummary}
+
+Candidate:
+Domain: ${candidate.domain}
+Title: ${candidate.title}
+Description: ${candidate.snippet}
+
+Score the candidate as a direct competitor to the reference business (0–10 each):
+- nicheSimilarity: same specific niche?
+- serviceSimilarity: same or very similar services?
+- audienceSimilarity: same target audience/customer segment?
+- geographyFit: same geography?
+- overallFit: how strong a competitor overall?
+
+Return ONLY valid JSON:
+{"nicheSimilarity":0,"serviceSimilarity":0,"audienceSimilarity":0,"geographyFit":0,"overallFit":0,"name":"inferred company name","reasoning":"one sentence"}`;
+
+      try {
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 200,
+          response_format: { type: 'json_object' },
+        });
+
+        const raw = completion.choices[0]?.message?.content?.trim();
+        if (!raw) return null;
+        const s = JSON.parse(raw);
+        return { ...candidate, ...s };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  // Step 4 — Rank by weighted score
+  const geographyWeight = marketScope === 'local' ? 1.5 : 0.5;
+  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2;
+
+  return scores
+    .filter(Boolean)
+    .map((s) => ({
+      ...s,
+      weightedScore: (
+        (s.nicheSimilarity || 0) * 2 +
+        (s.serviceSimilarity || 0) * 2 +
+        (s.audienceSimilarity || 0) * 1.5 +
+        (s.geographyFit || 0) * geographyWeight +
+        (s.overallFit || 0) * 2
+      ) / normalizer,
+    }))
+    .sort((a, b) => b.weightedScore - a.weightedScore)
+    .slice(0, 6)
+    .map((s) => ({
+      name: s.name || s.title || s.domain,
+      domain: s.domain,
+    }));
+};
+
+// ─── Phase B: Orchestrator ────────────────────────────────────────────────────
+
+const discoverCompetitors = async (openai, { businessSummary, businessLabel, marketScope, marketCountry, language, originalDomain }) => {
+  if (!businessSummary) return [];
+
+  const queries = await generateSearchQueries(openai, businessSummary, businessLabel, marketScope, marketCountry, language);
+  if (!queries.length) return [];
+
+  const candidates = await searchCandidates(queries, originalDomain);
+  if (!candidates.length) return [];
+
+  const competitors = await scoreCandidates(openai, candidates, businessSummary, businessLabel, marketScope);
+  console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
+  return competitors;
+};
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
 
 module.exports = async function handler(req, res) {
   setCorsHeaders(req, res);
@@ -149,6 +301,7 @@ module.exports = async function handler(req, res) {
   }
 
   const normalizedUrl = normalizeUrl(url);
+  const originalDomain = extractDomain(normalizedUrl);
 
   try {
     const websiteContent = await fetchWebsiteContent(normalizedUrl);
@@ -162,7 +315,7 @@ module.exports = async function handler(req, res) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Phase A — GPT-4o-mini extraction
+    // Phase A — GPT-4o-mini brand extraction
     const systemPrompt = `You are a brand analyst. Extract brand information from the provided website content.
 The user selected these regional settings:
 - Language: ${language}
@@ -217,12 +370,15 @@ Guidelines:
 
     console.log(`[analyze-website] Phase A complete — businessLabel: "${gptData.businessLabel}", marketScope: ${gptData.marketScope}, marketCountry: ${gptData.marketCountry}`);
 
-    // Phase B — Perplexity competitor search (sequential)
-    const competitors = gptData.businessSummary
-      ? await fetchPerplexityCompetitors(gptData.businessSummary, gptData.marketScope, gptData.marketCountry)
-      : [];
-
-    console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors found`);
+    // Phase B — Competitor discovery pipeline
+    const competitors = await discoverCompetitors(openai, {
+      businessSummary: gptData.businessSummary,
+      businessLabel: gptData.businessLabel,
+      marketScope: gptData.marketScope,
+      marketCountry: gptData.marketCountry,
+      language,
+      originalDomain,
+    });
 
     const brandData = {
       brandName: gptData.brandName,
@@ -246,9 +402,6 @@ Guidelines:
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error('[analyze-website] Error:', errMsg);
-    return res.status(500).json({
-      success: false,
-      error: errMsg,
-    });
+    return res.status(500).json({ success: false, error: errMsg });
   }
 };
