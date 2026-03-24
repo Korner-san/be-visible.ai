@@ -4,6 +4,9 @@ import { createPendingBrand } from '@/lib/supabase/user-state'
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json().catch(() => ({}))
+    const { brandName, website } = body
+
     // Get user from server-side auth (more secure than trusting client userId)
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -28,17 +31,25 @@ export async function POST(request: NextRequest) {
 
     if (existingBrands && existingBrands.length > 0) {
       const brand = existingBrands[0]
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Using existing pending brand:', brand.id)
       }
-      
+
+      // Update name/domain if provided
+      if (brandName || website) {
+        await supabase.from('brands').update({
+          ...(brandName ? { name: brandName } : {}),
+          ...(website ? { domain: website } : {}),
+        }).eq('id', brand.id)
+      }
+
       return NextResponse.json({
         success: true,
         brandId: brand.id,
         existingAnswers: brand.onboarding_answers || {},
-        brandName: brand.name,
-        brandDomain: brand.domain
+        brandName: brandName || brand.name,
+        brandDomain: website || brand.domain
       })
     }
 
@@ -56,12 +67,20 @@ export async function POST(request: NextRequest) {
       console.log('✨ Created new pending brand:', pendingBrand.id)
     }
 
+    // Update name/domain on the newly created brand if provided
+    if (brandName || website) {
+      await supabase.from('brands').update({
+        ...(brandName ? { name: brandName } : {}),
+        ...(website ? { domain: website } : {}),
+      }).eq('id', pendingBrand.id)
+    }
+
     return NextResponse.json({
       success: true,
       brandId: pendingBrand.id,
       existingAnswers: {},
-      brandName: pendingBrand.name,
-      brandDomain: pendingBrand.domain
+      brandName: brandName || pendingBrand.name,
+      brandDomain: website || pendingBrand.domain
     })
 
   } catch (error) {

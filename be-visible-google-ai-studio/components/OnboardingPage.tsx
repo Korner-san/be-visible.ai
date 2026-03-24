@@ -321,7 +321,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
     // Call serverless function (uses service role key to bypass RLS)
     try {
-      const res = await fetch('/api/onboarding/create-brand', {
+      const res = await fetch('/api/onboarding/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, email: user.email, brandName, website }),
