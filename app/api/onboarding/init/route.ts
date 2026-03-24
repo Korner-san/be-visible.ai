@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getAuthUser } from '@/lib/supabase/auth-helper'
 import { createPendingBrand } from '@/lib/supabase/user-state'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
-    const { brandName, website } = body
+    const { userId, brandName, website } = body
 
-    const user = await getAuthUser(request)
-    if (!user) {
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error: 'userId is required' },
+        { status: 400 }
       )
     }
 
@@ -23,7 +21,7 @@ export async function POST(request: NextRequest) {
     const { data: existingBrands } = await supabase
       .from('brands')
       .select('id, onboarding_answers, name, domain')
-      .eq('owner_user_id', user.id)
+      .eq('owner_user_id', userId)
       .eq('is_demo', false)
       .eq('onboarding_completed', false)
       .order('created_at', { ascending: false })
@@ -54,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new pending brand using the helper function
-    const pendingBrand = await createPendingBrand(user.id)
+    const pendingBrand = await createPendingBrand(userId)
     
     if (!pendingBrand) {
       return NextResponse.json(
