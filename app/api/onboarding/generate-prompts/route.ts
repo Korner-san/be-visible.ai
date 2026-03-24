@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { getAuthUser } from '@/lib/supabase/auth-helper'
 import OpenAI from 'openai'
 
 interface OnboardingFormData {
@@ -161,13 +162,12 @@ export async function POST(request: NextRequest) {
   console.log('🔄 [GENERATE PROMPTS API] Starting prompt generation request')
 
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    const user = await getAuthUser(request)
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = createServiceClient()
     console.log('🔄 [GENERATE PROMPTS] Starting generation for user:', user.id)
 
     const { data: pendingBrands, error: brandError } = await supabase

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { getAuthUser } from '@/lib/supabase/auth-helper'
 import { createPendingBrand } from '@/lib/supabase/user-state'
 
 export async function POST(request: NextRequest) {
@@ -7,16 +8,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const { brandName, website } = body
 
-    // Get user from server-side auth (more secure than trusting client userId)
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
+    const user = await getAuthUser(request)
+    if (!user) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       )
     }
+
+    const supabase = createServiceClient()
 
     // Idempotent brand resolution - find or create pending brand
     // First, check for existing pending brand

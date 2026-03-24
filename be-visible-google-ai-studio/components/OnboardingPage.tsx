@@ -258,6 +258,18 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   const totalSteps = 13;
   const progressPercentage = Math.round((step / totalSteps) * 100);
 
+  // ── Authenticated fetch — includes Bearer token for Next.js API routes ───────
+  const authFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+    });
+  }, []);
+
   // ── Load existing brand data if resuming ────────────────────────────────────
   useEffect(() => {
     if (!existingBrandId) return;
@@ -321,7 +333,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
     // Call serverless function (uses service role key to bypass RLS)
     try {
-      const res = await fetch('/api/onboarding/init', {
+      const res = await authFetch('/api/onboarding/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, email: user.email, brandName, website }),
@@ -369,7 +381,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       }, 1800);
 
       try {
-        const response = await fetch('/api/onboarding/analyze-website', {
+        const response = await authFetch('/api/onboarding/analyze-website', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: data.website, language: data.language }),
@@ -505,7 +517,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
     try {
       // Step 1: Generate 30 prompts
-      const genRes = await fetch('/api/onboarding/generate-prompts', {
+      const genRes = await authFetch('/api/onboarding/generate-prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -528,7 +540,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       setGenerationStep(3);
 
       // Step 2: Improve all 30 prompts
-      const improveRes = await fetch('/api/onboarding/improve-prompts', {
+      const improveRes = await authFetch('/api/onboarding/improve-prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brandId: currentBrandId, language: data.language }),
@@ -595,7 +607,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     try {
       const selectedIds = promptIds || generatedPrompts.map(p => p.id).filter(Boolean);
 
-      const res = await fetch('/api/onboarding/complete-final', {
+      const res = await authFetch('/api/onboarding/complete-final', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brandId, selectedPromptIds: selectedIds, timezone: data.timezone }),

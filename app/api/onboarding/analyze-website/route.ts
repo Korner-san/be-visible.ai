@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { getAuthUser } from '@/lib/supabase/auth-helper'
 import OpenAI from 'openai'
 
 interface AnalyzeWebsiteRequest {
@@ -224,12 +225,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'URL is required' }, { status: 400 })
     }
 
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    const user = await getAuthUser(request)
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createServiceClient()
 
     const normalizedUrl = normalizeUrl(url)
     const domain = extractDomain(normalizedUrl)
