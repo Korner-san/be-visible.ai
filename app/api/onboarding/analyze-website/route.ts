@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
 interface AnalyzeWebsiteRequest {
@@ -355,8 +356,14 @@ Respond ONLY with the JSON object, no additional text or explanation.
         websiteUrl: normalizedUrl
       }
 
+      // Use admin client to bypass RLS — Vite app uses localStorage auth, not cookies
+      const adminSupabase = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+
       // Update the brand with analyzed data and domain
-      const { error: updateError } = await supabase
+      const { error: updateError } = await adminSupabase
         .from('brands')
         .update({
           onboarding_answers: mergedAnswers,
