@@ -294,11 +294,6 @@ export async function POST(request: NextRequest) {
     })
 
     // Use upsert to handle duplicates (based on unique constraint on brand_id + raw_prompt)
-    // Use admin client to bypass RLS — Vite app uses localStorage auth, not cookies
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
     console.log('💾 [GENERATE PROMPTS API] Executing upsert to brand_prompts table...')
     const { data: insertedPrompts, error: insertError } = await adminSupabase
       .from('brand_prompts')
