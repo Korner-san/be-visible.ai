@@ -43,12 +43,7 @@ interface OnboardingData {
   keyFeatures: string[];
   useCases: string[];
   competitors: string[];
-  competitorDomains: string[];
   uniqueSellingProps: string[];
-  businessSummary?: string;
-  businessLabel?: string;
-  marketScope?: string;
-  marketCountry?: string | null;
 }
 
 interface GeneratedPrompt {
@@ -77,12 +72,7 @@ const emptyData: OnboardingData = {
   keyFeatures: ['', '', '', ''],
   useCases: ['', '', '', ''],
   competitors: ['', '', '', ''],
-  competitorDomains: ['', '', '', ''],
   uniqueSellingProps: ['', '', '', ''],
-  businessSummary: '',
-  businessLabel: '',
-  marketScope: '',
-  marketCountry: null,
 };
 
 const languages = [
@@ -196,10 +186,10 @@ const HexagonIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const CompetitorLogo = ({ name, domain }: { name: string; domain?: string }) => {
+const CompetitorLogo = ({ name }: { name: string }) => {
   const [error, setError] = useState(false);
-  const resolvedDomain = domain || (name.includes('.') && !name.includes(' ') ? name : name.toLowerCase().replace(/\s/g, '') + '.com');
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${resolvedDomain}&sz=64`;
+  const isDomain = name.includes('.') && !name.includes(' ');
+  const faviconUrl = `https://www.google.com/s2/favicons?domain=${isDomain ? name : name.toLowerCase().replace(/\s/g, '') + '.com'}&sz=64`;
 
   if (error || !name) {
     return (
@@ -247,28 +237,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
 
-  // ── USP suggestions (from website scan — shown as chips, not auto-filled) ──
-  const [uspSuggestions, setUspSuggestions] = useState<string[]>([]);
-  // Maps suggestionIndex → fieldIndex (which field it was placed into)
-  const [suggestionFieldMap, setSuggestionFieldMap] = useState<Map<number, number>>(new Map());
-
   // ── View: 'onboarding' | 'edit-prompts' ───────────────────────────────────
   const [view, setView] = useState<'onboarding' | 'edit-prompts'>('onboarding');
 
   const totalSteps = 13;
   const progressPercentage = Math.round((step / totalSteps) * 100);
-
-  // ── Authenticated fetch — includes Bearer token for Next.js API routes ───────
-  const authFetch = useCallback(async (url: string, options: RequestInit = {}) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-    });
-  }, []);
 
   // ── Load existing brand data if resuming ────────────────────────────────────
   useEffect(() => {
@@ -333,7 +306,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
     // Call serverless function (uses service role key to bypass RLS)
     try {
-      const res = await authFetch('/api/onboarding/init', {
+      const res = await fetch('/api/onboarding/create-brand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, email: user.email, brandName, website }),
@@ -358,13 +331,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   };
 
   // ── Save current answers to Supabase ────────────────────────────────────────
-  // Uses DB-side JSONB merge (|| operator) to atomically patch only the fields
-  // in currentData, preserving API-written fields like _debug that are not in OnboardingData.
   const saveAnswers = async (currentBrandId: string, currentData: OnboardingData) => {
-    await supabase.rpc('patch_onboarding_answers', {
-      p_brand_id: currentBrandId,
-      p_answers: currentData as any,
-    });
+    await supabase
+      .from('brands')
+      .update({ onboarding_answers: currentData })
+      .eq('id', currentBrandId);
   };
 
   // ── Step 3: website analysis ─────────────────────────────────────────────────
@@ -381,7 +352,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       }, 1800);
 
       try {
-        const response = await authFetch('/api/onboarding/analyze-website', {
+        const response = await fetch('/api/onboarding/analyze-website', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: data.website, language: data.language }),
@@ -402,17 +373,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             keyFeatures: bd.keyFeatures?.length ? bd.keyFeatures.slice(0, 4) : prev.keyFeatures,
             useCases: bd.useCases?.length ? bd.useCases.slice(0, 4) : prev.useCases,
             competitors: bd.competitors?.length ? bd.competitors.slice(0, 4) : prev.competitors,
-            competitorDomains: bd.competitorDomains?.length ? bd.competitorDomains.slice(0, 4) : prev.competitorDomains,
-            // uniqueSellingProps intentionally NOT auto-filled — shown as suggestion chips instead
-            businessSummary: bd.businessSummary || prev.businessSummary,
-            businessLabel: bd.businessLabel || prev.businessLabel,
-            marketScope: bd.marketScope || prev.marketScope,
-            marketCountry: bd.marketCountry ?? prev.marketCountry,
+            uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
           }));
-          // Populate USP suggestions (user clicks to accept, not auto-filled)
-          if (bd.uniqueSellingProps?.length) {
-            setUspSuggestions(bd.uniqueSellingProps.slice(0, 6));
-          }
           setPrefilled(true);
         } else {
           setWebsiteAnalysisError('Could not auto-fill from website. Fill in the fields manually.');
@@ -517,7 +479,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
 
     try {
       // Step 1: Generate 30 prompts
-      const genRes = await authFetch('/api/onboarding/generate-prompts', {
+      const genRes = await fetch('/api/onboarding/generate-prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -540,7 +502,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
       setGenerationStep(3);
 
       // Step 2: Improve all 30 prompts
-      const improveRes = await authFetch('/api/onboarding/improve-prompts', {
+      const improveRes = await fetch('/api/onboarding/improve-prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brandId: currentBrandId, language: data.language }),
@@ -572,32 +534,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     }
   };
 
-  // ── USP suggestion chip click ────────────────────────────────────────────────
-  const handleUspSuggestionClick = (suggestionIndex: number, text: string) => {
-    const currentUsps = [...data.uniqueSellingProps];
-    if (suggestionFieldMap.has(suggestionIndex)) {
-      // Deselect: clear the field this chip filled
-      const fieldIndex = suggestionFieldMap.get(suggestionIndex)!;
-      currentUsps[fieldIndex] = '';
-      setData(prev => {
-        const updated = [...prev.uniqueSellingProps];
-        updated[fieldIndex] = '';
-        return { ...prev, uniqueSellingProps: updated };
-      });
-      setSuggestionFieldMap(prev => { const m = new Map(prev); m.delete(suggestionIndex); return m; });
-    } else {
-      // Select: fill first empty field
-      let targetIndex = currentUsps.findIndex(v => !v.trim());
-      if (targetIndex === -1) targetIndex = currentUsps.length - 1; // replace last if all filled
-      setData(prev => {
-        const updated = [...prev.uniqueSellingProps];
-        updated[targetIndex] = text;
-        return { ...prev, uniqueSellingProps: updated };
-      });
-      setSuggestionFieldMap(prev => new Map([...prev, [suggestionIndex, targetIndex]]));
-    }
-  };
-
   // ── Finish Onboarding ────────────────────────────────────────────────────────
   const handleFinish = async (promptIds?: string[]) => {
     if (!brandId) return;
@@ -607,7 +543,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     try {
       const selectedIds = promptIds || generatedPrompts.map(p => p.id).filter(Boolean);
 
-      const res = await authFetch('/api/onboarding/complete-final', {
+      const res = await fetch('/api/onboarding/complete-final', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brandId, selectedPromptIds: selectedIds, timezone: data.timezone }),
@@ -935,13 +871,13 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         return (
           <div className="animate-fadeIn">
             {beVisibleBadge}
-            <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">What actions does your product help users complete?</h2>
-            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">List the main actions your product assists with</p>
+            <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">What tasks does your product help users complete?</h2>
+            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">List the main tasks your product assists with</p>
             <div className="grid grid-cols-1 gap-3 max-h-[220px] overflow-y-auto custom-scrollbar pr-2">
               {(data.tasksHelped as string[]).map((task, i) => (
                 <input key={i} type="text" value={task}
                   onChange={(e) => handleArrayChange('tasksHelped', i, e.target.value)}
-                  placeholder={`Action ${i + 1}`}
+                  placeholder={`Task ${i + 1}`}
                   className="w-full px-4 py-2 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] transition-all bg-white text-sm" />
               ))}
             </div>
@@ -1002,7 +938,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(data.competitors as string[]).map((comp, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <CompetitorLogo name={comp} domain={data.competitorDomains?.[i]} />
+                  <CompetitorLogo name={comp} />
                   <input type="text" value={comp}
                     onChange={(e) => handleArrayChange('competitors', i, e.target.value)}
                     placeholder="Brand name"
@@ -1027,37 +963,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                   className="w-full px-4 py-2.5 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] text-sm" />
               ))}
             </div>
-            {uspSuggestions.length > 0 && (
-              <div className="mt-6 pt-5 border-t border-gray-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                  Suggestions based on your website{' '}
-                  <span className="font-normal normal-case text-slate-400">— optional, click to add</span>
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {uspSuggestions.map((suggestion, i) => {
-                    const isUsed = suggestionFieldMap.has(i);
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => handleUspSuggestionClick(i, suggestion)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all ${
-                          isUsed
-                            ? 'bg-brand-brown/10 border-brand-brown/30 text-brand-brown opacity-60'
-                            : 'bg-white border-gray-200 text-slate-700 hover:border-brand-brown/40 hover:bg-brand-brown/5 cursor-pointer'
-                        }`}
-                      >
-                        {isUsed
-                          ? <CheckCircle2 size={13} className="shrink-0" />
-                          : <span className="shrink-0 text-amber-500 text-xs">💡</span>
-                        }
-                        <span className={isUsed ? 'line-through' : ''}>{suggestion}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         );
 

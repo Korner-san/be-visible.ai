@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { getAuthUser } from '@/lib/supabase/auth-helper'
+import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 // Normalize domain function
@@ -21,13 +20,16 @@ export async function POST(request: NextRequest) {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
     console.log('🔄 [COMPLETE-FINAL API] Timestamp:', new Date().toISOString())
     
-    const user = await getAuthUser(request)
-    if (!user) {
-      console.error('❌ [COMPLETE-FINAL API] Auth error: no user')
+    const supabase = await createClient()
+    
+    // Get current user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      console.error('❌ [COMPLETE-FINAL API] Auth error:', authError)
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 })
     }
     
-    const supabase = createServiceClient()
     console.log('✅ [COMPLETE-FINAL API] User authenticated:', user.id)
 
     // Parse request body

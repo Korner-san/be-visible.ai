@@ -58,11 +58,6 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
     initialPrompts.map(p => ({ ...p, text: p.text, isNew: false, isDeleted: false }))
   );
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
-  // Reset selection when category changes to avoid invisible selected items
-  const setSelectedCategoryAndReset = (cat: string) => {
-    setSelectedCategory(cat);
-    setSelectedPromptIds(new Set());
-  };
   const [searchQuery, setSearchQuery] = useState('');
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -150,7 +145,7 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
   const deleteCategory = (name: string) => {
     setPrompts(prev => prev.map(p => p.category === name ? { ...p, isDeleted: true } : p));
     setManualCategories(prev => prev.filter(c => c !== name));
-    if (selectedCategory === name) setSelectedCategoryAndReset('ALL');
+    if (selectedCategory === name) setSelectedCategory('ALL');
   };
 
   // ── Finish ───────────────────────────────────────────────────────────────────
@@ -239,7 +234,7 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
           <div className="p-4 border-b border-gray-100">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Categories</p>
             <button
-              onClick={() => setSelectedCategoryAndReset('ALL')}
+              onClick={() => setSelectedCategory('ALL')}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex justify-between items-center transition-colors ${
                 selectedCategory === 'ALL' ? 'bg-brand-brown/10 text-brand-brown' : 'text-slate-600 hover:bg-gray-50'
               }`}>
@@ -262,7 +257,7 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
                     />
                   ) : (
                     <button
-                      onClick={() => setSelectedCategoryAndReset(cat)}
+                      onClick={() => setSelectedCategory(cat)}
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm flex justify-between items-center transition-colors ${
                         selectedCategory === cat ? 'bg-brand-brown/10 text-brand-brown font-semibold' : 'text-slate-600 hover:bg-gray-50'
                       }`}>
@@ -319,36 +314,6 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-brand-brown/40"
               />
             </div>
-            {/* Select All / Deselect All */}
-            {filteredPrompts.length > 0 && (
-              <button
-                onClick={() => {
-                  const allVisibleIds = filteredPrompts.map(p => p.id);
-                  const allSelected = allVisibleIds.every(id => selectedPromptIds.has(id));
-                  if (allSelected) {
-                    setSelectedPromptIds(new Set());
-                  } else {
-                    setSelectedPromptIds(new Set(allVisibleIds));
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
-              >
-                <input
-                  type="checkbox"
-                  readOnly
-                  checked={filteredPrompts.every(p => selectedPromptIds.has(p.id))}
-                  ref={el => {
-                    if (el) {
-                      const someSelected = filteredPrompts.some(p => selectedPromptIds.has(p.id));
-                      const allSelected = filteredPrompts.every(p => selectedPromptIds.has(p.id));
-                      el.indeterminate = someSelected && !allSelected;
-                    }
-                  }}
-                  className="accent-brand-brown pointer-events-none"
-                />
-                Select all ({filteredPrompts.length})
-              </button>
-            )}
             {selectedPromptIds.size > 0 && (
               <button onClick={deleteSelected}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
