@@ -32,6 +32,16 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY;
 const BRAND_ID = process.env.BRAND_ID;
 const DAILY_REPORT_ID = process.env.DAILY_REPORT_ID;
 const PROMPT_IDS_JSON = process.env.PROMPT_IDS_JSON;
+const MODEL_EXECUTION_ID = process.env.MODEL_EXECUTION_ID || null;
+
+async function updateBME(data) {
+  if (!MODEL_EXECUTION_ID) return;
+  const { error } = await supabase
+    .from('batch_model_executions')
+    .update(data)
+    .eq('id', MODEL_EXECUTION_ID);
+  if (error) console.warn('[AIO] BME update failed:', error.message);
+}
 
 // 1.2 sec between prompts — respects SerpAPI rate limit (each prompt = 2 API calls)
 const RATE_LIMIT_MS = 1200;
@@ -128,6 +138,9 @@ async function main() {
     .from('daily_reports')
     .update({ google_ai_overview_attempted: prompts.length })
     .eq('id', DAILY_REPORT_ID);
+
+  // Mark BME as running (started_at already set by execute-batch, just confirm)
+  await updateBME({ status: 'running', started_at: new Date().toISOString(), prompts_attempted: prompts.length });
 
   let okCount = 0;
   let noResultCount = 0;
@@ -228,6 +241,15 @@ async function main() {
     })
     .eq('id', DAILY_REPORT_ID);
 
+  // Update BME with final outcome
+  await updateBME({
+    status: errorCount === prompts.length ? 'failed' : 'completed',
+    completed_at: new Date().toISOString(),
+    prompts_ok: okCount,
+    prompts_no_result: noResultCount,
+    prompts_failed: errorCount,
+  });
+
   console.log('\n' + '='.repeat(60));
   console.log('📊 GOOGLE AIO SUMMARY');
   console.log('='.repeat(60));
@@ -237,7 +259,8 @@ async function main() {
   console.log('='.repeat(60) + '\n');
 }
 
-main().catch(err => {
+main().catch(async err => {
   console.error('[GOOGLE-AIO] Fatal:', err.message, err.stack);
+  await updateBME({ status: 'failed', completed_at: new Date().toISOString(), error_message: err.message });
   process.exit(1);
 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
 interface BrandPrompt {
@@ -107,15 +106,9 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.OPENAI_API_KEY,
     })
 
-    // Use admin client to bypass RLS — Vite app uses localStorage auth, not cookies
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
     // Get the user's pending brand
     console.log('🔍 [IMPROVE PROMPTS API] Looking for pending brand for user:', user.id)
-    const { data: pendingBrands, error: brandError } = await adminSupabase
+    const { data: pendingBrands, error: brandError } = await supabase
       .from('brands')
       .select('id, name, onboarding_answers, onboarding_completed, owner_user_id')
       .eq('owner_user_id', user.id)
@@ -149,7 +142,7 @@ export async function POST(request: NextRequest) {
 
     // Get all inactive prompts for this brand that don't have improved versions yet
     console.log('🔍 [IMPROVE PROMPTS API] Looking for inactive prompts for brand:', brand.id)
-    const { data: draftPrompts, error: promptsError } = await adminSupabase
+    const { data: draftPrompts, error: promptsError } = await supabase
       .from('brand_prompts')
       .select('id, brand_id, source_template_code, raw_prompt, improved_prompt, status')
       .eq('brand_id', brand.id)
@@ -250,13 +243,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get final counts
-    const { count: totalImproved } = await adminSupabase
+    const { count: totalImproved } = await supabase
       .from('brand_prompts')
       .select('*', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
       .eq('status', 'improved')
 
-    const { count: totalPrompts } = await adminSupabase
+    const { count: totalPrompts } = await supabase
       .from('brand_prompts')
       .select('*', { count: 'exact', head: true })
       .eq('brand_id', brand.id)

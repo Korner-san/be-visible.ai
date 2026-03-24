@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
 interface OnboardingFormData {
@@ -191,11 +190,7 @@ export async function POST(request: NextRequest) {
 
     // Get the user's pending brand and onboarding answers
     console.log('🔍 [GENERATE PROMPTS API] Looking for pending brand for user:', user.id)
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    const { data: pendingBrands, error: brandError } = await adminSupabase
+    const { data: pendingBrands, error: brandError } = await supabase
       .from('brands')
       .select('id, onboarding_answers, name, onboarding_completed, owner_user_id')
       .eq('owner_user_id', user.id)
@@ -295,7 +290,7 @@ export async function POST(request: NextRequest) {
 
     // Use upsert to handle duplicates (based on unique constraint on brand_id + raw_prompt)
     console.log('💾 [GENERATE PROMPTS API] Executing upsert to brand_prompts table...')
-    const { data: insertedPrompts, error: insertError } = await adminSupabase
+    const { data: insertedPrompts, error: insertError } = await supabase
       .from('brand_prompts')
       .upsert(promptsToInsert, {
         onConflict: 'brand_id,raw_prompt',
@@ -323,7 +318,7 @@ export async function POST(request: NextRequest) {
 
     // Get final count of prompts for this brand
     console.log('🔍 [GENERATE PROMPTS API] Getting final prompt count for brand:', brand.id)
-    const { count: totalPrompts } = await adminSupabase
+    const { count: totalPrompts } = await supabase
       .from('brand_prompts')
       .select('*', { count: 'exact', head: true })
       .eq('brand_id', brand.id)

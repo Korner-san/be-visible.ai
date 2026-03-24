@@ -55,8 +55,8 @@ async function processDailyReportCitations(dailyReportId) {
     // Mark URL processing as started
     await updateUrlProcessingStatus(dailyReportId, 'running');
 
-    // Step 1: Extract all ChatGPT citations from this report
-    const citations = await extractChatGPTCitations(dailyReportId);
+    // Step 1: Extract all citations from this report (all providers)
+    const citations = await extractAllCitations(dailyReportId);
     console.log(`📊 [CITATIONS] Found ${citations.length} total citations`);
 
     if (citations.length === 0) {
@@ -129,13 +129,12 @@ async function processDailyReportCitations(dailyReportId) {
   }
 }
 
-// ========== STEP 1: Extract ChatGPT Citations ==========
-async function extractChatGPTCitations(dailyReportId) {
+// ========== STEP 1: Extract Citations (all providers) ==========
+async function extractAllCitations(dailyReportId) {
   const { data: promptResults, error } = await supabase
     .from('prompt_results')
-    .select('id, chatgpt_citations, brand_prompt_id')
+    .select('id, provider, chatgpt_citations, brand_prompt_id')
     .eq('daily_report_id', dailyReportId)
-    .eq('provider', 'chatgpt')
     .in('provider_status', ['ok']);
 
   if (error) {
@@ -151,7 +150,8 @@ async function extractChatGPTCitations(dailyReportId) {
         allCitations.push({
           url: normalizeUrl(url),
           promptResultId: result.id,
-          brandPromptId: result.brand_prompt_id
+          brandPromptId: result.brand_prompt_id,
+          provider: result.provider || 'chatgpt',
         });
       }
     });
@@ -242,33 +242,30 @@ async function categorizeUrls(citations) {
 async function extractUrlsViaTavily(urls) {
   if (urls.length === 0) return [];
 
-  const results = [];
   const batchSize = 20;
+  const batches = [];
+  for (let i = 0; i < urls.length; i += batchSize) batches.push(urls.slice(i, i + batchSize));
 
-  for (let i = 0; i < urls.length; i += batchSize) {
-    const batch = urls.slice(i, i + batchSize);
-    console.log(`🔍 [TAVILY] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(urls.length/batchSize)} (${batch.length} URLs)`);
+  console.log(`🔍 [TAVILY] Firing ${batches.length} batches in parallel (${urls.length} URLs total)`);
 
+  async function extractBatch(batch, batchIndex) {
     try {
       const response = await fetch('https://api.tavily.com/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: tavilyApiKey,
-          urls: batch
-        })
+        body: JSON.stringify({ api_key: tavilyApiKey, urls: batch })
       });
 
       if (!response.ok) {
-        console.error(`❌ [TAVILY] API Error: ${response.status}`);
-        batch.forEach(url => results.push({ url, success: false, error: `API error ${response.status}` }));
-        continue;
+        console.error(`❌ [TAVILY] Batch ${batchIndex}: HTTP ${response.status}`);
+        return batch.map(url => ({ url, success: false, error: `API error ${response.status}` }));
       }
 
       const data = await response.json();
+      const batchResults = [];
 
       (data.results || []).forEach(result => {
-        results.push({
+        batchResults.push({
           url: result.url,
           content: result.raw_content,
           title: extractTitleFromContent(result.raw_content),
@@ -277,24 +274,20 @@ async function extractUrlsViaTavily(urls) {
       });
 
       (data.failed_results || []).forEach(result => {
-        results.push({
-          url: result.url,
-          success: false,
-          error: result.error
-        });
+        batchResults.push({ url: result.url, success: false, error: result.error });
       });
 
-      if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      console.log(`✅ [TAVILY] Batch ${batchIndex}: ${(data.results || []).length} ok / ${(data.failed_results || []).length} failed`);
+      return batchResults;
 
     } catch (error) {
-      console.error(`❌ [TAVILY] Batch error:`, error.message);
-      batch.forEach(url => results.push({ url, success: false, error: error.message }));
+      console.error(`❌ [TAVILY] Batch ${batchIndex} error:`, error.message);
+      return batch.map(url => ({ url, success: false, error: error.message }));
     }
   }
 
-  return results;
+  const batchResults = await Promise.all(batches.map((batch, i) => extractBatch(batch, i + 1)));
+  return batchResults.flat();
 }
 
 // ========== STEP 3b: Store URL Content — bulk upsert ==========
@@ -420,16 +413,15 @@ async function prepareClassificationInputs(urls, urlMap) {
 async function classifyUrlContentBatch(inputs) {
   if (inputs.length === 0) return [];
 
-  const results = [];
   const batchSize = 10;
+  const batches = [];
+  for (let i = 0; i < inputs.length; i += batchSize) batches.push(inputs.slice(i, i + batchSize));
 
-  for (let i = 0; i < inputs.length; i += batchSize) {
-    const batch = inputs.slice(i, i + batchSize);
-    console.log(`🤖 [CLASSIFICATION] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(inputs.length/batchSize)} (${batch.length} URLs)`);
+  console.log(`🤖 [CLASSIFICATION] Firing ${batches.length} classification batches in parallel (${inputs.length} URLs total)`);
 
+  async function classifyBatch(batch, batchIndex) {
     try {
       const prompt = buildClassificationPrompt(batch);
-
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -437,10 +429,7 @@ async function classifyUrlContentBatch(inputs) {
             role: 'system',
             content: 'You are a content classification expert. You classify web pages based on purpose, intent, and informational structure. Always respond with valid JSON array format.'
           },
-          {
-            role: 'user',
-            content: prompt
-          }
+          { role: 'user', content: prompt }
         ],
         temperature: 0.2,
         max_tokens: 4000,
@@ -449,21 +438,17 @@ async function classifyUrlContentBatch(inputs) {
 
       const classification = response.choices[0]?.message?.content || '';
       const batchResults = parseClassificationResponse(classification, batch.length);
-      results.push(...batchResults);
-
-      if (i + batchSize < inputs.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+      console.log(`✅ [CLASSIFICATION] Batch ${batchIndex}: ${batchResults.length} URLs classified`);
+      return batchResults;
 
     } catch (error) {
-      console.error(`❌ [CLASSIFICATION] Error:`, error);
-      batch.forEach(() => {
-        results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
-      });
+      console.error(`❌ [CLASSIFICATION] Batch ${batchIndex} error:`, error.message);
+      return batch.map(() => ({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} }));
     }
   }
 
-  return results;
+  const batchResults = await Promise.all(batches.map((batch, i) => classifyBatch(batch, i + 1)));
+  return batchResults.flat();
 }
 
 function buildClassificationPrompt(batch) {
@@ -575,13 +560,17 @@ async function storeClassifications(classifications, inputs) {
 // ========== STEP 5: Link Citations to Prompts ==========
 // Uses urlMap directly — no re-query needed, works for any URL encoding.
 async function linkCitationsToPrompts(citations, urlMap) {
+  const seen = new Set();
   const citationRecords = citations.map(citation => {
     const entry = urlMap.get(citation.url);
     if (!entry?.id) return null;
+    const key = `${entry.id}|${citation.promptResultId}|${citation.provider || 'chatgpt'}`;
+    if (seen.has(key)) return null; // deduplicate within batch
+    seen.add(key);
     return {
       url_id: entry.id,
       prompt_result_id: citation.promptResultId,
-      provider: 'chatgpt',
+      provider: citation.provider || 'chatgpt',
       cited_at: new Date().toISOString()
     };
   }).filter(Boolean);

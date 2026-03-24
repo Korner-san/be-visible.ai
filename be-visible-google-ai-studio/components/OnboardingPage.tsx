@@ -30,11 +30,6 @@ import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { OnboardingEditPromptsPage } from './OnboardingEditPromptsPage';
 
-interface Competitor {
-  name: string;
-  domain: string;
-}
-
 interface OnboardingData {
   brandName: string;
   website: string;
@@ -47,7 +42,7 @@ interface OnboardingData {
   goalFacilitated: string;
   keyFeatures: string[];
   useCases: string[];
-  competitors: Competitor[];
+  competitors: string[];
   uniqueSellingProps: string[];
 }
 
@@ -76,14 +71,7 @@ const emptyData: OnboardingData = {
   goalFacilitated: '',
   keyFeatures: ['', '', '', ''],
   useCases: ['', '', '', ''],
-  competitors: [
-    { name: '', domain: '' },
-    { name: '', domain: '' },
-    { name: '', domain: '' },
-    { name: '', domain: '' },
-    { name: '', domain: '' },
-    { name: '', domain: '' },
-  ],
+  competitors: ['', '', '', ''],
   uniqueSellingProps: ['', '', '', ''],
 };
 
@@ -198,14 +186,10 @@ const HexagonIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const CompetitorLogo = ({ name, domain }: { name: string; domain?: string }) => {
+const CompetitorLogo = ({ name }: { name: string }) => {
   const [error, setError] = useState(false);
-  const resolvedDomain = domain && domain.trim()
-    ? domain.trim()
-    : name.includes('.') && !name.includes(' ')
-      ? name
-      : name.toLowerCase().replace(/\s/g, '') + '.com';
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${resolvedDomain}&sz=64`;
+  const isDomain = name.includes('.') && !name.includes(' ');
+  const faviconUrl = `https://www.google.com/s2/favicons?domain=${isDomain ? name : name.toLowerCase().replace(/\s/g, '') + '.com'}&sz=64`;
 
   if (error || !name) {
     return (
@@ -371,7 +355,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
         const response = await fetch('/api/onboarding/analyze-website', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: data.website, language: data.language, timezone: data.timezone }),
+          body: JSON.stringify({ url: data.website, language: data.language }),
         });
 
         const result = await response.json();
@@ -388,15 +372,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             goalFacilitated: bd.goalFacilitated || prev.goalFacilitated,
             keyFeatures: bd.keyFeatures?.length ? bd.keyFeatures.slice(0, 4) : prev.keyFeatures,
             useCases: bd.useCases?.length ? bd.useCases.slice(0, 4) : prev.useCases,
-            competitors: bd.competitors?.length
-              ? [
-                  ...bd.competitors.slice(0, 6).map((c: any) => ({
-                    name: typeof c === 'string' ? c : (c.name || ''),
-                    domain: typeof c === 'string' ? '' : (c.domain || ''),
-                  })),
-                  ...Array(Math.max(0, 6 - (bd.competitors?.length || 0))).fill({ name: '', domain: '' }),
-                ]
-              : prev.competitors,
+            competitors: bd.competitors?.length ? bd.competitors.slice(0, 4) : prev.competitors,
             uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
           }));
           setPrefilled(true);
@@ -958,19 +934,13 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
           <div className="animate-fadeIn">
             {beVisibleBadge}
             <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">Who are your top competitors?</h2>
-            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">Provide up to 6 brands you compete with for visibility</p>
+            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">Provide up to 4 brands you compete with for visibility</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.competitors.map((comp, i) => (
+              {(data.competitors as string[]).map((comp, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <CompetitorLogo name={comp.name} domain={comp.domain} />
-                  <input
-                    type="text"
-                    value={comp.name}
-                    onChange={(e) => {
-                      const updated = [...data.competitors];
-                      updated[i] = { ...updated[i], name: e.target.value };
-                      setData(prev => ({ ...prev, competitors: updated }));
-                    }}
+                  <CompetitorLogo name={comp} />
+                  <input type="text" value={comp}
+                    onChange={(e) => handleArrayChange('competitors', i, e.target.value)}
                     placeholder="Brand name"
                     className="w-full px-4 py-2.5 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] text-sm" />
                 </div>

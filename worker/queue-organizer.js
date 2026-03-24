@@ -50,6 +50,7 @@ const STALE_CLAIM_MINUTES = 15;      // Reset claimed prompts older than this
 
 const chunkScript = path.join(__dirname, 'run-onboarding-chunk.js');
 const aioScript = path.join(__dirname, 'run-google-aio-prompts.js');
+const claudeScript = path.join(__dirname, 'run-claude-prompts.js');
 
 async function runQueueOrganizer() {
   console.log('[QUEUE-ORG] Starting at', new Date().toISOString());
@@ -312,27 +313,31 @@ async function runQueueOrganizer() {
     targetBrand.pendingCount = Math.max(0, targetBrand.pendingCount - claimedPrompts.length);
   }
 
-  // Spawn Google AIO process for all claimed prompts (fire-and-forget, runs in parallel with ChatGPT)
-  if (allAioPromptIds.length > 0 && process.env.SERPAPI_KEY) {
-    const aioReportId = brandDailyReportMap.get(targetBrand.id);
-    if (aioReportId) {
-      const aioLogPath = `/tmp/aio-${targetBrand.id.substring(0, 8)}-${Date.now()}.log`;
-      const aioLogFd = fs.openSync(aioLogPath, 'w');
-      const aioChild = spawn('node', [aioScript], {
-        stdio: ['ignore', aioLogFd, aioLogFd],
+  // Spawn Google AIO and Claude processes in parallel with ChatGPT (fire-and-forget)
+  const extraReportId = brandDailyReportMap.get(targetBrand.id);
+  if (allAioPromptIds.length > 0 && extraReportId) {
+    const spawnExtra = (script, envKey, label) => {
+      if (!process.env[envKey]) return;
+      const logPath = `/tmp/${label}-${targetBrand.id.substring(0, 8)}-${Date.now()}.log`;
+      const logFd = fs.openSync(logPath, 'w');
+      const child = spawn('node', [script], {
+        stdio: ['ignore', logFd, logFd],
         cwd: __dirname,
         detached: true,
         env: {
           ...process.env,
           BRAND_ID: targetBrand.id,
-          DAILY_REPORT_ID: aioReportId,
+          DAILY_REPORT_ID: extraReportId,
           PROMPT_IDS_JSON: JSON.stringify(allAioPromptIds),
         },
       });
-      try { fs.closeSync(aioLogFd); } catch (e) {}
-      aioChild.unref(); // fire-and-forget — don't block ChatGPT chunks waiting for AIO
-      console.log('[QUEUE-ORG] Spawned Google AIO for', allAioPromptIds.length, 'prompts → log:', aioLogPath);
-    }
+      try { fs.closeSync(logFd); } catch (e) {}
+      child.unref();
+      console.log(`[QUEUE-ORG] Spawned ${label} for`, allAioPromptIds.length, 'prompts → log:', logPath);
+    };
+
+    spawnExtra(aioScript,    'SERPAPI_KEY',       'aio');
+    spawnExtra(claudeScript, 'ANTHROPIC_API_KEY', 'claude');
   }
 
   if (childPromises.length > 0) {

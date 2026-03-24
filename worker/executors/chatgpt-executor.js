@@ -27,7 +27,10 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const CHATGPT_ACCOUNT_EMAIL = process.env.CHATGPT_ACCOUNT_EMAIL || 'ididitforkik1000@gmail.com';
+// NOTE: declared as `let` so executeBatch can re-read process.env at call time.
+// The caller (run-6-prompts-persistent.js) sets process.env.CHATGPT_ACCOUNT_EMAIL
+// AFTER requiring this module, so a module-level const would always be stale.
+let CHATGPT_ACCOUNT_EMAIL = process.env.CHATGPT_ACCOUNT_EMAIL || 'ididitforkik1000@gmail.com';
 
 // FORENSIC: Global state for tracking session and visual state
 let currentAccountId = null;
@@ -50,11 +53,125 @@ async function logForensic(data) {
   }
 }
 
+// AUTO-RECOVERY: Session reinit on any connection failure + Make alert on login failure
+// ============================================================================
+
+function classifyConnectionError(errorMessage) {
+  const msg = errorMessage || '';
+  if (msg.includes('429') || msg.includes('already being accessed')) return 'session_busy';
+  if (msg.toLowerCase().includes('timeout')) return 'session_timeout';
+  if (msg.includes('Failed to navigate')) return 'navigation_failed';
+  if (msg.includes('Target page') || msg.includes('browser has been closed')) return 'browser_crashed';
+  if (msg.includes('No persistent session')) return 'no_session';
+  return 'connection_error';
+}
+
+async function tryKillZombieSession(stopUrl) {
+  if (!stopUrl) return;
+  try {
+    console.log('[AUTO-RECOVERY] Killing zombie Browserless session via stop URL...');
+    await Promise.race([
+      fetch(stopUrl, { method: 'GET' }),
+      new Promise(resolve => setTimeout(resolve, 5000))
+    ]);
+    console.log('[AUTO-RECOVERY] Stop URL called — waiting 3s for session to fully close...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  } catch (err) {
+    console.warn('[AUTO-RECOVERY] tryKillZombieSession error (non-fatal):', err.message);
+  }
+}
+
+async function triggerAutoReinit(accountEmail, trigger, batchId) {
+  const webhookBaseUrl = process.env.WEBHOOK_BASE_URL || 'http://127.0.0.1:3001';
+  const webhookSecret = process.env.WEBHOOK_SECRET || 'forensic-reinit-secret-2024';
+  const REINIT_TIMEOUT_MS = 5 * 60 * 1000;
+  console.log('[AUTO-RECOVERY] Triggering session reinit for', accountEmail, '— reason:', trigger);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), REINIT_TIMEOUT_MS);
+    try {
+      await fetch(`${webhookBaseUrl}/initialize-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: webhookSecret, accountEmail }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    const { data: account } = await supabase
+      .from('chatgpt_accounts')
+      .select('id, last_initialization_result, last_visual_state, browserless_session_id, proxy_host, proxy_port, browserless_stop_url')
+      .eq('email', accountEmail)
+      .single();
+    const reinitSucceeded = account?.last_initialization_result === 'success';
+    const visualState = account?.last_visual_state || 'Unknown';
+    if (reinitSucceeded) {
+      console.log('[AUTO-RECOVERY] Reinit SUCCEEDED for', accountEmail, '— session restored, next batch will work');
+    } else {
+      console.log('[AUTO-RECOVERY] Reinit FAILED for', accountEmail, '— visual_state:', visualState);
+      const { data: recentForensics } = await supabase
+        .from('automation_forensics')
+        .select('timestamp, connection_status, connection_error_raw, visual_state, operation_type, batch_id')
+        .eq('chatgpt_account_email', accountEmail)
+        .eq('connection_status', 'Error')
+        .order('timestamp', { ascending: false })
+        .limit(3);
+      await sendMakeWebhook({
+        account: accountEmail,
+        action_required: 'manual_cookie_extraction',
+        trigger,
+        reinit_result: account?.last_initialization_result || 'unknown',
+        reinit_visual_state: visualState,
+        consecutive_failures: 0,
+        session_id: account?.browserless_session_id || 'unknown',
+        proxy: account ? `${account.proxy_host}:${account.proxy_port}` : 'unknown',
+        failing_batch_id: batchId,
+        recent_errors: (recentForensics || []).map(f => ({
+          timestamp: f.timestamp,
+          error: (f.connection_error_raw || '').substring(0, 200),
+          visual_state: f.visual_state,
+          batch_id: f.batch_id,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error('[AUTO-RECOVERY] triggerAutoReinit error:', err.message);
+  }
+}
+
+async function sendMakeWebhook(payload) {
+  const makeUrl = process.env.MAKE_WEBHOOK_URL;
+  if (!makeUrl) {
+    console.warn('[AUTO-RECOVERY] MAKE_WEBHOOK_URL not set — skipping Make notification');
+    return;
+  }
+  try {
+    console.log('[AUTO-RECOVERY] Sending Make webhook for', payload.account, '...');
+    const res = await fetch(makeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[AUTO-RECOVERY] Make webhook sent successfully');
+    } else {
+      console.warn('[AUTO-RECOVERY] Make webhook returned HTTP', res.status);
+    }
+  } catch (err) {
+    console.error('[AUTO-RECOVERY] Make webhook failed:', err.message);
+  }
+}
+
 /**
  * Execute a batch of prompts using ChatGPT via Browserless
  * Returns raw execution results - NO PROCESSING
  */
-async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }) {
+async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, onPromptComplete = null }) {
+
+  // Re-read at call time — the caller sets process.env.CHATGPT_ACCOUNT_EMAIL before calling us
+  CHATGPT_ACCOUNT_EMAIL = process.env.CHATGPT_ACCOUNT_EMAIL || 'ididitforkik1000@gmail.com';
 
   console.log('\n' + '='.repeat(70));
   console.log('🤖 CHATGPT EXECUTOR - ' + prompts.length + ' PROMPTS (+ FORENSIC)');
@@ -92,6 +209,14 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
     // 4. Verify login status - FORENSIC: Capture detailed visual state
     const loginResult = await verifyLoginStatus(page);
     if (!loginResult.isLoggedIn) {
+      // Connection to Browserless succeeded but ChatGPT shows the login button.
+      // Close the WebSocket cleanly then trigger reinit.
+      // Webhook fires inside triggerAutoReinit only if reinit also sees Sign_In_Button.
+      const isOnboarding = scheduleId && String(scheduleId).startsWith('onboarding-');
+      if (!isOnboarding) {
+        try { browser._connection._transport.close(); } catch (e) {}
+        await triggerAutoReinit(CHATGPT_ACCOUNT_EMAIL, 'login_button_during_batch', String(scheduleId || ''));
+      }
       throw new Error('Session not logged in - requires re-initialization');
     }
 
@@ -111,6 +236,18 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
       batch_id: scheduleId
     });
 
+
+    // Start a fresh conversation at the top of every batch.
+    // When reconnecting to an existing session the last prompt response is
+    // still visible; Ctrl+Shift+O clears it before we begin.
+    console.log("🔄 Starting fresh conversation for this batch...");
+    try {
+      await page.keyboard.press("Control+Shift+KeyO");
+      await page.waitForTimeout(2000);
+    } catch (e) {
+      console.warn("   Could not open new conversation (non-fatal):", e.message);
+    }
+
     // 5. Process each prompt (EXECUTION ONLY - NO ANALYSIS)
     const results = [];
 
@@ -127,7 +264,16 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
       try {
         // Enable search mode first
         const textarea = page.locator('#prompt-textarea').first();
-        await textarea.waitFor({ state: 'visible', timeout: 5000 });
+        try {
+          await textarea.waitFor({ state: 'visible', timeout: 10000 });
+        } catch (textareaErr) {
+          // Textarea not visible after 10s — page didn't load properly, reload it
+          console.warn('   ⚠️  Textarea not visible after 10s — reloading page...');
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+          await page.waitForTimeout(4000);
+          // One more check after reload
+          await textarea.waitFor({ state: 'visible', timeout: 10000 });
+        }
 
         console.log('   🔍 Enabling search mode...');
         await textarea.fill('/search');
@@ -170,10 +316,11 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
           lastLength = currentLength;
         }
 
-        // Extract response text (RAW)
+        // Extract response — use innerHTML → markdown to preserve bold, bullets, headings
         const messages = await page.locator('[data-message-author-role="assistant"]').all();
         const lastMessage = messages[messages.length - 1];
-        const responseText = await lastMessage?.textContent() || '';
+        const rawHtml = await lastMessage?.innerHTML() || '';
+        const responseText = rawHtml ? htmlToMarkdown(rawHtml) : '';
 
         console.log('✅ Response received: ' + responseText.length + ' characters');
 
@@ -211,6 +358,11 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
 
         console.log('✅ Prompt ' + (i + 1) + ' completed successfully!');
 
+        // Notify batch runner so it can update the live progress counter
+        if (typeof onPromptComplete === "function") {
+          await onPromptComplete(i, true);
+        }
+
         // Start new conversation for next prompt (skip for last prompt)
         if (i < prompts.length - 1) {
           console.log('🔄 Starting new conversation...');
@@ -244,12 +396,33 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
           success: false,
           error: error.message
         });
+
+        // Notify batch runner even on error so the progress counter advances
+        if (typeof onPromptComplete === "function") {
+          await onPromptComplete(i, false);
+        }
       }
     }
 
-    // 6. Close browser connection
-    await browser.close();
-    console.log('\n🔌 Disconnected from session');
+    // 6. Disconnect WebSocket transport (does NOT send Browser.close CDP command).
+    //
+    // HOW SESSIONS API WORKS (per https://docs.browserless.io/baas/session-management):
+    //   Sessions created with processKeepAlive keep the browser process running for
+    //   that many ms after the last WebSocket client disconnects. The next batch
+    //   reconnects to the SAME original session URL and finds the browser still running.
+    //
+    //   NOTE: The `Browserless.reconnect` CDP command is for standard BaaS sessions,
+    //   NOT for the Sessions API (30-day TTL). Using it on a Sessions API session
+    //   locks the session in "reconnect-pending" mode (returns 429 on the original URL).
+    //   Do NOT call Browserless.reconnect for Sessions API sessions.
+    try {
+      if (browser._connection && browser._connection._transport) {
+        browser._connection._transport.close();
+      } else if (browser._connection) {
+        browser._connection.close();
+      }
+    } catch (e) { /* ignore transport close errors */ }
+    console.log('   Disconnected (transport only — browser kept alive by processKeepAlive)');
 
     // 7. Display results summary
     const successCount = results.filter(r => r.success).length;
@@ -283,6 +456,8 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
         const reportOk = reportResults.filter(r => r.success).length;
         const reportFail = reportResults.filter(r => !r.success).length;
         const reportTotal = reportResults.length;
+        // Onboarding runs pre-set total_prompts=30 at report creation — don't overwrite with chunk size
+        const isOnboarding = scheduleId && String(scheduleId).startsWith('onboarding-');
 
         const { error: updateError } = await supabase
           .from('daily_reports')
@@ -290,7 +465,7 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts }
             chatgpt_status: 'complete',
             status: 'running',
             completed_prompts: reportOk,
-            total_prompts: reportTotal,
+            ...(isOnboarding ? {} : { total_prompts: reportTotal }),
             chatgpt_attempted: reportTotal,
             chatgpt_ok: reportOk,
             chatgpt_no_result: reportFail
@@ -389,19 +564,6 @@ async function connectToPersistentSession(scheduleId = null) {
   try {
     browser = await playwright.chromium.connectOverCDP(account.browserless_connect_url);
 
-    // FORENSIC: Log successful connection
-    await logForensic({
-      chatgpt_account_id: currentAccountId,
-      chatgpt_account_email: account.email,
-      browserless_session_id: currentSessionId,
-      proxy_used: currentProxyUsed,
-      connection_status: 'Connected',
-      visual_state: 'Unknown', // Will be updated after navigation
-      operation_type: 'batch_execution',
-      batch_id: scheduleId,
-      playwright_cdp_url: account.browserless_connect_url,
-      response_time_ms: Date.now() - connectStartTime
-    });
 
   } catch (connectError) {
     // FORENSIC: Log connection failure
@@ -411,7 +573,7 @@ async function connectToPersistentSession(scheduleId = null) {
       browserless_session_id: currentSessionId,
       proxy_used: currentProxyUsed,
       connection_status: 'Error',
-      connection_error_raw: connectError.message,
+      connection_error_raw: 'CDP Handshake Failed: ' + connectError.message,
       visual_state: 'Unknown',
       operation_type: 'batch_execution',
       batch_id: scheduleId,
@@ -419,7 +581,33 @@ async function connectToPersistentSession(scheduleId = null) {
       response_time_ms: Date.now() - connectStartTime
     });
 
-    throw connectError;
+    // AUTO-RECOVERY: CDP connection failure handling (daily batches only)
+    // session_busy (429): zombie WebSocket blocking — kill session via stop URL + reinit.
+    //   No retry after stop URL — the session is dead and must be re-created.
+    // other errors: retry connectOverCDP once — only reinit if retry also fails.
+    const isOnboarding = scheduleId && String(scheduleId).startsWith('onboarding-');
+    if (!isOnboarding && scheduleId) {
+      const failureType = classifyConnectionError(connectError.message);
+      if (failureType === 'session_busy') {
+        console.log('[AUTO-RECOVERY] Session busy (zombie WebSocket) — killing session + reinit...');
+        await tryKillZombieSession(account.browserless_stop_url);
+        await triggerAutoReinit(account.email, failureType, String(scheduleId));
+        throw connectError;
+      } else {
+        console.log('[AUTO-RECOVERY] CDP failure (' + failureType + ') — retrying connection once...');
+        try {
+          browser = await playwright.chromium.connectOverCDP(account.browserless_connect_url);
+          console.log('[AUTO-RECOVERY] Retry succeeded — continuing batch');
+          // browser is now set; execution continues past this catch block normally
+        } catch (retryError) {
+          console.log('[AUTO-RECOVERY] Retry also failed — triggering reinit...');
+          await triggerAutoReinit(account.email, failureType, String(scheduleId));
+          throw retryError;
+        }
+      }
+    } else {
+      throw connectError;
+    }
   }
 
   // Update last_connection_at
@@ -442,13 +630,53 @@ async function ensureOnChatGPT(page) {
   const currentUrl = page.url();
   console.log('   Current URL: ' + currentUrl);
 
-  if (!currentUrl.includes('chatgpt.com')) {
-    console.log('   Navigating to ChatGPT...');
-    await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(5000);
-  } else {
-    console.log('   Already on ChatGPT');
+  if (currentUrl.includes('chatgpt.com')) {
+    console.log('   Already on ChatGPT — checking UI health...');
     await page.waitForTimeout(2000);
+    // If textarea is missing the page may be in a broken state — reload to recover
+    const hasTextarea = await page.locator('#prompt-textarea').count() > 0;
+    if (!hasTextarea) {
+      console.log('   ⚠️  Textarea missing on existing page — reloading...');
+      try {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.waitForTimeout(4000);
+      } catch (reloadErr) {
+        console.warn('   Reload failed:', reloadErr.message.slice(0, 80));
+      }
+    }
+  } else {
+    // Navigate with up to 2 attempts — on timeout try reload then retry goto
+    let navigated = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`   Navigating to ChatGPT (attempt ${attempt})...`);
+        await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(4000);
+        navigated = true;
+        break;
+      } catch (navErr) {
+        console.warn(`   ⚠️  Navigation attempt ${attempt} failed: ${navErr.message.slice(0, 80)}`);
+        if (attempt < 2) {
+          // Try a reload of whatever is currently loaded before next goto attempt
+          try {
+            console.log('   Trying page.reload() before retry...');
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(3000);
+            // If reload landed on chatgpt.com we're done
+            if (page.url().includes('chatgpt.com')) {
+              console.log('   ✅ Reload landed on ChatGPT');
+              navigated = true;
+              break;
+            }
+          } catch (reloadErr) {
+            console.warn('   Reload also failed:', reloadErr.message.slice(0, 60));
+          }
+        }
+      }
+    }
+    if (!navigated) {
+      throw new Error('Failed to navigate to ChatGPT after 2 attempts');
+    }
   }
 
   // Check for Cloudflare challenge
@@ -682,6 +910,101 @@ async function saveRawPromptResult({
 
     console.log('✅ Logged to execution history');
   }
+}
+
+/**
+ * Convert ChatGPT response innerHTML to markdown.
+ * Preserves: bold, italic, headings, bullet lists, numbered lists,
+ * links, inline code, code blocks, horizontal rules.
+ * Strips all remaining HTML tags and decodes entities.
+ */
+function htmlToMarkdown(html) {
+  if (!html) return '';
+  let md = html;
+
+  // Strip script/style noise
+  md = md.replace(/<script[\s\S]*?<\/script>/gi, '');
+  md = md.replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Fenced code blocks (before inline code)
+  md = md.replace(/<pre[^>]*>[\s\S]*?<code[^>]*>([\s\S]*?)<\/code>[\s\S]*?<\/pre>/gi, (_, code) => {
+    return '\n```\n' + decodeEntities(stripTags(code)) + '\n```\n';
+  });
+
+  // Headings
+  md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, c) => '\n# ' + stripTags(c).trim() + '\n');
+  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, c) => '\n## ' + stripTags(c).trim() + '\n');
+  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, c) => '\n### ' + stripTags(c).trim() + '\n');
+  md = md.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, (_, c) => '\n#### ' + stripTags(c).trim() + '\n');
+
+  // Bold / italic (keep markers, strip tags after)
+  md = md.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
+  md = md.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
+  md = md.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*');
+  md = md.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*');
+
+  // Links — preserve href + visible text
+  md = md.replace(/<a[^>]*\bhref="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => {
+    const cleanText = stripTags(text).trim();
+    // Skip empty anchors or pure-image anchors
+    if (!cleanText) return '';
+    return '[' + cleanText + '](' + href + ')';
+  });
+
+  // Inline code
+  md = md.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, c) => '`' + decodeEntities(stripTags(c)) + '`');
+
+  // Horizontal rule
+  md = md.replace(/<hr[^>]*\/?>/gi, '\n---\n');
+
+  // Ordered lists — number items sequentially within each <ol>
+  md = md.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, content) => {
+    let n = 0;
+    const items = content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (__, item) => {
+      n++;
+      return '\n' + n + '. ' + stripTags(item).trim();
+    });
+    return '\n' + items + '\n';
+  });
+
+  // Unordered lists
+  md = md.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, content) => {
+    const items = content.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (__, item) => {
+      return '\n- ' + stripTags(item).trim();
+    });
+    return '\n' + items + '\n';
+  });
+
+  // Paragraphs → text + blank line
+  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '$1\n\n');
+
+  // Line breaks
+  md = md.replace(/<br\s*\/?>/gi, '\n');
+
+  // Strip remaining HTML tags
+  md = stripTags(md);
+
+  // Decode HTML entities
+  md = decodeEntities(md);
+
+  // Collapse 3+ blank lines to 2
+  md = md.replace(/\n{3,}/g, '\n\n');
+
+  return md.trim();
+}
+
+function stripTags(html) {
+  return (html || '').replace(/<[^>]+>/g, '');
+}
+
+function decodeEntities(text) {
+  return (text || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
 }
 
 module.exports = {

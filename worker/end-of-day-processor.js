@@ -2,16 +2,25 @@
 /**
  * End-of-Day Processor
  *
- * RUNS ONCE after all prompt batches complete for a daily report
+ * RUNS ONCE after all prompt batches complete for a daily report (or per-phase for onboarding).
  *
  * Responsibilities:
  * 1. Brand Analysis - Analyze ALL responses for brand mentions
  * 2. Citation Processing - Extract and classify ALL URLs with Tavily
  * 3. Report Aggregation - Calculate final stats
+ * 4. Visibility Score
+ * 5. Share of Voice
+ * 6. Citation Share
+ * 7. Competitor Metrics
+ * 8. Finalization
  *
- * This should ONLY run when:
- * - All batches for the day are complete (status='completed')
- * - NOT run per batch!
+ * options.phase:
+ *   1 = Phase 1 (first 6 prompts) — runs FULL pipeline, keeps is_partial=true
+ *   2 = Phase 2 / Full (all 30 prompts, default) — runs FULL pipeline, sets is_partial=false
+ *
+ * Both phases run the IDENTICAL pipeline. The only difference is:
+ *   Phase 1: is_partial=true  (partial banner shown, wave 2 still pending)
+ *   Phase 2: is_partial=false (report fully complete)
  */
 
 require('dotenv').config();
@@ -29,22 +38,28 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
- * Process a daily report after all batches complete
+ * Process a daily report after all batches complete (or partial after Phase 1).
  * @param {string} dailyReportId - The daily report ID to process
+ * @param {object} options
+ * @param {number} options.phase - 1 = partial (6 prompts only), 2 = full (default)
  * @param {Array<string>} providers - Which providers to process (default: ['chatgpt'])
  */
-async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
+async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgpt']) {
+  const phase = options.phase || 2;
+  const isPartialRun = phase === 1;
+
   console.log('\n' + '='.repeat(70));
-  console.log('🌙 END-OF-DAY PROCESSOR');
+  console.log('🌙 END-OF-DAY PROCESSOR' + (isPartialRun ? ' [PHASE 1 — PARTIAL]' : ' [PHASE 2 — FULL]'));
   console.log('='.repeat(70));
   console.log('Daily Report ID: ' + dailyReportId);
+  console.log('Phase: ' + phase + (isPartialRun ? ' (6 prompts — full pipeline, is_partial=true)' : ' (30 prompts — full pipeline, is_partial=false)'));
   console.log('Providers: ' + providers.join(', '));
   console.log('='.repeat(70) + '\n');
 
   const startTime = new Date();
 
   try {
-    // Verify this is a complete daily report
+    // Load the report
     const { data: report, error: reportError } = await supabase
       .from('daily_reports')
       .select('id, brand_id, report_date, status')
@@ -60,202 +75,135 @@ async function processEndOfDay(dailyReportId, providers = ['chatgpt']) {
     console.log('   Report Date: ' + report.report_date);
     console.log('   Status: ' + report.status);
 
-    // Check if all batches are complete for this report
-    const allBatchesComplete = await checkAllBatchesComplete(report.brand_id, report.report_date);
-
-    if (!allBatchesComplete) {
-      console.log('⚠️  WARNING: Not all batches complete yet. Proceeding anyway...');
-    }
-
-    // PHASE 1: BRAND ANALYSIS (Analyze ALL responses for brand mentions)
+    // PHASE 1: BRAND ANALYSIS (always runs)
     console.log('\n🔍 PHASE 1: BRAND ANALYSIS');
     console.log('─'.repeat(70));
-    console.log('Analyzing ALL prompt responses for brand mentions...');
-
     const analysisResult = await brandAnalyzer.analyzeResults(dailyReportId, providers);
+    console.log('✅ Phase 1 complete: analyzed=' + analysisResult.analyzed + ', mentioned=' + analysisResult.brandMentioned);
 
-    console.log('✅ Phase 1 complete:');
-    console.log('   Total analyzed: ' + analysisResult.analyzed);
-    console.log('   Brand mentioned: ' + analysisResult.brandMentioned);
-    console.log('   No mention: ' + analysisResult.noMention);
-
-    // PHASE 2: CITATION PROCESSING (Extract and classify ALL URLs)
+    // PHASE 2: CITATION PROCESSING (always runs)
     console.log('\n🔗 PHASE 2: CITATION PROCESSING');
     console.log('─'.repeat(70));
-    console.log('Processing ALL citations with Tavily...');
-
     try {
       const citationResult = await citationProcessor.processDailyReportCitations(dailyReportId);
-
-      console.log('✅ Phase 2 complete:');
-      console.log('   Total citations: ' + (citationResult.totalCitations || 0));
-      console.log('   New URLs: ' + (citationResult.newUrls || 0));
-      console.log('   Extracted: ' + (citationResult.extracted || 0));
-      console.log('   Classified: ' + (citationResult.classified || 0));
+      console.log('✅ Phase 2 complete: citations=' + (citationResult.totalCitations || 0) + ', extracted=' + (citationResult.extracted || 0));
     } catch (citationError) {
       console.error('⚠️  Phase 2 failed (non-blocking):', citationError.message);
-      console.log('   Citations will need to be processed later');
     }
 
-    // PHASE 3: REPORT AGGREGATION (Calculate final stats)
+    // PHASE 3: REPORT AGGREGATION (always runs)
     console.log('\n📊 PHASE 3: REPORT AGGREGATION');
     console.log('─'.repeat(70));
-    console.log('Calculating final statistics...');
-
     const aggregateResult = await reportAggregator.updateAggregates(dailyReportId, providers);
-
-    console.log('✅ Phase 3 complete:');
     providers.forEach(provider => {
       if (aggregateResult[provider]) {
         const stats = aggregateResult[provider];
-        console.log(`   ${provider}: ${stats.ok}/${stats.attempted} successful (${stats.status})`);
+        console.log('✅ ' + provider + ': ' + stats.ok + '/' + stats.attempted + ' successful');
       }
     });
 
-    // PHASE 4: VISIBILITY SCORE CALCULATION
+    // PHASE 4: VISIBILITY SCORE (always runs)
     console.log('\n📊 PHASE 4: VISIBILITY SCORE');
     console.log('─'.repeat(70));
-    console.log('Calculating visibility score...');
-
     try {
       const scoreResult = await visibilityScoreCalculator.calculateVisibilityScore(dailyReportId);
-
-      console.log('✅ Phase 4 complete:');
-      console.log('   Visibility Score: ' + scoreResult.score.toFixed(1) + '/100');
-      if (scoreResult.details) {
-        console.log('   Total responses: ' + scoreResult.details.totalResponses);
-        console.log('   Mentioned: ' + scoreResult.details.mentionedResponses);
-      }
+      console.log('✅ Phase 4 complete: score=' + scoreResult.score.toFixed(1) + '/100');
     } catch (scoreError) {
       console.error('⚠️  Phase 4 failed (non-blocking):', scoreError.message);
-      console.log('   Visibility score will need to be calculated later');
     }
 
-    // PHASE 5: SHARE OF VOICE
+    // PHASE 5: SHARE OF VOICE (always runs)
     console.log('\n📊 PHASE 5: SHARE OF VOICE');
     console.log('─'.repeat(70));
-    console.log('Calculating share of voice from entity mentions...');
-
     try {
       const sovResult = await shareOfVoiceCalculator.calculateShareOfVoice(dailyReportId);
-
-      console.log('✅ Phase 5 complete:');
-      if (sovResult.success) {
-        console.log('   Total Entities: ' + (sovResult.totalEntities || 0));
-        console.log('   Total Mentions: ' + (sovResult.totalMentions || 0));
-        console.log('   Brand Share: ' + (sovResult.brandShare || 0) + '%');
-      } else {
-        console.log('   ' + (sovResult.message || 'No share of voice data'));
-      }
+      console.log('✅ Phase 5 complete: entities=' + (sovResult.totalEntities || 0) + ', brandShare=' + (sovResult.brandShare || 0) + '%');
     } catch (sovError) {
       console.error('⚠️  Phase 5 failed (non-blocking):', sovError.message);
-      console.log('   Share of voice will need to be calculated later');
     }
 
-    // PHASE 6: CITATION SHARE CALCULATION
+    // PHASE 6: CITATION SHARE (always runs)
     console.log('\n📊 PHASE 6: CITATION SHARE');
     console.log('─'.repeat(70));
-    console.log('Calculating citation share rankings...');
-
     try {
       const citationShareResult = await citationShareCalculator.calculateCitationShare(dailyReportId);
-
-      console.log('✅ Phase 6 complete:');
-      if (citationShareResult.success) {
-        console.log('   Total Citations: ' + citationShareResult.totalCitations);
-        console.log('   Brand Rank: #' + citationShareResult.brandRank);
-        console.log('   Brand Share: ' + citationShareResult.brandShare + '%');
-        console.log('   Total Domains: ' + citationShareResult.totalDomains);
-      } else {
-        console.log('   ' + (citationShareResult.message || 'No citation share data'));
-      }
+      console.log('✅ Phase 6 complete: brandRank=#' + citationShareResult.brandRank + ', share=' + citationShareResult.brandShare + '%');
     } catch (citationShareError) {
       console.error('⚠️  Phase 6 failed (non-blocking):', citationShareError.message);
-      console.log('   Citation share will need to be calculated later');
     }
 
-    // PHASE 7: COMPETITOR METRICS
+    // PHASE 7: COMPETITOR METRICS (always runs)
     console.log('\n📊 PHASE 7: COMPETITOR METRICS');
     console.log('─'.repeat(70));
-    console.log('Calculating competitor visibility, mention rate, citation share...');
-
     try {
       const compResult = await competitorMetricsCalculator.calculateCompetitorMetrics(dailyReportId);
-
-      console.log('✅ Phase 7 complete:');
-      if (compResult.success) {
-        console.log('   Competitors: ' + (compResult.competitorCount || 0));
-        console.log('   Brand Visibility: ' + (compResult.brandVisibilityScore || 0) + '%');
-        console.log('   Total Responses: ' + (compResult.totalResponses || 0));
-      } else {
-        console.log('   ' + (compResult.message || 'No competitor metrics'));
-      }
+      console.log('✅ Phase 7 complete: competitors=' + (compResult.competitorCount || 0));
     } catch (compError) {
       console.error('⚠️  Phase 7 failed (non-blocking):', compError.message);
-      console.log('   Competitor metrics will need to be calculated later');
     }
 
-    // PHASE 8: MARK REPORT AS COMPLETE
+    // PHASE 8: FINALIZATION
     console.log('\n✅ PHASE 8: FINALIZATION');
     console.log('─'.repeat(70));
 
-    const { error: updateError } = await supabase
-      .from('daily_reports')
-      .update({
-        status: 'completed'
-        // processed_at column doesn't exist in schema
-      })
-      .eq('id', dailyReportId);
+    if (!isPartialRun) {
+      // Phase 2 / full run: fully complete the daily report
+      await supabase
+        .from('daily_reports')
+        .update({ status: 'completed', is_partial: false })
+        .eq('id', dailyReportId);
+      console.log('✅ Daily report marked as completed, is_partial=false');
 
-    if (updateError) {
-      console.error('⚠️  Failed to update report status:', updateError.message);
+      // Self-contained: mark brand as succeeded directly here.
+      // Do NOT rely on queue-organizer to do this — if EOD was triggered manually
+      // or queue-organizer crashes after calling EOD, the brand would be stuck at phase1_complete.
+      const { error: brandErr } = await supabase
+        .from('brands')
+        .update({ first_report_status: 'succeeded' })
+        .eq('id', report.brand_id)
+        .in('first_report_status', ['phase1_complete', 'running', 'queued']);
+      if (brandErr) {
+        console.error('⚠️  Failed to set brand succeeded (non-fatal):', brandErr.message);
+      } else {
+        console.log('✅ Brand first_report_status → succeeded');
+      }
     } else {
-      console.log('✅ Daily report marked as complete');
+      // Phase 1: mark completed so dashboard queries find it, keep is_partial=true
+      // Phase 2 EOD will re-run the full pipeline with all 30 prompts and set is_partial=false
+      await supabase
+        .from('daily_reports')
+        .update({ status: 'completed', is_partial: true })
+        .eq('id', dailyReportId);
+      console.log('✅ Daily report marked as completed, is_partial=true (Phase 2 will re-run with all 30 prompts)');
     }
 
     const endTime = new Date();
     const totalTime = Math.round((endTime - startTime) / 1000);
 
     console.log('\n' + '='.repeat(70));
-    console.log('🎉 END-OF-DAY PROCESSING COMPLETE');
+    console.log('🎉 END-OF-DAY PROCESSING COMPLETE (' + (isPartialRun ? 'PARTIAL' : 'FULL') + ')');
     console.log('='.repeat(70));
     console.log('Total time: ' + totalTime + 's');
     console.log('Brand mentions: ' + analysisResult.brandMentioned);
-    console.log('Status: complete');
     console.log('='.repeat(70) + '\n');
 
-    return {
-      success: true,
-      dailyReportId,
-      analysisResult,
-      aggregateResult,
-      totalTime
-    };
+    return { success: true, dailyReportId, analysisResult, aggregateResult, totalTime };
 
   } catch (error) {
     console.error('\n❌ END-OF-DAY PROCESSING FAILED');
     console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
 
-    // Mark report as failed
     await supabase
       .from('daily_reports')
-      .update({
-        status: 'failed',
-        error_message: error.message
-      })
+      .update({ status: 'failed' })
       .eq('id', dailyReportId);
 
-    return {
-      success: false,
-      error: error.message
-    };
+    return { success: false, error: error.message };
   }
 }
 
 /**
  * Check if all batches are in a final state (no more processing needed)
- * Returns true if all batches are either 'completed' or 'failed' (not pending/running)
  */
 async function checkAllBatchesComplete(brandId, reportDate) {
   const { data: schedules, error } = await supabase
@@ -264,74 +212,48 @@ async function checkAllBatchesComplete(brandId, reportDate) {
     .eq('brand_id', brandId)
     .eq('schedule_date', reportDate);
 
-  if (error) {
-    console.error('Warning: Could not check batch completion:', error.message);
-    return false;
-  }
+  if (error || !schedules || schedules.length === 0) return false;
 
-  if (!schedules || schedules.length === 0) {
-    return false;
-  }
-
-  // All schedules must be in a final state (completed OR failed)
-  // NOT pending or running
   const allDone = schedules.every(s => s.status === 'completed' || s.status === 'failed');
-
   const completed = schedules.filter(s => s.status === 'completed').length;
   const failed = schedules.filter(s => s.status === 'failed').length;
   const pending = schedules.filter(s => s.status === 'pending' || s.status === 'running').length;
-
-  console.log(`📊 Batch status: ${completed} completed, ${failed} failed, ${pending} pending/running (${schedules.length} total)`);
-
+  console.log('📊 Batch status: ' + completed + ' completed, ' + failed + ' failed, ' + pending + ' pending/running');
   return allDone;
 }
 
 /**
  * Auto-detect and process any daily reports that are ready
- * (All batches complete but report not yet processed)
  */
 async function autoProcessPendingReports() {
   console.log('🔍 Scanning for daily reports ready for end-of-day processing...\n');
 
-  // Find reports where all batches are complete but report is still 'running'
   const { data: reports, error } = await supabase
     .from('daily_reports')
     .select('id, brand_id, report_date')
     .eq('status', 'running')
+    .eq('is_partial', false)
     .order('report_date', { ascending: false })
     .limit(10);
 
-  if (error) {
-    console.error('❌ Error fetching reports:', error.message);
-    return;
-  }
-
-  if (!reports || reports.length === 0) {
+  if (error || !reports || reports.length === 0) {
     console.log('No reports ready for processing.\n');
     return;
   }
 
-  console.log(`Found ${reports.length} report(s) in 'running' status. Checking batches...\n`);
-
   for (const report of reports) {
     const allComplete = await checkAllBatchesComplete(report.brand_id, report.report_date);
-
     if (allComplete) {
-      console.log(`\n✅ Report ${report.id} is ready - all batches complete!`);
-      console.log('   Processing now...\n');
-
-      // Determine providers based on what data exists
+      console.log('✅ Report', report.id, 'ready — processing now...');
       const { data: results } = await supabase
         .from('prompt_results')
         .select('provider')
         .eq('daily_report_id', report.id)
         .limit(100);
-
       const providers = [...new Set((results || []).map(r => r.provider))];
-
-      await processEndOfDay(report.id, providers.length > 0 ? providers : ['chatgpt']);
+      await processEndOfDay(report.id, { phase: 2 }, providers.length > 0 ? providers : ['chatgpt']);
     } else {
-      console.log(`⏳ Report ${report.id} - batches still running, skipping`);
+      console.log('⏳ Report', report.id, '- batches still running, skipping');
     }
   }
 }
@@ -339,37 +261,25 @@ async function autoProcessPendingReports() {
 // CLI Interface
 if (require.main === module) {
   const dailyReportId = process.argv[2];
+  const phaseArg = process.argv[3]; // optional: --phase=1
 
   if (dailyReportId && dailyReportId !== '--auto') {
-    // Process specific daily report
-    processEndOfDay(dailyReportId)
-      .then(result => {
-        process.exit(result.success ? 0 : 1);
-      })
-      .catch(error => {
-        console.error('Fatal error:', error);
-        process.exit(1);
-      });
+    const phase = phaseArg === '--phase=1' ? 1 : 2;
+    const providers = process.env.EOD_PROVIDERS ? process.env.EOD_PROVIDERS.split(',') : ['chatgpt'];
+    processEndOfDay(dailyReportId, { phase }, providers)
+      .then(result => process.exit(result.success ? 0 : 1))
+      .catch(error => { console.error('Fatal error:', error); process.exit(1); });
   } else if (dailyReportId === '--auto') {
-    // Auto-detect and process pending reports
     autoProcessPendingReports()
-      .then(() => {
-        console.log('\n✅ Auto-processing complete\n');
-        process.exit(0);
-      })
-      .catch(error => {
-        console.error('Fatal error:', error);
-        process.exit(1);
-      });
+      .then(() => { console.log('\n✅ Auto-processing complete\n'); process.exit(0); })
+      .catch(error => { console.error('Fatal error:', error); process.exit(1); });
   } else {
     console.error('Usage:');
     console.error('  node end-of-day-processor.js <daily_report_id>');
+    console.error('  node end-of-day-processor.js <daily_report_id> --phase=1');
     console.error('  node end-of-day-processor.js --auto');
     process.exit(1);
   }
 }
 
-module.exports = {
-  processEndOfDay,
-  autoProcessPendingReports
-};
+module.exports = { processEndOfDay, autoProcessPendingReports };
