@@ -98,7 +98,10 @@ const fetchWebsiteContent = async (url: string): Promise<string> => {
 const findCompetitorsWithPerplexity = async (
   businessSummary: string,
   marketScope: string,
-  marketCountry: string | null
+  marketCountry: string | null,
+  brandName: string,
+  businessLabel: string,
+  industry: string
 ): Promise<{ name: string; domain: string }[]> => {
   if (!process.env.PERPLEXITY_API_KEY) {
     console.warn('PERPLEXITY_API_KEY not set — skipping competitor search')
@@ -108,20 +111,22 @@ const findCompetitorsWithPerplexity = async (
   const isLocal = marketScope === 'local' && marketCountry
   const marketContext = isLocal ? `in ${marketCountry}` : 'globally'
 
-  const query = `I need to find the top real competitor companies for the following business:
+  const query = `Find the top 6 real competitor companies for this business:
 
-${businessSummary}
+Business name: ${brandName}
+Industry: ${industry}
+What they do: ${businessLabel}
+Description: ${businessSummary}
+Market: ${marketContext}
 
-Search the web and find up to 6 SPECIFIC named companies that directly compete with this business ${marketContext}.
+Search for specific named companies that compete directly with ${brandName} ${marketContext}.
 
 STRICT RULES:
-- RESPOND IN ENGLISH ONLY — regardless of the language of the business description above
-- Every result must be a real, individual named company (e.g. "Grey Israel", "McCann Tel Aviv", "Leo Burnett Israel") — NOT a category or type of company
-- Do NOT return industry descriptions like "digital marketing agencies", "advertising firms", "PR companies", or any other category name — these are invalid and will be rejected
-- Each result must be a specific business entity with its own website and domain
-- Include the exact website domain for each company
+- Return ONLY real, individually named companies — each must be a specific business entity (e.g. "Grey Israel", "McCann Tel Aviv", "Leo Burnett Israel")
+- Do NOT return category names, industry types, or generic descriptions like "advertising agencies" or "marketing companies" — these are invalid
+- Include the website domain for each company if available
 
-Return ONLY a JSON array of objects, no other text, no explanation:
+Return ONLY a JSON array of objects, no other text:
 [
   {"name": "Grey Israel", "domain": "grey.com"},
   {"name": "McCann Tel Aviv", "domain": "mccann.co.il"},
@@ -137,9 +142,15 @@ Return ONLY a JSON array of objects, no other text, no explanation:
       },
       body: JSON.stringify({
         model: 'llama-3.1-sonar-large-128k-online',
-        messages: [{ role: 'user', content: query }],
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a competitive intelligence tool. Find real, named competitor companies for businesses. Always return only specific company names with their domains — never industry categories or generic descriptions. Respond in JSON format only.'
+          },
+          { role: 'user', content: query }
+        ],
         temperature: 0.2,
-        max_tokens: 600
+        max_tokens: 800
       })
     })
 
@@ -161,11 +172,11 @@ Return ONLY a JSON array of objects, no other text, no explanation:
     if (!Array.isArray(parsed)) return []
 
     return parsed
-      .filter((c: any) => c && typeof c.name === 'string' && c.name.trim() && typeof c.domain === 'string' && c.domain.trim())
-      .slice(0, 4)
+      .filter((c: any) => c && typeof c.name === 'string' && c.name.trim())
+      .slice(0, 6)
       .map((c: any) => ({
         name: c.name.trim(),
-        domain: c.domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
+        domain: (typeof c.domain === 'string' ? c.domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') : '')
       }))
   } catch (err) {
     console.error('Perplexity competitor search failed:', err)
@@ -329,7 +340,14 @@ Respond ONLY with the JSON object, no additional text.
       : (tldCountryHint && marketScope === 'local' ? tldCountryHint : null)
 
     // Search for real competitors via Perplexity
-    const perplexityCompetitors = await findCompetitorsWithPerplexity(businessSummary, marketScope, marketCountry)
+    const perplexityCompetitors = await findCompetitorsWithPerplexity(
+      businessSummary,
+      marketScope,
+      marketCountry,
+      gptResult.brandName || domain,
+      businessLabel,
+      gptResult.industry || ''
+    )
 
     // Validate and build final brand data
     const ensureArray = (arr: any, count: number, fallback: string[]): string[] => {
@@ -366,13 +384,9 @@ Respond ONLY with the JSON object, no additional text.
       useCases: ensureArray(gptResult.useCases, 4, [
         'Small to medium businesses', 'Enterprise organizations', 'Professional teams', 'Individual users'
       ]),
-      // Perplexity results are the source of truth; fall back to GPT if Perplexity returned nothing
-      competitors: perplexityCompetitors.length > 0
-        ? perplexityCompetitors.map(c => c.name)
-        : ensureArray(gptResult.competitors, 4, []),
-      competitorDomains: perplexityCompetitors.length > 0
-        ? perplexityCompetitors.map(c => c.domain)
-        : [],
+      // Perplexity is the only source for competitors — no GPT fallback
+      competitors: perplexityCompetitors.map(c => c.name),
+      competitorDomains: perplexityCompetitors.map(c => c.domain),
       uniqueSellingProps: ensureArray(gptResult.uniqueSellingProps, 4, [
         'Faster implementation', 'Better support', 'More affordable', 'Industry-specific features'
       ]),

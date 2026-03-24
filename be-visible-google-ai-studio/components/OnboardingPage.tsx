@@ -79,6 +79,10 @@ const emptyData: OnboardingData = {
   competitors: ['', '', '', ''],
   competitorDomains: ['', '', '', ''],
   uniqueSellingProps: ['', '', '', ''],
+  businessSummary: '',
+  businessLabel: '',
+  marketScope: '',
+  marketCountry: null,
 };
 
 const languages = [
