@@ -44,6 +44,10 @@ interface OnboardingData {
   useCases: string[];
   competitors: { name: string; domain: string }[];
   uniqueSellingProps: string[];
+  businessSummary?: string;
+  businessLabel?: string;
+  marketScope?: string;
+  marketCountry?: string | null;
 }
 
 interface GeneratedPrompt {
@@ -73,6 +77,10 @@ const emptyData: OnboardingData = {
   useCases: ['', '', '', ''],
   competitors: [{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''}],
   uniqueSellingProps: ['', '', '', ''],
+  businessSummary: '',
+  businessLabel: '',
+  marketScope: '',
+  marketCountry: null,
 };
 
 const languages = [
@@ -386,6 +394,10 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                 ]
               : prev.competitors,
             uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
+            businessSummary: bd.businessSummary || prev.businessSummary,
+            businessLabel: bd.businessLabel || prev.businessLabel,
+            marketScope: bd.marketScope || prev.marketScope,
+            marketCountry: bd.marketCountry ?? prev.marketCountry,
           }));
           setPrefilled(true);
         } else {
