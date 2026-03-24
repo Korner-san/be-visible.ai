@@ -411,6 +411,7 @@ Guidelines:
 
       return NextResponse.json({
         success: true,
+        v: '2.1',
         brandData: { ...validatedBrandData, competitors }
       })
 
