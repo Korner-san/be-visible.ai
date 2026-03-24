@@ -1,5 +1,6 @@
 // Server-first user state machine for onboarding and routing
 import { createClient } from './server'
+import { createServiceClient } from './service'
 import type { User } from '@supabase/supabase-js'
 import { callPerplexityAPI, extractPerplexityContent } from '@/lib/providers/perplexity'
 
@@ -267,28 +268,12 @@ export function getRouteForState(state: UserState): string {
  * Create or get a pending brand for onboarding
  */
 export async function createPendingBrand(userId: string): Promise<{ id: string; name: string; domain: string } | null> {
-  const supabase = await createClient()
+  // Use service client to bypass RLS for brand creation
+  const serviceSupabase = createServiceClient()
 
   try {
-    // Verify auth session first
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 createPendingBrand auth check:', {
-        providedUserId: userId,
-        authUserId: user?.id,
-        authError: authError?.message,
-        hasValidSession: !!user
-      })
-    }
-
-    if (authError || !user || user.id !== userId) {
-      console.error('Auth session invalid in createPendingBrand:', { authError, user: !!user, userIdMatch: user?.id === userId })
-      return null
-    }
-
     // Check if user already has a pending brand
-    const { data: existingBrands, error: selectError } = await supabase
+    const { data: existingBrands, error: selectError } = await serviceSupabase
       .from('brands')
       .select('id, name, domain')
       .eq('owner_user_id', userId)
@@ -309,7 +294,7 @@ export async function createPendingBrand(userId: string): Promise<{ id: string; 
     }
 
     // Create new pending brand
-    const { data, error } = await supabase
+    const { data, error } = await serviceSupabase
       .from('brands')
       .insert({
         owner_user_id: userId,
