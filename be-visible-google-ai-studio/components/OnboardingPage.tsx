@@ -346,19 +346,13 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   };
 
   // ── Save current answers to Supabase ────────────────────────────────────────
-  // Read-then-merge: preserves API-written fields (_debug, businessSummary, businessLabel, etc.)
-  // that are not part of the user-facing form state.
+  // Uses DB-side JSONB merge (|| operator) to atomically patch only the fields
+  // in currentData, preserving API-written fields like _debug that are not in OnboardingData.
   const saveAnswers = async (currentBrandId: string, currentData: OnboardingData) => {
-    const { data: brand } = await supabase
-      .from('brands')
-      .select('onboarding_answers')
-      .eq('id', currentBrandId)
-      .single();
-    const existing = (brand?.onboarding_answers as any) || {};
-    await supabase
-      .from('brands')
-      .update({ onboarding_answers: { ...existing, ...currentData } })
-      .eq('id', currentBrandId);
+    await supabase.rpc('patch_onboarding_answers', {
+      p_brand_id: currentBrandId,
+      p_answers: currentData as any,
+    });
   };
 
   // ── Step 3: website analysis ─────────────────────────────────────────────────
