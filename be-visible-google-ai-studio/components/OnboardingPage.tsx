@@ -346,10 +346,18 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   };
 
   // ── Save current answers to Supabase ────────────────────────────────────────
+  // Read-then-merge: preserves API-written fields (_debug, businessSummary, businessLabel, etc.)
+  // that are not part of the user-facing form state.
   const saveAnswers = async (currentBrandId: string, currentData: OnboardingData) => {
+    const { data: brand } = await supabase
+      .from('brands')
+      .select('onboarding_answers')
+      .eq('id', currentBrandId)
+      .single();
+    const existing = (brand?.onboarding_answers as any) || {};
     await supabase
       .from('brands')
-      .update({ onboarding_answers: currentData })
+      .update({ onboarding_answers: { ...existing, ...currentData } })
       .eq('id', currentBrandId);
   };
 
