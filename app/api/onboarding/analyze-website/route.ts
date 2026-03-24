@@ -133,6 +133,8 @@ Return ONLY a JSON array of objects, no other text:
   {"name": "Leo Burnett Israel", "domain": "leoburnett.com"}
 ]`
 
+  console.log('📡 [PERPLEXITY REQUEST] Full query sent:\n' + query)
+
   try {
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
@@ -155,31 +157,42 @@ Return ONLY a JSON array of objects, no other text:
     })
 
     if (!response.ok) {
-      console.error('Perplexity API error:', response.status)
+      console.error('📡 [PERPLEXITY ERROR] HTTP status:', response.status, await response.text())
       return []
     }
 
     const result = await response.json()
     const content = result.choices?.[0]?.message?.content?.trim()
-    if (!content) return []
+    console.log('📡 [PERPLEXITY RESPONSE] Full raw response:\n' + content)
 
-    console.log('🔍 [PERPLEXITY] Raw response:', content.substring(0, 500))
+    if (!content) {
+      console.log('📡 [PERPLEXITY RESPONSE] Empty content — returning []')
+      return []
+    }
 
     const jsonMatch = content.match(/\[[\s\S]*\]/)
-    if (!jsonMatch) return []
+    if (!jsonMatch) {
+      console.log('📡 [PERPLEXITY RESPONSE] No JSON array found in response')
+      return []
+    }
+
+    console.log('📡 [PERPLEXITY RESPONSE] JSON extracted:', jsonMatch[0])
 
     const parsed = JSON.parse(jsonMatch[0])
     if (!Array.isArray(parsed)) return []
 
-    return parsed
+    const filtered = parsed
       .filter((c: any) => c && typeof c.name === 'string' && c.name.trim())
       .slice(0, 6)
       .map((c: any) => ({
         name: c.name.trim(),
         domain: (typeof c.domain === 'string' ? c.domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') : '')
       }))
+
+    console.log('📡 [PERPLEXITY RESULT] Final competitors after filter/map:', JSON.stringify(filtered))
+    return filtered
   } catch (err) {
-    console.error('Perplexity competitor search failed:', err)
+    console.error('📡 [PERPLEXITY ERROR] Exception:', err)
     return []
   }
 }
@@ -298,6 +311,8 @@ Guidelines:
 Respond ONLY with the JSON object, no additional text.
 `
 
+    console.log('📡 [GPT-4o-mini REQUEST] model=gpt-4o-mini url=' + normalizedUrl + ' contentLength=' + content.length)
+
     let gptResult: any
     try {
       const completion = await openai.chat.completions.create({
@@ -315,11 +330,15 @@ Respond ONLY with the JSON object, no additional text.
       const responseContent = completion.choices[0]?.message?.content
       if (!responseContent) throw new Error('No response from OpenAI')
 
+      console.log('📡 [GPT-4o-mini RESPONSE] finish_reason=' + completion.choices[0]?.finish_reason + ' tokens=' + completion.usage?.completion_tokens)
+      console.log('📡 [GPT-4o-mini RESPONSE] raw:\n' + responseContent)
+
       const cleanedResponse = responseContent.trim()
       const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/)
       if (!jsonMatch) throw new Error('No JSON found in response')
 
       gptResult = JSON.parse(jsonMatch[0])
+      console.log('📡 [GPT-4o-mini PARSED] brandName=' + gptResult.brandName + ' businessSummary=' + JSON.stringify(gptResult.businessSummary) + ' businessLabel=' + JSON.stringify(gptResult.businessLabel) + ' marketScope=' + gptResult.marketScope + ' marketCountry=' + gptResult.marketCountry)
     } catch (parseError) {
       console.error('Error parsing OpenAI response:', parseError)
       throw new Error('Failed to parse AI response as JSON')
@@ -338,6 +357,12 @@ Respond ONLY with the JSON object, no additional text.
     const marketCountry = marketScope === 'local' && typeof gptResult.marketCountry === 'string'
       ? gptResult.marketCountry
       : (tldCountryHint && marketScope === 'local' ? tldCountryHint : null)
+
+    console.log('📡 [COMPUTED] businessSummary=' + JSON.stringify(businessSummary))
+    console.log('📡 [COMPUTED] businessLabel=' + JSON.stringify(businessLabel))
+    console.log('📡 [COMPUTED] marketScope=' + marketScope + ' marketCountry=' + marketCountry)
+    console.log('📡 [COMPUTED] brandName passed to Perplexity=' + JSON.stringify(gptResult.brandName || domain))
+    console.log('📡 [COMPUTED] industry passed to Perplexity=' + JSON.stringify(gptResult.industry || ''))
 
     // Search for real competitors via Perplexity
     const perplexityCompetitors = await findCompetitorsWithPerplexity(
