@@ -45,6 +45,8 @@ interface OnboardingData {
   competitors: { name: string; domain: string }[];
   uniqueSellingProps: string[];
   businessSummary?: string;
+  coreFunction?: string;
+  industryKeywords?: string[];
   businessLabel?: string;
   businessType?: string;
   marketScope?: string;
@@ -79,6 +81,8 @@ const emptyData: OnboardingData = {
   competitors: [{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''},{name:'',domain:''}],
   uniqueSellingProps: ['', '', '', ''],
   businessSummary: '',
+  coreFunction: '',
+  industryKeywords: [],
   businessLabel: '',
   businessType: '',
   marketScope: '',
@@ -397,6 +401,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
               : prev.competitors,
             uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
             businessSummary: bd.businessSummary || prev.businessSummary,
+            coreFunction: bd.coreFunction || prev.coreFunction,
+            industryKeywords: bd.industryKeywords?.length ? bd.industryKeywords : prev.industryKeywords,
             businessLabel: bd.businessLabel || prev.businessLabel,
             businessType: bd.businessType || prev.businessType,
             marketScope: bd.marketScope || prev.marketScope,

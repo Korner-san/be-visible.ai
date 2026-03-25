@@ -11,16 +11,6 @@
 
 const OpenAI = require('openai');
 
-const DOMAIN_BLOCKLIST = new Set([
-  'wikipedia.org', 'linkedin.com', 'facebook.com', 'instagram.com',
-  'twitter.com', 'x.com', 'youtube.com', 'tiktok.com',
-  'g2.com', 'capterra.com', 'trustpilot.com', 'crunchbase.com',
-  'glassdoor.com', 'indeed.com', 'yelp.com', 'tripadvisor.com',
-  'amazon.com', 'google.com', 'bing.com', 'yahoo.com',
-  'reddit.com', 'quora.com', 'medium.com', 'substack.com',
-  'forbes.com', 'techcrunch.com', 'businessinsider.com', 'wsj.com',
-]);
-
 const allowedOrigins = [
   process.env.ALLOWED_ORIGIN,
   'http://localhost:3000',
@@ -81,7 +71,7 @@ const fetchWebsiteContent = async (url) => {
 // ─── Phase B: Step 1 — Generate search queries (type-aware) ───────────────────
 
 const generateSearchQueries = async (openai, {
-  businessSummary, businessLabel, businessType,
+  businessSummary, businessLabel, businessType, coreFunction, industryKeywords,
   marketScope, marketCountry, language,
   keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
 }) => {
@@ -113,21 +103,24 @@ const generateSearchQueries = async (openai, {
 
   let strategyPrompt;
 
+  const keywordList = (industryKeywords || []).filter(Boolean);
+  const keywordsLine = keywordList.length ? keywordList.join(', ') : null;
+
   if (businessType === 'saas_platform') {
     strategyPrompt = `This is a SaaS/platform/tool business. Generate EXACTLY 10 queries covering these mandatory angles (one query per angle):
-1. Feature-specific: a query around "${keyFeatures?.[0] || businessLabel}"
-2. Feature-specific: a query around "${keyFeatures?.[1] || businessLabel}"
-3. Use-case: a query around "${useCases?.[0] || businessLabel}"
-4. Use-case: a query around "${useCases?.[1] || businessLabel}"
-5. Problem-solving: a query around "${problemSolved || businessLabel} solution software"
-6. Best-in-class: "best [productCategory] tools" style query
-7. Feature combination: a query combining two key features
-8. USP-based: a query around "${uniqueSellingProps?.[0] || businessLabel}"
+1. Industry keyword #1: a query built around "${keywordList[0] || keyFeatures?.[0] || businessLabel}" as the core search term
+2. Industry keyword #2: a query built around "${keywordList[1] || keyFeatures?.[1] || businessLabel}" as the core search term
+3. Industry keyword #3: a query built around "${keywordList[2] || keyFeatures?.[2] || businessLabel}" as the core search term
+4. Core function: a query derived directly from the exact mechanism: "${coreFunction || businessSummary}"
+5. Use-case: a query around "${useCases?.[0] || businessLabel}"
+6. Use-case: a query around "${useCases?.[1] || businessLabel}"
+7. Problem-solving: a query around "${problemSolved || businessLabel} tool"
+8. Best-in-class: "best [industry keyword or product category] tools/platforms/software" style query using the most specific keyword
 9. Task-based: a query around how to accomplish "${tasksHelped?.[0] || 'the main task'}" with a tool
 10. Audience + goal: a query for the target audience trying to achieve the main goal
 
 Do NOT include geography in any query — this is a global product.
-Do NOT use "[businessLabel] alternatives" or "[businessLabel] competitors" — focus on what the product does.`;
+Do NOT use "[businessLabel] alternatives" or "[businessLabel] competitors" — focus on what the product does mechanically.`;
 
   } else if (businessType === 'agency_service') {
     strategyPrompt = `This is an agency or service business. Generate EXACTLY 8 queries covering these angles:
@@ -154,8 +147,13 @@ ${isLocal ? `Include geography (${marketCountry}) in queries 2 and 5.` : 'Do not
 ${isLocal ? `Include "${marketCountry}" geography in 2–3 queries.` : 'Do not include geography.'}`;
   }
 
+  const coreFunctionLine = coreFunction ? `Core function: ${coreFunction}` : '';
+  const keywordsLine2 = keywordsLine ? `Industry keywords: ${keywordsLine}` : '';
+
   const userPrompt = `Business type: ${businessLabel} (${businessType})
 Description: ${businessSummary}
+${coreFunctionLine}
+${keywordsLine2}
 ${featuresLine}
 ${useCasesLine}
 ${tasksLine}
@@ -242,7 +240,6 @@ const searchCandidates = async (queries, originalDomain, businessType) => {
       const domain = extractDomain(item.url);
       if (!domain) continue;
       if (domain === originalDomain) continue;
-      if (DOMAIN_BLOCKLIST.has(domain)) continue;
 
       domainScore[domain] = (domainScore[domain] || 0) + 1;
       if (!domainMeta[domain]) {
@@ -270,7 +267,7 @@ const searchCandidates = async (queries, originalDomain, businessType) => {
 // ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
 
 const scoreCandidates = async (openai, candidates, {
-  businessSummary, businessLabel, businessType, marketScope, keyFeatures,
+  businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction,
 }) => {
   if (!candidates.length) return [];
 
@@ -283,6 +280,7 @@ const scoreCandidates = async (openai, candidates, {
       const userPrompt = `Reference business:
 Type: ${businessLabel} (${businessType})
 Description: ${businessSummary}
+${coreFunction ? `Core function: ${coreFunction}` : ''}
 ${topFeatures ? `Key features: ${topFeatures}` : ''}
 
 Candidate:
@@ -351,14 +349,14 @@ Return ONLY valid JSON:
 // ─── Phase B: Orchestrator ────────────────────────────────────────────────────
 
 const discoverCompetitors = async (openai, {
-  businessSummary, businessLabel, businessType,
+  businessSummary, businessLabel, businessType, coreFunction, industryKeywords,
   marketScope, marketCountry, language, originalDomain,
   keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
 }) => {
   if (!businessSummary) return [];
 
   const queries = await generateSearchQueries(openai, {
-    businessSummary, businessLabel, businessType,
+    businessSummary, businessLabel, businessType, coreFunction, industryKeywords,
     marketScope, marketCountry, language,
     keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
   });
@@ -368,7 +366,7 @@ const discoverCompetitors = async (openai, {
   if (!candidates.length) return [];
 
   const competitors = await scoreCandidates(openai, candidates, {
-    businessSummary, businessLabel, businessType, marketScope, keyFeatures,
+    businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction,
   });
   console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
   return competitors;
@@ -429,6 +427,8 @@ Return a valid JSON object with EXACTLY these fields:
   "useCases": ["use case 1", "use case 2", "use case 3", "use case 4"],
   "uniqueSellingProps": ["usp 1", "usp 2", "usp 3", "usp 4"],
   "businessSummary": "2-3 sentence paragraph in English: who this company is, exactly what they do, what problem they solve, and where they operate",
+  "coreFunction": "one precise sentence in English describing exactly what the product or service mechanically does — the technical action, not the business outcome. E.g. 'Monitors how a brand is mentioned inside AI-generated answers from ChatGPT, Perplexity, and Gemini' or 'Manufactures custom injection-molded plastic components for industrial clients'",
+  "industryKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "businessLabel": "a short 2-5 word categorical label in English for what this business is — e.g. Marketing agency, B2B HR SaaS, Plastic parts manufacturer",
   "businessType": "saas_platform or agency_service or local_service or ecommerce or other",
   "marketScope": "local or global",
@@ -436,10 +436,12 @@ Return a valid JSON object with EXACTLY these fields:
 }
 
 Guidelines:
-1. businessSummary, businessLabel, businessType, marketScope and marketCountry must ALWAYS be in English
+1. businessSummary, coreFunction, industryKeywords, businessLabel, businessType, marketScope and marketCountry must ALWAYS be in English
 2. All other fields should be in ${language}
-3. businessLabel must be short and categorical — strip all marketing language, 2-5 words max
-4. businessType rules:
+3. coreFunction must describe the exact technical mechanism — "what does this product literally do?" not "what does it achieve for the customer?"
+4. industryKeywords: 3-5 specific technical terms, acronyms, or professional vocabulary that experts would Google to find this type of product/service. Not marketing language. Examples for an AI visibility monitoring tool: ["AEO", "GEO", "answer engine optimization", "AI search visibility", "generative engine optimization"]. Examples for a plastics manufacturer: ["injection molding", "CNC machining", "plastic fabrication"].
+5. businessLabel must be short and categorical — strip all marketing language, 2-5 words max
+6. businessType rules:
    - "saas_platform": has a dashboard, subscription model, users self-serve (software, tools, platforms)
    - "agency_service": humans deliver the service to clients (agencies, consultancies, studios, manufacturers)
    - "local_service": requires physical presence or exclusively serves one local area (restaurants, salons, contractors)
@@ -447,8 +449,8 @@ Guidelines:
    - "other": anything that doesn't clearly fit
    - IMPORTANT: saas_platform defaults to "global" marketScope unless the product is language-locked or legally restricted to one country. A US-based SaaS accessible worldwide is "global", not "local"
 5. marketScope is "local" only if the business clearly targets one country exclusively — not just because it is based there
-6. Do NOT include a competitors field
-7. Keep each value concise (under 15 words for non-summary fields)`;
+8. Do NOT include a competitors field
+9. Keep each value concise (under 15 words for non-summary/coreFunction fields)`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -476,6 +478,8 @@ Guidelines:
       businessSummary: gptData.businessSummary,
       businessLabel: gptData.businessLabel,
       businessType: gptData.businessType || 'other',
+      coreFunction: gptData.coreFunction || '',
+      industryKeywords: gptData.industryKeywords || [],
       marketScope: gptData.marketScope,
       marketCountry: gptData.marketCountry,
       language,
@@ -498,6 +502,8 @@ Guidelines:
       useCases: gptData.useCases,
       uniqueSellingProps: gptData.uniqueSellingProps,
       businessSummary: gptData.businessSummary || '',
+      coreFunction: gptData.coreFunction || '',
+      industryKeywords: gptData.industryKeywords || [],
       businessLabel: gptData.businessLabel || '',
       businessType: gptData.businessType || 'other',
       marketScope: gptData.marketScope || 'global',
