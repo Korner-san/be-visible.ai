@@ -65,14 +65,14 @@ module.exports = async function handler(req, res) {
 
 You will receive a numbered list of search prompts, each tagged with [Category | Type: X].
 Prompt types and how to refine each:
-- "Direct request": keep it direct and action-oriented ("Find me...", "Recommend a...")
-- "Conversation-simulating": keep it conversational and situational ("I'm trying to...", "We're a business that...")
-- "Standard checking": keep it informational and exploratory ("How does X work...", "Which solutions exist for...")
-- "Goal/feature/action-specific": keep it focused on finding companies, entities, tools, or services ("What companies specialize in...", "Which agencies help with...")
+- "Direct request": keep it direct and action-oriented ("Find me...", "Recommend a...") — max 15 words
+- "Conversation-simulating": keep it conversational and situational ("I'm trying to...", "We're a business that...") — can be up to 40 words to allow natural scenario setup
+- "Standard checking": keep it informational and exploratory ("How does X work...", "Which solutions exist for...") — max 15 words
+- "Goal/feature/action-specific": keep it focused on finding companies, entities, tools, or services ("What companies specialize in...", "Which agencies help with...") — max 15 words
 
 For each prompt:
 - Refine wording to sound more natural while preserving its type's tone
-- Keep it under 15 words
+- Respect the word limit for each type (see above)
 - Keep it in ${language} — do NOT change the language
 - Do NOT add brand names or competitor names
 - Preserve the original intent and category

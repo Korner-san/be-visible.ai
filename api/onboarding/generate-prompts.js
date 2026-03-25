@@ -105,19 +105,19 @@ Create 5–6 categories directly from the brand data above. Each category must:
 STEP 2 — Generate exactly 30 prompts spread across those categories:
 Within each category, include a mix of these 4 prompt types:
 
-1. "Direct request" — User is directly asking for a recommendation
+1. "Direct request" — User is directly asking for a recommendation. Max 15 words.
    Examples: "Find me a solution for X", "Recommend a company/agency/tool that does Y"
    Count: ~2 per category
 
-2. "Conversation-simulating" — User describes their situation and asks for guidance
+2. "Conversation-simulating" — User describes their situation and asks for guidance. Up to 40 words to allow natural scenario setup.
    Examples: "I'm trying to do X, what should I consider?", "We're a business that does Y, how do we approach Z?"
    Count: 1–2 per category
 
-3. "Standard checking" — User wants to understand the landscape or how things work
+3. "Standard checking" — User wants to understand the landscape or how things work. Max 15 words.
    Examples: "How does X work in [industry]?", "Which solutions currently exist for [use case]?"
    Count: 2–3 per category
 
-4. "Goal/feature/action-specific" — User is searching for companies, entities, tools, or services tied to a specific goal, feature, or action
+4. "Goal/feature/action-specific" — User is searching for companies, entities, tools, or services tied to a specific goal, feature, or action. Max 15 words.
    Examples: "What companies specialize in [goal]?", "Which agencies/entities help with [task]?", "What tools exist for [feature]?"
    Count: 1–2 per category
 
