@@ -264,6 +264,50 @@ const searchCandidates = async (queries, originalDomain, businessType) => {
   return candidates;
 };
 
+// ─── Phase B: Step 2b — Detect business model from candidate homepage ─────────
+
+const SAAS_SIGNALS = [
+  'log in', 'login', 'sign up', 'signup', 'sign-up',
+  'try for free', 'start free', 'free trial', 'start trial',
+  'get started free', 'start for free', 'try free', 'start your free',
+  'get a demo', 'book a demo', 'request a demo', 'watch a demo',
+  'dashboard', '/pricing', 'pricing plans', 'see pricing',
+];
+
+const AGENCY_SIGNALS = [
+  'contact us', 'get in touch', 'request a quote', 'get a quote',
+  'schedule a call', 'book a consultation', 'book a call',
+  'talk to us', 'speak to us', 'get a proposal', 'request proposal',
+  'our work', 'our clients', 'case studies', 'our portfolio',
+  'meet the team', 'our team', 'about our agency',
+];
+
+const detectBusinessModel = async (domain) => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(`https://${domain}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeVisibleBot/1.0)' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return 'unknown';
+
+    const html = await response.text();
+    const text = html.toLowerCase().slice(0, 60000);
+
+    const saasScore = SAAS_SIGNALS.filter(s => text.includes(s)).length;
+    const agencyScore = AGENCY_SIGNALS.filter(s => text.includes(s)).length;
+
+    if (saasScore >= 2 && saasScore >= agencyScore) return 'saas';
+    if (agencyScore >= 2 && agencyScore > saasScore) return 'agency';
+    if (saasScore >= 1) return 'saas';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+};
+
 // ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
 
 const scoreCandidates = async (openai, candidates, {
@@ -287,6 +331,13 @@ Candidate:
 Domain: ${candidate.domain}
 Title: ${candidate.title}
 Description: ${candidate.snippet}
+Business model signal: ${
+  candidate.detectedModel === 'saas'
+    ? 'Website shows SaaS indicators (login, signup, pricing, free trial buttons)'
+    : candidate.detectedModel === 'agency'
+    ? 'Website shows agency/service indicators (contact forms, consultation booking, case studies, portfolio)'
+    : 'No clear business model signals detected'
+}
 
 Score the candidate as a direct competitor (0–10 each):
 - nicheSimilarity: same specific niche?
@@ -365,7 +416,16 @@ const discoverCompetitors = async (openai, {
   const candidates = await searchCandidates(queries, originalDomain, businessType);
   if (!candidates.length) return [];
 
-  const competitors = await scoreCandidates(openai, candidates, {
+  // Enrich candidates with business model detection (parallel fetches)
+  const enrichedCandidates = await Promise.all(
+    candidates.map(async (c) => ({
+      ...c,
+      detectedModel: await detectBusinessModel(c.domain),
+    }))
+  );
+  console.log(`[analyze-website] Step 2b — model detection:`, enrichedCandidates.map(c => `${c.domain}:${c.detectedModel}`));
+
+  const competitors = await scoreCandidates(openai, enrichedCandidates, {
     businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction,
   });
   console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
