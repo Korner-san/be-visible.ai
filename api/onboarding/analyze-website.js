@@ -360,10 +360,47 @@ const trafficToScore = (etv) => {
   return Math.min(10, (Math.log10(etv + 1) / 7) * 10);
 };
 
+// ─── Phase B: Step 2d — Fetch pricing pages via Tavily extract ────────────────
+
+const fetchPricingPages = async (candidates) => {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (!tavilyKey || !candidates.length) return {};
+
+  const urls = candidates.map(c => `https://${c.domain}/pricing`);
+
+  try {
+    const res = await fetch('https://api.tavily.com/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: tavilyKey, urls }),
+    });
+    if (!res.ok) {
+      console.error('[analyze-website] Tavily extract error:', res.status);
+      return {};
+    }
+    const data = await res.json();
+
+    const pricingMap = {};
+    for (const result of (data.results || [])) {
+      const domain = extractDomain(result.url);
+      if (domain && result.raw_content) {
+        // 1000 chars is enough for plan names, features, price points
+        pricingMap[domain] = result.raw_content.replace(/\s+/g, ' ').trim().slice(0, 1000);
+      }
+    }
+
+    console.log(`[analyze-website] Step 2d — pricing pages fetched for ${Object.keys(pricingMap).length}/${candidates.length} domains`);
+    return pricingMap;
+  } catch (err) {
+    console.error('[analyze-website] Pricing page fetch failed:', err.message);
+    return {};
+  }
+};
+
 // ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
 
 const scoreCandidates = async (openai, candidates, {
-  businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap,
+  businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap, pricingMap,
 }) => {
   if (!candidates.length) return [];
 
@@ -373,6 +410,7 @@ const scoreCandidates = async (openai, candidates, {
 
   const scores = await Promise.all(
     candidates.map(async (candidate) => {
+      const pricingContent = pricingMap?.[candidate.domain] || '';
       const userPrompt = `Reference business:
 Type: ${businessLabel} (${businessType})
 Description: ${businessSummary}
@@ -390,17 +428,19 @@ Business model signal: ${
     ? 'Website shows agency/service indicators (contact forms, consultation booking, case studies, portfolio)'
     : 'No clear business model signals detected'
 }
+Pricing page content: ${pricingContent || 'Not available — could not fetch pricing page'}
 
 Score the candidate as a direct competitor (0–10 each):
-- nicheSimilarity: same specific niche?
-- serviceSimilarity: same or very similar services/features?
-- audienceSimilarity: same target audience/customer segment?
+- nicheSimilarity: same specific niche? Use pricing page features/plan names as strong evidence
+- serviceSimilarity: same or very similar services/features? Pricing page is the best signal — if their plans describe completely different capabilities, score low
+- audienceSimilarity: same target audience/customer segment? Price points and plan tier names (Starter/Pro/Enterprise vs SMB/Agency/Enterprise) reveal target segment
 - geographyFit: same geography?
 - businessModelFit: same type of business? (SaaS platform vs agency/service vs local business vs data provider — score 0 if completely different model, 10 if identical)
-- overallFit: how strong a direct competitor overall?
+- pricingModelFit: same pricing structure AND similar customer segment? Score 10 if same pricing model (both subscription SaaS, both project-based, both per-seat) AND similar price tier (both SMB, both enterprise). Score 0 if pricing reveals a completely different product category or customer segment. If pricing page unavailable, score 5 (neutral).
+- overallFit: how strong a direct competitor overall? Pricing page evidence should heavily influence this score.
 
 Return ONLY valid JSON:
-{"nicheSimilarity":0,"serviceSimilarity":0,"audienceSimilarity":0,"geographyFit":0,"businessModelFit":0,"overallFit":0,"name":"inferred company name","reasoning":"one sentence"}`;
+{"nicheSimilarity":0,"serviceSimilarity":0,"audienceSimilarity":0,"geographyFit":0,"businessModelFit":0,"pricingModelFit":0,"overallFit":0,"name":"inferred company name","reasoning":"one sentence"}`;
 
       try {
         const completion = await openai.chat.completions.create({
@@ -410,7 +450,7 @@ Return ONLY valid JSON:
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.2,
-          max_tokens: 220,
+          max_tokens: 260,
           response_format: { type: 'json_object' },
         });
 
@@ -424,10 +464,11 @@ Return ONLY valid JSON:
     })
   );
 
-  // Step 4 — Weighted ranking (traffic boosts relevant candidates, doesn't override relevance)
+  // Step 4 — Weighted ranking (pricing is a very strong signal)
   const geographyWeight = marketScope === 'local' ? 1.5 : 0.3;
   const trafficWeight = 1;
-  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2 + 2 + trafficWeight;
+  const pricingWeight = 1.5;
+  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2 + pricingWeight + 2 + trafficWeight;
 
   return scores
     .filter(Boolean)
@@ -444,6 +485,7 @@ Return ONLY valid JSON:
           (s.audienceSimilarity || 0) * 1.5 +
           (s.geographyFit || 0) * geographyWeight +
           (s.businessModelFit || 0) * 2 +
+          (s.pricingModelFit || 0) * pricingWeight +
           (s.overallFit || 0) * 2 +
           tScore * trafficWeight
         ) / normalizer,
@@ -476,8 +518,8 @@ const discoverCompetitors = async (openai, {
   const candidates = await searchCandidates(queries, originalDomain, businessType);
   if (!candidates.length) return [];
 
-  // Enrich candidates with business model detection + traffic (parallel)
-  const [enrichedCandidates, trafficMap] = await Promise.all([
+  // Enrich candidates with business model detection + traffic + pricing (all parallel)
+  const [enrichedCandidates, trafficMap, pricingMap] = await Promise.all([
     Promise.all(
       candidates.map(async (c) => ({
         ...c,
@@ -485,13 +527,15 @@ const discoverCompetitors = async (openai, {
       }))
     ),
     fetchTrafficEstimates(candidates.map(c => c.domain)),
+    fetchPricingPages(candidates),
   ]);
 
   console.log(`[analyze-website] Step 2b — model detection:`, enrichedCandidates.map(c => `${c.domain}:${c.detectedModel}`));
   console.log(`[analyze-website] Step 2c — traffic (etv):`, Object.entries(trafficMap).map(([d, v]) => `${d}:${Math.round(v)}`));
+  console.log(`[analyze-website] Step 2d — pricing pages available:`, Object.keys(pricingMap));
 
   const competitors = await scoreCandidates(openai, enrichedCandidates, {
-    businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap,
+    businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap, pricingMap,
   });
   console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
   return competitors;
