@@ -1,12 +1,12 @@
 /**
  * Vercel Serverless Function: /api/onboarding/analyze-website
  *
- * Phase A: GPT-4o-mini extracts brand info + businessSummary/businessLabel/marketScope/marketCountry
- * Phase B: Competitor discovery pipeline
- *   Step 1 — GPT-4o-mini generates niche search queries
- *   Step 2 — Tavily runs those queries, extracts candidate domains
- *   Step 3 — GPT-4o-mini scores each candidate against the original business
- *   Step 4 — Rank by weighted score, return top 6
+ * Phase A: GPT-4o-mini extracts brand info including businessType classification
+ * Phase B: Business-type-aware competitor discovery pipeline
+ *   Step 1 — GPT-4o-mini generates type-specific search queries (6–10 depending on type)
+ *   Step 2 — Tavily runs queries in parallel, extracts candidate domains
+ *   Step 3 — GPT-4o-mini scores each candidate (incl. businessModelFit dimension)
+ *   Step 4 — Weighted ranking (geography weight varies by marketScope), return top 6
  */
 
 const OpenAI = require('openai');
@@ -78,42 +78,112 @@ const fetchWebsiteContent = async (url) => {
   }
 };
 
-// ─── Phase B: Step 1 — Generate search queries ────────────────────────────────
+// ─── Phase B: Step 1 — Generate search queries (type-aware) ───────────────────
 
-const generateSearchQueries = async (openai, businessSummary, businessLabel, marketScope, marketCountry, language) => {
-  const marketLine = marketScope === 'local' && marketCountry
-    ? `Market: ${marketCountry} (local/national business)`
-    : 'Market: Global';
+const generateSearchQueries = async (openai, {
+  businessSummary, businessLabel, businessType,
+  marketScope, marketCountry, language,
+  keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
+}) => {
+  const isLocal = marketScope === 'local' && marketCountry;
 
-  const systemPrompt = `You are a competitive intelligence expert. Generate Google search queries to find direct competitors of a specific business. Queries should target different angles: business category, services, target audience, and geography when relevant. Return only valid JSON.`;
+  // Language rule
+  let languageRule;
+  if (language !== 'English' && isLocal) {
+    languageRule = `Generate ALL queries in ${language}. Do not use English.`;
+  } else if (language !== 'English' && !isLocal) {
+    languageRule = `Generate all queries in English (global search landscape is English-dominant). You may add 1 query in ${language} if highly relevant.`;
+  } else {
+    languageRule = `Generate all queries in English.`;
+  }
 
-  const userPrompt = `Business type: ${businessLabel}
+  const featuresLine = keyFeatures?.filter(Boolean).length
+    ? `Key features: ${keyFeatures.filter(Boolean).join(', ')}`
+    : '';
+  const useCasesLine = useCases?.filter(Boolean).length
+    ? `Use cases: ${useCases.filter(Boolean).join(', ')}`
+    : '';
+  const tasksLine = tasksHelped?.filter(Boolean).length
+    ? `Tasks helped: ${tasksHelped.filter(Boolean).join(', ')}`
+    : '';
+  const uspLine = uniqueSellingProps?.filter(Boolean).length
+    ? `Unique selling props: ${uniqueSellingProps.filter(Boolean).join(', ')}`
+    : '';
+  const problemLine = problemSolved ? `Problem solved: ${problemSolved}` : '';
+
+  let strategyPrompt;
+
+  if (businessType === 'saas_platform') {
+    strategyPrompt = `This is a SaaS/platform/tool business. Generate EXACTLY 10 queries covering these mandatory angles (one query per angle):
+1. Feature-specific: a query around "${keyFeatures?.[0] || businessLabel}"
+2. Feature-specific: a query around "${keyFeatures?.[1] || businessLabel}"
+3. Use-case: a query around "${useCases?.[0] || businessLabel}"
+4. Use-case: a query around "${useCases?.[1] || businessLabel}"
+5. Problem-solving: a query around "${problemSolved || businessLabel} solution software"
+6. Best-in-class: "best [productCategory] tools" style query
+7. Feature combination: a query combining two key features
+8. USP-based: a query around "${uniqueSellingProps?.[0] || businessLabel}"
+9. Task-based: a query around how to accomplish "${tasksHelped?.[0] || 'the main task'}" with a tool
+10. Audience + goal: a query for the target audience trying to achieve the main goal
+
+Do NOT include geography in any query — this is a global product.
+Do NOT use "[businessLabel] alternatives" or "[businessLabel] competitors" — focus on what the product does.`;
+
+  } else if (businessType === 'agency_service') {
+    strategyPrompt = `This is an agency or service business. Generate EXACTLY 8 queries covering these angles:
+1. businessLabel direct: a clean query built around "${businessLabel}"
+2. businessLabel + geography: "${businessLabel} in ${marketCountry || 'relevant market'}"${isLocal ? ' (include geography)' : ' (skip geography if global)'}
+3. Specific service #1: a query around the first key service or feature
+4. Specific service #2: a query around another key service or feature
+5. Service + target audience: "${businessLabel} for [target industry/audience]"
+6. Problem-solving: "who provides [the main problem this business solves]"
+7. USP-based: a query combining a unique selling point with the business type
+8. Task-based: a query around a specific task this business helps clients with
+
+${isLocal ? `Include geography (${marketCountry}) in queries 2 and 5.` : 'Do not include geography — this is a global business.'}`;
+
+  } else if (businessType === 'local_service') {
+    strategyPrompt = `This is a local service business. Generate EXACTLY 6 queries:
+- Include "${marketCountry}" geography in most queries
+- Focus on what specific service they provide and who they serve
+- Vary angles: service type, target audience, problem solved, specific niche`;
+
+  } else {
+    // ecommerce / other
+    strategyPrompt = `Generate EXACTLY 6 queries focusing on product/service category, target audience, and use cases.
+${isLocal ? `Include "${marketCountry}" geography in 2–3 queries.` : 'Do not include geography.'}`;
+  }
+
+  const userPrompt = `Business type: ${businessLabel} (${businessType})
 Description: ${businessSummary}
-${marketLine}
-Primary language of the market: ${language}
+${featuresLine}
+${useCasesLine}
+${tasksLine}
+${uspLine}
+${problemLine}
+Market: ${isLocal ? `${marketCountry} (local)` : 'Global'}
 
-Generate up to 6 search queries optimized for finding direct competitors of this exact business — matching its niche, services, and target audience.
+${strategyPrompt}
 
-Rules:
-- For local/national businesses: include geography in most queries
-- If the market language is not English: generate 4-5 queries in that language and at most 1 in English
-- If the market language is English: generate all queries in English
-- For global businesses: focus on category, use case, and service similarity
-- Vary the angle across queries (category, service, audience, problem solved)
-- Do NOT generate broad industry queries — keep them niche-specific
+${languageRule}
+Do NOT generate broad generic industry queries — keep every query niche-specific.
 
 Return ONLY valid JSON:
-{"queries": ["query 1", "query 2", "query 3", "query 4", "query 5", "query 6"]}`;
+{"queries": ["query 1", "query 2", ...]}`;
 
   try {
+    const maxTokens = businessType === 'saas_platform' ? 600 : 500;
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: systemPrompt },
+        {
+          role: 'system',
+          content: 'You are a competitive intelligence expert. Generate Google search queries to find direct competitors of a specific business. Return only valid JSON.',
+        },
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.4,
-      max_tokens: 400,
+      max_tokens: maxTokens,
       response_format: { type: 'json_object' },
     });
 
@@ -121,8 +191,10 @@ Return ONLY valid JSON:
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
-    const queries = Array.isArray(parsed.queries) ? parsed.queries.filter(q => typeof q === 'string' && q.trim()) : [];
-    console.log(`[analyze-website] Step 1 — generated ${queries.length} queries:`, queries);
+    const queries = Array.isArray(parsed.queries)
+      ? parsed.queries.filter(q => typeof q === 'string' && q.trim())
+      : [];
+    console.log(`[analyze-website] Step 1 (${businessType}) — generated ${queries.length} queries:`, queries);
     return queries;
   } catch (err) {
     console.error('[analyze-website] Query generation failed:', err.message);
@@ -132,7 +204,7 @@ Return ONLY valid JSON:
 
 // ─── Phase B: Step 2 — Search candidates via Tavily ───────────────────────────
 
-const searchCandidates = async (queries, originalDomain) => {
+const searchCandidates = async (queries, originalDomain, businessType) => {
   const tavilyKey = process.env.TAVILY_API_KEY;
   if (!tavilyKey) {
     console.error('[analyze-website] TAVILY_API_KEY not set');
@@ -162,7 +234,6 @@ const searchCandidates = async (queries, originalDomain) => {
     })
   );
 
-  // Flatten, extract domains, score by frequency (more queries = higher rank)
   const domainScore = {};
   const domainMeta = {};
 
@@ -184,9 +255,12 @@ const searchCandidates = async (queries, originalDomain) => {
     }
   }
 
+  // Larger pool for saas_platform/agency since we run more queries
+  const poolSize = businessType === 'saas_platform' ? 20 : 15;
+
   const candidates = Object.entries(domainScore)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 15)
+    .slice(0, poolSize)
     .map(([domain]) => domainMeta[domain]);
 
   console.log(`[analyze-website] Step 2 — ${candidates.length} unique candidates found`);
@@ -195,31 +269,37 @@ const searchCandidates = async (queries, originalDomain) => {
 
 // ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
 
-const scoreCandidates = async (openai, candidates, businessSummary, businessLabel, marketScope) => {
+const scoreCandidates = async (openai, candidates, {
+  businessSummary, businessLabel, businessType, marketScope, keyFeatures,
+}) => {
   if (!candidates.length) return [];
+
+  const topFeatures = (keyFeatures || []).filter(Boolean).slice(0, 4).join(', ');
 
   const systemPrompt = `You are a competitive intelligence analyst. Score how similar a candidate business is to a reference business. Return only valid JSON, no explanation outside the JSON.`;
 
   const scores = await Promise.all(
     candidates.map(async (candidate) => {
       const userPrompt = `Reference business:
-Type: ${businessLabel}
+Type: ${businessLabel} (${businessType})
 Description: ${businessSummary}
+${topFeatures ? `Key features: ${topFeatures}` : ''}
 
 Candidate:
 Domain: ${candidate.domain}
 Title: ${candidate.title}
 Description: ${candidate.snippet}
 
-Score the candidate as a direct competitor to the reference business (0–10 each):
+Score the candidate as a direct competitor (0–10 each):
 - nicheSimilarity: same specific niche?
-- serviceSimilarity: same or very similar services?
+- serviceSimilarity: same or very similar services/features?
 - audienceSimilarity: same target audience/customer segment?
 - geographyFit: same geography?
-- overallFit: how strong a competitor overall?
+- businessModelFit: same type of business? (SaaS platform vs agency/service vs local business vs data provider — score 0 if completely different model, 10 if identical)
+- overallFit: how strong a direct competitor overall?
 
 Return ONLY valid JSON:
-{"nicheSimilarity":0,"serviceSimilarity":0,"audienceSimilarity":0,"geographyFit":0,"overallFit":0,"name":"inferred company name","reasoning":"one sentence"}`;
+{"nicheSimilarity":0,"serviceSimilarity":0,"audienceSimilarity":0,"geographyFit":0,"businessModelFit":0,"overallFit":0,"name":"inferred company name","reasoning":"one sentence"}`;
 
       try {
         const completion = await openai.chat.completions.create({
@@ -229,7 +309,7 @@ Return ONLY valid JSON:
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.2,
-          max_tokens: 200,
+          max_tokens: 220,
           response_format: { type: 'json_object' },
         });
 
@@ -243,9 +323,9 @@ Return ONLY valid JSON:
     })
   );
 
-  // Step 4 — Rank by weighted score
-  const geographyWeight = marketScope === 'local' ? 1.5 : 0.5;
-  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2;
+  // Step 4 — Weighted ranking
+  const geographyWeight = marketScope === 'local' ? 1.5 : 0.3;
+  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2 + 2;
 
   return scores
     .filter(Boolean)
@@ -256,6 +336,7 @@ Return ONLY valid JSON:
         (s.serviceSimilarity || 0) * 2 +
         (s.audienceSimilarity || 0) * 1.5 +
         (s.geographyFit || 0) * geographyWeight +
+        (s.businessModelFit || 0) * 2 +
         (s.overallFit || 0) * 2
       ) / normalizer,
     }))
@@ -269,16 +350,26 @@ Return ONLY valid JSON:
 
 // ─── Phase B: Orchestrator ────────────────────────────────────────────────────
 
-const discoverCompetitors = async (openai, { businessSummary, businessLabel, marketScope, marketCountry, language, originalDomain }) => {
+const discoverCompetitors = async (openai, {
+  businessSummary, businessLabel, businessType,
+  marketScope, marketCountry, language, originalDomain,
+  keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
+}) => {
   if (!businessSummary) return [];
 
-  const queries = await generateSearchQueries(openai, businessSummary, businessLabel, marketScope, marketCountry, language);
+  const queries = await generateSearchQueries(openai, {
+    businessSummary, businessLabel, businessType,
+    marketScope, marketCountry, language,
+    keyFeatures, useCases, tasksHelped, uniqueSellingProps, problemSolved,
+  });
   if (!queries.length) return [];
 
-  const candidates = await searchCandidates(queries, originalDomain);
+  const candidates = await searchCandidates(queries, originalDomain, businessType);
   if (!candidates.length) return [];
 
-  const competitors = await scoreCandidates(openai, candidates, businessSummary, businessLabel, marketScope);
+  const competitors = await scoreCandidates(openai, candidates, {
+    businessSummary, businessLabel, businessType, marketScope, keyFeatures,
+  });
   console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
   return competitors;
 };
@@ -339,17 +430,25 @@ Return a valid JSON object with EXACTLY these fields:
   "uniqueSellingProps": ["usp 1", "usp 2", "usp 3", "usp 4"],
   "businessSummary": "2-3 sentence paragraph in English: who this company is, exactly what they do, what problem they solve, and where they operate",
   "businessLabel": "a short 2-5 word categorical label in English for what this business is — e.g. Marketing agency, B2B HR SaaS, Plastic parts manufacturer",
+  "businessType": "saas_platform or agency_service or local_service or ecommerce or other",
   "marketScope": "local or global",
   "marketCountry": "the country name in English where this business primarily operates if local, or null if global"
 }
 
 Guidelines:
-1. businessSummary and businessLabel and marketScope and marketCountry must ALWAYS be in English regardless of website language
+1. businessSummary, businessLabel, businessType, marketScope and marketCountry must ALWAYS be in English
 2. All other fields should be in ${language}
 3. businessLabel must be short and categorical — strip all marketing language, 2-5 words max
-4. marketScope is "local" if the business clearly targets one country, "global" otherwise
-5. Do NOT include a competitors field
-6. Keep each value concise (under 15 words for non-summary fields)`;
+4. businessType rules:
+   - "saas_platform": has a dashboard, subscription model, users self-serve (software, tools, platforms)
+   - "agency_service": humans deliver the service to clients (agencies, consultancies, studios, manufacturers)
+   - "local_service": requires physical presence or exclusively serves one local area (restaurants, salons, contractors)
+   - "ecommerce": primarily sells products online
+   - "other": anything that doesn't clearly fit
+   - IMPORTANT: saas_platform defaults to "global" marketScope unless the product is language-locked or legally restricted to one country. A US-based SaaS accessible worldwide is "global", not "local"
+5. marketScope is "local" only if the business clearly targets one country exclusively — not just because it is based there
+6. Do NOT include a competitors field
+7. Keep each value concise (under 15 words for non-summary fields)`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -370,16 +469,22 @@ Guidelines:
 
     const gptData = JSON.parse(raw);
 
-    console.log(`[analyze-website] Phase A complete — businessLabel: "${gptData.businessLabel}", marketScope: ${gptData.marketScope}, marketCountry: ${gptData.marketCountry}`);
+    console.log(`[analyze-website] Phase A complete — businessLabel: "${gptData.businessLabel}", businessType: ${gptData.businessType}, marketScope: ${gptData.marketScope}, marketCountry: ${gptData.marketCountry}`);
 
     // Phase B — Competitor discovery pipeline
     const competitors = await discoverCompetitors(openai, {
       businessSummary: gptData.businessSummary,
       businessLabel: gptData.businessLabel,
+      businessType: gptData.businessType || 'other',
       marketScope: gptData.marketScope,
       marketCountry: gptData.marketCountry,
       language,
       originalDomain,
+      keyFeatures: gptData.keyFeatures,
+      useCases: gptData.useCases,
+      tasksHelped: gptData.tasksHelped,
+      uniqueSellingProps: gptData.uniqueSellingProps,
+      problemSolved: gptData.problemSolved,
     });
 
     const brandData = {
@@ -394,6 +499,7 @@ Guidelines:
       uniqueSellingProps: gptData.uniqueSellingProps,
       businessSummary: gptData.businessSummary || '',
       businessLabel: gptData.businessLabel || '',
+      businessType: gptData.businessType || 'other',
       marketScope: gptData.marketScope || 'global',
       marketCountry: gptData.marketCountry || null,
       competitors,

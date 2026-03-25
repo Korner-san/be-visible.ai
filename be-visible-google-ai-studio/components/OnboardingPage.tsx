@@ -46,6 +46,7 @@ interface OnboardingData {
   uniqueSellingProps: string[];
   businessSummary?: string;
   businessLabel?: string;
+  businessType?: string;
   marketScope?: string;
   marketCountry?: string | null;
 }
@@ -79,6 +80,7 @@ const emptyData: OnboardingData = {
   uniqueSellingProps: ['', '', '', ''],
   businessSummary: '',
   businessLabel: '',
+  businessType: '',
   marketScope: '',
   marketCountry: null,
 };
@@ -396,6 +398,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
             uniqueSellingProps: bd.uniqueSellingProps?.length ? bd.uniqueSellingProps.slice(0, 4) : prev.uniqueSellingProps,
             businessSummary: bd.businessSummary || prev.businessSummary,
             businessLabel: bd.businessLabel || prev.businessLabel,
+            businessType: bd.businessType || prev.businessType,
             marketScope: bd.marketScope || prev.marketScope,
             marketCountry: bd.marketCountry ?? prev.marketCountry,
           }));
