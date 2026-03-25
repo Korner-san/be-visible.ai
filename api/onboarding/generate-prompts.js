@@ -2,8 +2,11 @@
  * Vercel Serverless Function: /api/onboarding/generate-prompts
  *
  * Generates exactly 30 discovery-focused prompts using GPT-4o.
- * All prompts are in the user's chosen language.
- * Saves results to brand_prompts table (status: 'inactive').
+ * Categories are derived from the brand's own use cases, tasks, features, and goals.
+ * Each category contains a mix of prompt types: Direct request, Conversation-simulating,
+ * Standard checking, Goal/feature/action-specific (incl. companies/entities/tools).
+ * Geography is applied as a rule (1-2 prompts per category) not as a category itself.
+ * Saves results to brand_prompts table (status: 'inactive', source_template_code: prompt type).
  */
 
 const OpenAI = require('openai');
@@ -42,6 +45,11 @@ module.exports = async function handler(req, res) {
     keyFeatures = [],
     useCases = [],
     uniqueSellingProps = [],
+    businessSummary = '',
+    businessLabel = '',
+    marketScope = 'global',
+    marketCountry = null,
+    competitors = [],
   } = req.body || {};
 
   if (!brandId) {
@@ -55,39 +63,73 @@ module.exports = async function handler(req, res) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  const isLocal = marketScope === 'local' && marketCountry;
+
   const structuredInput = `
+Business Summary: ${businessSummary}
+Business Type: ${businessLabel}
 Industry: ${industry || ''}
-Product Category: ${productCategory || ''}
+Product / Service Category: ${productCategory || ''}
 Problem Solved: ${problemSolved || ''}
 Tasks Helped: ${tasksHelped.filter(Boolean).join(', ')}
 Goal Facilitated: ${goalFacilitated || ''}
 Key Features: ${keyFeatures.filter(Boolean).join(', ')}
 Use Cases: ${useCases.filter(Boolean).join(', ')}
 Unique Selling Props: ${uniqueSellingProps.filter(Boolean).join(', ')}
+Market Scope: ${isLocal ? `Local — ${marketCountry}` : 'Global'}
+${competitors.filter(Boolean).length ? `Known Competitors: ${competitors.filter(Boolean).join(', ')}` : ''}
 `.trim();
 
-  const systemPrompt = `You are a prompt generator helping a brand appear in AI search results (e.g. ChatGPT or Perplexity).
+  const geographyRule = isLocal
+    ? `Geography rule: this is a local business operating in ${marketCountry}. Naturally include "${marketCountry}" in 1–2 prompts per category where it makes sense. Do NOT create a geography-named category — geography is a modifier on prompts, not a category itself.`
+    : `Geography rule: this is a global business. Do not add geography to prompts unless the use case is inherently regional.`;
 
-Your goal is to come up with natural-sounding, curiosity-driven search questions that users might type *without knowing about the brand* — but whose answers would logically include this brand.
+  const systemPrompt = `You are a prompt generator helping a brand appear in AI search results (ChatGPT, Perplexity, Gemini, etc.).
 
-Do NOT include brand names or specific competitors in any prompt.
+Your goal: generate natural-sounding search prompts that users might type WITHOUT knowing about this brand — but whose answers would logically include this brand.
 
+Do NOT mention the brand name or any specific competitor names in any prompt.
 CRITICAL: Generate ALL prompts in ${language}. Every single prompt must be written in ${language}.
 CRITICAL: Category names must also be in ${language}.
 
 Use the following brand information:
 ${structuredInput}
 
-Generate EXACTLY 30 unique, realistic search prompts.
+STEP 1 — Derive 5–6 categories:
+Create 5–6 categories directly from the brand data above. Each category must:
+- Be named after a specific use case, task, feature, problem, or goal of this business
+- Be distinct from the others with no overlap
+- Be specific to this business's niche — not a generic bucket like "Discovery", "Trends", or "General"
+- Have every prompt within it be directly and specifically relevant to that category's exact topic
 
-They should simulate questions a user might ask if they were trying to solve these problems or find tools in this category.
+STEP 2 — Generate exactly 30 prompts spread across those categories:
+Within each category, include a mix of these 4 prompt types:
 
-Distribute prompts across 4–6 categories that reflect the brand's use cases, industry, key features, and target problems. Example categories (translate to ${language}): Discovery, Problem Solving, Technical How-To, Competitive Comparison, Industry Trends, Use Case Application.
+1. "Direct request" — User is directly asking for a recommendation
+   Examples: "Find me a solution for X", "Recommend a company/agency/tool that does Y"
+   Count: ~2 per category
 
-Return ONLY a valid JSON object:
+2. "Conversation-simulating" — User describes their situation and asks for guidance
+   Examples: "I'm trying to do X, what should I consider?", "We're a business that does Y, how do we approach Z?"
+   Count: 1–2 per category
+
+3. "Standard checking" — User wants to understand the landscape or how things work
+   Examples: "How does X work in [industry]?", "Which solutions currently exist for [use case]?"
+   Count: 2–3 per category
+
+4. "Goal/feature/action-specific" — User is searching for companies, entities, tools, or services tied to a specific goal, feature, or action
+   Examples: "What companies specialize in [goal]?", "Which agencies/entities help with [task]?", "What tools exist for [feature]?"
+   Count: 1–2 per category
+
+${geographyRule}
+
+Return ONLY valid JSON:
 {
   "prompts": [
-    {"prompt": "...", "category": "..."},
+    {"prompt": "...", "category": "...", "type": "Direct request"},
+    {"prompt": "...", "category": "...", "type": "Conversation-simulating"},
+    {"prompt": "...", "category": "...", "type": "Standard checking"},
+    {"prompt": "...", "category": "...", "type": "Goal/feature/action-specific"},
     ...
   ]
 }
@@ -95,7 +137,7 @@ Return ONLY a valid JSON object:
 Ensure exactly 30 prompts. No markdown, no extra text.`;
 
   try {
-    console.log('[generate-prompts] Calling GPT-4o for brandId:', brandId, 'language:', language);
+    console.log('[generate-prompts] Calling GPT-4o for brandId:', brandId, 'language:', language, 'marketScope:', marketScope);
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -103,7 +145,7 @@ Ensure exactly 30 prompts. No markdown, no extra text.`;
         { role: 'system', content: systemPrompt },
         {
           role: 'user',
-          content: `Generate exactly 30 discovery-focused prompts in ${language} based on the brand information. Return only valid JSON.`,
+          content: `Generate exactly 30 discovery-focused prompts in ${language} based on the brand information above. Derive the categories from the business data. Return only valid JSON.`,
         },
       ],
       temperature: 0.7,
@@ -118,7 +160,13 @@ Ensure exactly 30 prompts. No markdown, no extra text.`;
     if (!Array.isArray(parsed.prompts)) throw new Error('Response missing prompts array');
 
     const prompts = parsed.prompts.slice(0, 30);
-    console.log(`[generate-prompts] Generated ${prompts.length} prompts`);
+
+    // Log category distribution for debugging
+    const catCounts = prompts.reduce((acc, p) => {
+      acc[p.category] = (acc[p.category] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`[generate-prompts] Generated ${prompts.length} prompts across categories:`, catCounts);
 
     // Delete existing inactive prompts for this brand (clean slate)
     await supabase
@@ -127,12 +175,12 @@ Ensure exactly 30 prompts. No markdown, no extra text.`;
       .eq('brand_id', brandId)
       .eq('status', 'inactive');
 
-    // Insert new prompts
-    const rows = prompts.map((item, i) => ({
+    // Insert new prompts — store prompt type in source_template_code for improve-prompts step
+    const rows = prompts.map((item) => ({
       brand_id: brandId,
-      source_template_code: `gpt_${i + 1}`,
+      source_template_code: item.type || 'Standard checking',
       raw_prompt: item.prompt,
-      category: item.category || 'Discovery',
+      category: item.category || 'General',
       status: 'inactive',
     }));
 

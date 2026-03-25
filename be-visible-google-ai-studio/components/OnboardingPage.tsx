@@ -517,6 +517,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
           keyFeatures: data.keyFeatures.filter(Boolean),
           useCases: data.useCases.filter(Boolean),
           uniqueSellingProps: data.uniqueSellingProps.filter(Boolean),
+          businessSummary: data.businessSummary || '',
+          businessLabel: data.businessLabel || '',
+          marketScope: data.marketScope || 'global',
+          marketCountry: data.marketCountry || null,
+          competitors: data.competitors.map(c => c.name).filter(Boolean),
         }),
       });
 

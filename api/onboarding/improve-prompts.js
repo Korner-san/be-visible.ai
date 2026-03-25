@@ -44,10 +44,10 @@ module.exports = async function handler(req, res) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Fetch all inactive prompts for this brand
+  // Fetch all inactive prompts for this brand (source_template_code holds the prompt type)
   const { data: promptRows, error: fetchError } = await supabase
     .from('brand_prompts')
-    .select('id, raw_prompt, category')
+    .select('id, raw_prompt, category, source_template_code')
     .eq('brand_id', brandId)
     .eq('status', 'inactive');
 
@@ -59,12 +59,19 @@ module.exports = async function handler(req, res) {
   console.log(`[improve-prompts] Improving ${promptRows.length} prompts in ${language}`);
 
   // Batch all prompts into a single GPT call for efficiency
-  const promptList = promptRows.map((p, i) => `${i + 1}. [${p.category}] ${p.raw_prompt}`).join('\n');
+  const promptList = promptRows.map((p, i) => `${i + 1}. [${p.category} | Type: ${p.source_template_code || 'Standard checking'}] ${p.raw_prompt}`).join('\n');
 
   const systemPrompt = `You are an expert at crafting search prompts for AI visibility.
 
-You will receive a numbered list of search prompts. For each prompt:
-- Make it sound more natural and conversational
+You will receive a numbered list of search prompts, each tagged with [Category | Type: X].
+Prompt types and how to refine each:
+- "Direct request": keep it direct and action-oriented ("Find me...", "Recommend a...")
+- "Conversation-simulating": keep it conversational and situational ("I'm trying to...", "We're a business that...")
+- "Standard checking": keep it informational and exploratory ("How does X work...", "Which solutions exist for...")
+- "Goal/feature/action-specific": keep it focused on finding companies, entities, tools, or services ("What companies specialize in...", "Which agencies help with...")
+
+For each prompt:
+- Refine wording to sound more natural while preserving its type's tone
 - Keep it under 15 words
 - Keep it in ${language} — do NOT change the language
 - Do NOT add brand names or competitor names
