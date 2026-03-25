@@ -249,6 +249,9 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
 
+  // ── USP suggestions (scan-provided, shown as chips on step 13) ────────────
+  const [uspSuggestions, setUspSuggestions] = useState<string[]>([]);
+
   // ── Finish state ───────────────────────────────────────────────────────────
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
@@ -422,6 +425,18 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
     };
 
     runAnalysis();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  // ── Capture scan USPs as suggestions when entering step 13 ─────────────────
+  useEffect(() => {
+    if (step === 13) {
+      const suggestions = (data.uniqueSellingProps as string[]).filter(Boolean);
+      if (suggestions.length > 0) {
+        setUspSuggestions(suggestions);
+        setData(prev => ({ ...prev, uniqueSellingProps: ['', '', '', ''] }));
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
@@ -991,22 +1006,55 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
           </div>
         );
 
-      case 13:
+      case 13: {
+        const usps = (data.uniqueSellingProps as string[]).slice(0, 4);
+        const filledCount = usps.filter(Boolean).length;
+        const addUspSuggestion = (suggestion: string) => {
+          const firstEmpty = usps.findIndex(u => !u);
+          if (firstEmpty !== -1) handleArrayChange('uniqueSellingProps', firstEmpty, suggestion);
+        };
+        // Filter out suggestions already used in inputs
+        const availableChips = uspSuggestions.filter(s => !usps.includes(s));
         return (
           <div className="animate-fadeIn">
             {beVisibleBadge}
             <h2 className="text-2xl font-semibold text-[#020817] mb-2 leading-tight">What makes your product better than competitors?</h2>
-            <p className="text-[15px] text-[#64748B] mb-8 font-normal leading-relaxed">List your unique selling propositions</p>
+            <p className="text-[15px] text-[#64748B] mb-6 font-normal leading-relaxed">List your unique selling propositions <span className="text-[#94A3B8]">(at least 2 required)</span></p>
             <div className="grid grid-cols-1 gap-3">
-              {(data.uniqueSellingProps as string[]).slice(0, 4).map((usp, i) => (
+              {usps.map((usp, i) => (
                 <input key={i} type="text" value={usp}
                   onChange={(e) => handleArrayChange('uniqueSellingProps', i, e.target.value)}
                   placeholder={`USP #${i + 1}`}
                   className="w-full px-4 py-2.5 border border-[#E2E8F0] rounded-lg focus:ring-1 focus:ring-brand-brown/50 outline-none font-normal text-[#020817] text-sm" />
               ))}
             </div>
+            {availableChips.length > 0 && (
+              <div className="mt-5">
+                <p className="text-xs text-[#94A3B8] mb-2 font-medium uppercase tracking-wide">Suggestions from your website — click to add</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableChips.map((chip, i) => {
+                    const isFull = usps.every(Boolean);
+                    return (
+                      <button key={i} onClick={() => addUspSuggestion(chip)}
+                        disabled={isFull}
+                        className={`px-3 py-1.5 rounded-full border text-sm font-normal transition-all ${
+                          isFull
+                            ? 'border-[#E2E8F0] text-[#CBD5E1] cursor-not-allowed'
+                            : 'border-brand-brown/40 text-brand-brown hover:bg-brand-brown hover:text-white cursor-pointer'
+                        }`}>
+                        + {chip}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {filledCount < 2 && filledCount > 0 && (
+              <p className="mt-3 text-xs text-amber-500">Add at least {2 - filledCount} more USP{2 - filledCount > 1 ? 's' : ''} to continue</p>
+            )}
           </div>
         );
+      }
 
       case 14: {
         // Group prompts by category
@@ -1153,12 +1201,16 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ existingBrandId,
                 )}
 
                 {/* Step 13: Generate */}
-                {step === totalSteps && (
-                  <button onClick={handleGenerate}
-                    className="flex items-center gap-2 px-10 py-3 bg-brand-brown text-white rounded-xl font-semibold hover:brightness-110 transition-all text-[15px] group shadow-xl shadow-brand-brown/20">
-                    Generate prompts <Sparkles size={16} />
-                  </button>
-                )}
+                {step === totalSteps && (() => {
+                  const uspsFilled = (data.uniqueSellingProps as string[]).filter(Boolean).length;
+                  const canGenerate = uspsFilled >= 2;
+                  return (
+                    <button onClick={handleGenerate} disabled={!canGenerate}
+                      className={`flex items-center gap-2 px-10 py-3 bg-brand-brown text-white rounded-xl font-semibold transition-all text-[15px] group shadow-xl shadow-brand-brown/20 ${canGenerate ? 'hover:brightness-110' : 'opacity-40 cursor-not-allowed'}`}>
+                      Generate prompts <Sparkles size={16} />
+                    </button>
+                  );
+                })()}
 
                 {/* Step 14 (Prompt Preview): Edit | Finish */}
                 {step > totalSteps && (
