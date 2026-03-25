@@ -308,10 +308,62 @@ const detectBusinessModel = async (domain) => {
   }
 };
 
+// ─── Phase B: Step 2c — Fetch traffic estimates via DataForSEO ────────────────
+
+const fetchTrafficEstimates = async (domains) => {
+  const apiKey = process.env.DATAFORSEO_API_KEY;
+  if (!apiKey || !domains.length) return {};
+
+  try {
+    const response = await fetch(
+      'https://api.dataforseo.com/v3/dataforseo_labs/google/bulk_traffic_estimation/live',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${apiKey}`,
+        },
+        body: JSON.stringify([{
+          targets: domains,
+          location_code: 2840, // US — broadest dataset
+          language_code: 'en',
+          item_types: ['organic'],
+        }]),
+      }
+    );
+
+    if (!response.ok) {
+      console.error('[analyze-website] DataForSEO error:', response.status);
+      return {};
+    }
+
+    const data = await response.json();
+    const items = data?.tasks?.[0]?.result?.[0]?.items || [];
+
+    const trafficMap = {};
+    for (const item of items) {
+      trafficMap[item.target] = item.metrics?.organic?.etv || 0;
+    }
+
+    console.log(`[analyze-website] Step 2c — traffic fetched for ${Object.keys(trafficMap).length} domains`);
+    return trafficMap;
+  } catch (err) {
+    console.error('[analyze-website] DataForSEO call failed:', err.message);
+    return {};
+  }
+};
+
+// Convert raw etv to 0-10 score using log scale
+// etv 0 → 0, 1k → ~4.3, 10k → ~5.7, 100k → ~7.1, 1M → ~8.6, 10M+ → 10
+const trafficToScore = (etv) => {
+  if (!etv || etv <= 0) return 0;
+  return Math.min(10, (Math.log10(etv + 1) / 7) * 10);
+};
+
 // ─── Phase B: Step 3 — Score candidates with GPT ──────────────────────────────
 
 const scoreCandidates = async (openai, candidates, {
-  businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction,
+  businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap,
 }) => {
   if (!candidates.length) return [];
 
@@ -372,23 +424,31 @@ Return ONLY valid JSON:
     })
   );
 
-  // Step 4 — Weighted ranking
+  // Step 4 — Weighted ranking (traffic boosts relevant candidates, doesn't override relevance)
   const geographyWeight = marketScope === 'local' ? 1.5 : 0.3;
-  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2 + 2;
+  const trafficWeight = 1;
+  const normalizer = 2 + 2 + 1.5 + geographyWeight + 2 + 2 + trafficWeight;
 
   return scores
     .filter(Boolean)
-    .map((s) => ({
-      ...s,
-      weightedScore: (
-        (s.nicheSimilarity || 0) * 2 +
-        (s.serviceSimilarity || 0) * 2 +
-        (s.audienceSimilarity || 0) * 1.5 +
-        (s.geographyFit || 0) * geographyWeight +
-        (s.businessModelFit || 0) * 2 +
-        (s.overallFit || 0) * 2
-      ) / normalizer,
-    }))
+    .map((s) => {
+      const etv = trafficMap?.[s.domain] || 0;
+      const tScore = trafficToScore(etv);
+      return {
+        ...s,
+        estimatedTraffic: Math.round(etv),
+        trafficScore: tScore,
+        weightedScore: (
+          (s.nicheSimilarity || 0) * 2 +
+          (s.serviceSimilarity || 0) * 2 +
+          (s.audienceSimilarity || 0) * 1.5 +
+          (s.geographyFit || 0) * geographyWeight +
+          (s.businessModelFit || 0) * 2 +
+          (s.overallFit || 0) * 2 +
+          tScore * trafficWeight
+        ) / normalizer,
+      };
+    })
     .sort((a, b) => b.weightedScore - a.weightedScore)
     .slice(0, 6)
     .map((s) => ({
@@ -416,17 +476,22 @@ const discoverCompetitors = async (openai, {
   const candidates = await searchCandidates(queries, originalDomain, businessType);
   if (!candidates.length) return [];
 
-  // Enrich candidates with business model detection (parallel fetches)
-  const enrichedCandidates = await Promise.all(
-    candidates.map(async (c) => ({
-      ...c,
-      detectedModel: await detectBusinessModel(c.domain),
-    }))
-  );
+  // Enrich candidates with business model detection + traffic (parallel)
+  const [enrichedCandidates, trafficMap] = await Promise.all([
+    Promise.all(
+      candidates.map(async (c) => ({
+        ...c,
+        detectedModel: await detectBusinessModel(c.domain),
+      }))
+    ),
+    fetchTrafficEstimates(candidates.map(c => c.domain)),
+  ]);
+
   console.log(`[analyze-website] Step 2b — model detection:`, enrichedCandidates.map(c => `${c.domain}:${c.detectedModel}`));
+  console.log(`[analyze-website] Step 2c — traffic (etv):`, Object.entries(trafficMap).map(([d, v]) => `${d}:${Math.round(v)}`));
 
   const competitors = await scoreCandidates(openai, enrichedCandidates, {
-    businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction,
+    businessSummary, businessLabel, businessType, marketScope, keyFeatures, coreFunction, trafficMap,
   });
   console.log(`[analyze-website] Phase B complete — ${competitors.length} competitors ranked`);
   return competitors;
