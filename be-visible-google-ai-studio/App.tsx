@@ -180,6 +180,7 @@ function AppContent() {
         if (activeStatuses.includes(primary.first_report_status ?? '')) {
           setAppView('AUTHENTICATED_PROGRESS');
         } else {
+          setActiveTab('Visibility');
           setAppView('AUTHENTICATED_READY');
         }
       } else if (incompleteBrands.length > 0) {
@@ -315,6 +316,7 @@ function AppContent() {
         .single();
       if (data) setActiveBrand(data);
     }
+    setActiveTab('Visibility');
     setAppView('AUTHENTICATED_READY');
   }, [activeBrandId]);
 
