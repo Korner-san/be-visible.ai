@@ -40,7 +40,12 @@ const PROVIDER_RESPONSE_COLUMNS = {
  * @param {string[]} responseTexts - Array of AI response texts
  * @returns {Object[]} Array of { name, mentions } objects
  */
-async function extractEntitiesWithGPT(responseTexts) {
+async function extractEntitiesWithGPT(responseTexts, retries = 3) {
+  if (retries < 3) {
+    const delay = (3 - retries) * 2000;
+    console.log('   ⏳ Rate limit hit, retrying in ' + delay + 'ms (' + retries + ' retries left)...');
+    await new Promise(r => setTimeout(r, delay));
+  }
   const combinedText = responseTexts
     .map((text, i) => `--- Response ${i + 1} ---\n${text}`)
     .join('\n\n');
@@ -50,7 +55,9 @@ async function extractEntitiesWithGPT(responseTexts) {
     ? combinedText.substring(0, 12000) + '\n[... truncated]'
     : combinedText;
 
-  const response = await openai.chat.completions.create({
+  let response;
+  try {
+    response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       {
@@ -84,6 +91,12 @@ ${truncated}`
     max_tokens: 2000,
     response_format: { type: 'json_object' }
   });
+  } catch (err) {
+    if (err?.status === 429 && retries > 0) {
+      return extractEntitiesWithGPT(responseTexts, retries - 1);
+    }
+    throw err;
+  }
 
   const content = response.choices[0]?.message?.content;
   if (!content) {

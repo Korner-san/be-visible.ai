@@ -2,14 +2,14 @@
 /**
  * Unified Daily Report Citation Processor
  * Processes all citations for a daily report: extraction, classification, and linking
- * 
+ *
  * Features:
  * - Processes entire daily report (all batches together)
  * - Global URL deduplication (reuses existing content)
  * - Retry logic for failed Tavily extractions (max 3 attempts)
  * - Proper 11-category classification system
  * - Per-user citation linking
- * 
+ *
  * Usage: node process-daily-report-citations.js <daily_report_id>
  */
 
@@ -50,24 +50,24 @@ const CONTENT_CATEGORIES = {
 // ========== MAIN FUNCTION ==========
 async function processDailyReportCitations(dailyReportId) {
   console.log(`\n🔍 [PROCESSOR] Starting citation processing for daily report: ${dailyReportId}\n`);
-  
+
   try {
     // Mark URL processing as started
     await updateUrlProcessingStatus(dailyReportId, 'running');
-    
-    // Step 1: Extract all ChatGPT citations from this report
-    const citations = await extractChatGPTCitations(dailyReportId);
+
+    // Step 1: Extract all citations from this report (all providers)
+    const citations = await extractAllCitations(dailyReportId);
     console.log(`📊 [CITATIONS] Found ${citations.length} total citations`);
-    
+
     if (citations.length === 0) {
       await updateUrlProcessingStatus(dailyReportId, 'complete', { total: 0, new: 0, extracted: 0, classified: 0 });
       return { success: true, message: 'No citations to process' };
     }
-    
-    // Step 2: Deduplicate and categorize URLs
-    const { newUrls, existingUrls, needsClassification } = await categorizeUrls(citations);
+
+    // Step 2: Deduplicate and categorize URLs — returns urlMap with integer IDs for all URLs
+    const { newUrls, existingUrls, needsClassification, urlMap } = await categorizeUrls(citations);
     console.log(`📊 [DEDUP] ${newUrls.length} new URLs, ${existingUrls.length} existing, ${needsClassification.length} need classification`);
-    
+
     // Step 3: Extract content from new URLs using Tavily
     let extractedCount = 0;
     if (newUrls.length > 0) {
@@ -75,33 +75,32 @@ async function processDailyReportCitations(dailyReportId) {
       const successfulExtractions = extractionResults.filter(e => e.success);
       extractedCount = successfulExtractions.length;
       console.log(`✅ [TAVILY] Extracted ${extractedCount}/${newUrls.length} new URLs`);
-      
-      // Store extracted content
-      await storeUrlContent(successfulExtractions, newUrls);
-      
+
+      // Store extracted content — bulk upsert (2 queries regardless of URL count)
+      await storeUrlContent(successfulExtractions, urlMap);
+
       // Update retry counters for failed extractions
       const failedExtractions = extractionResults.filter(e => !e.success);
-      await updateRetryCounters(failedExtractions, newUrls);
+      await updateRetryCounters(failedExtractions, urlMap);
     }
-    
+
     // Step 4: Classify URLs that need classification
+    // Uses integer IDs — works for any URL encoding including Hebrew, special chars
     let classifiedCount = 0;
     if (needsClassification.length > 0) {
-      // Get content for classification
-      const classificationInputs = await prepareClassificationInputs(needsClassification);
-      
+      const classificationInputs = await prepareClassificationInputs(needsClassification, urlMap);
+
       if (classificationInputs.length > 0) {
         const classifications = await classifyUrlContentBatch(classificationInputs);
         classifiedCount = await storeClassifications(classifications, classificationInputs);
         console.log(`🤖 [CLASSIFICATION] Classified ${classifiedCount} URLs`);
       }
     }
-    
-    // Step 5: Link ALL citations to prompts (including existing URLs)
-    const allUrls = [...newUrls, ...existingUrls];
-    const linkedCount = await linkCitationsToPrompts(citations, allUrls);
+
+    // Step 5: Link ALL citations to prompts — uses urlMap directly, no re-query needed
+    const linkedCount = await linkCitationsToPrompts(citations, urlMap);
     console.log(`🔗 [LINKING] Linked ${linkedCount} citations to prompts`);
-    
+
     // Step 6: Mark URL processing as complete
     await updateUrlProcessingStatus(dailyReportId, 'complete', {
       total: citations.length,
@@ -109,10 +108,10 @@ async function processDailyReportCitations(dailyReportId) {
       extracted: extractedCount,
       classified: classifiedCount
     });
-    
+
     // Step 7: Check if entire report should be marked complete
     await updateReportCompletionStatus(dailyReportId);
-    
+
     console.log(`\n✅ [PROCESSOR] Citation processing complete for report ${dailyReportId}`);
     return {
       success: true,
@@ -122,7 +121,7 @@ async function processDailyReportCitations(dailyReportId) {
       classified: classifiedCount,
       linked: linkedCount
     };
-    
+
   } catch (error) {
     console.error(`❌ [PROCESSOR] Error:`, error);
     await updateUrlProcessingStatus(dailyReportId, 'failed', null, error.message);
@@ -130,19 +129,18 @@ async function processDailyReportCitations(dailyReportId) {
   }
 }
 
-// ========== STEP 1: Extract ChatGPT Citations ==========
-async function extractChatGPTCitations(dailyReportId) {
+// ========== STEP 1: Extract Citations (all providers) ==========
+async function extractAllCitations(dailyReportId) {
   const { data: promptResults, error } = await supabase
     .from('prompt_results')
-    .select('id, chatgpt_citations, brand_prompt_id')
+    .select('id, provider, chatgpt_citations, brand_prompt_id')
     .eq('daily_report_id', dailyReportId)
-    .eq('provider', 'chatgpt')
     .in('provider_status', ['ok']);
-  
+
   if (error) {
     throw new Error(`Failed to fetch prompt results: ${error.message}`);
   }
-  
+
   const allCitations = [];
   (promptResults || []).forEach(result => {
     const citations = result.chatgpt_citations || [];
@@ -152,31 +150,40 @@ async function extractChatGPTCitations(dailyReportId) {
         allCitations.push({
           url: normalizeUrl(url),
           promptResultId: result.id,
-          brandPromptId: result.brand_prompt_id
+          brandPromptId: result.brand_prompt_id,
+          provider: result.provider || 'chatgpt',
         });
       }
     });
   });
-  
+
   return allCitations;
 }
 
 // ========== STEP 2: Categorize URLs ==========
 async function categorizeUrls(citations) {
   const uniqueUrls = [...new Set(citations.map(c => c.url))];
-  
-  // Check existing URLs in database
-  const { data: existingUrlsData } = await supabase
-    .from('url_inventory')
-    .select(`
-      id,
-      url,
-      content_extracted,
-      retry_count,
-      url_content_facts(id, content_structure_category)
-    `)
-    .in('url', uniqueUrls);
-  
+
+  // Check existing URLs in database.
+  // Use batches of 50 URL strings — small enough to avoid query-string length issues
+  // with Hebrew-encoded or special-character URLs on any brand.
+  const URL_LOOKUP_BATCH = 50;
+  const existingUrlsData = [];
+  for (let i = 0; i < uniqueUrls.length; i += URL_LOOKUP_BATCH) {
+    const batch = uniqueUrls.slice(i, i + URL_LOOKUP_BATCH);
+    const { data } = await supabase
+      .from('url_inventory')
+      .select(`
+        id,
+        url,
+        content_extracted,
+        retry_count,
+        url_content_facts(id, content_structure_category)
+      `)
+      .in('url', batch);
+    if (data) existingUrlsData.push(...data);
+  }
+
   const existingUrlMap = new Map();
   (existingUrlsData || []).forEach(u => {
     existingUrlMap.set(u.url, {
@@ -186,32 +193,28 @@ async function categorizeUrls(citations) {
       hasClassification: u.url_content_facts && u.url_content_facts.length > 0 && u.url_content_facts[0].content_structure_category
     });
   });
-  
+
   const newUrls = [];
   const existingUrls = [];
   const needsClassification = [];
-  
+
   for (const url of uniqueUrls) {
     const existing = existingUrlMap.get(url);
-    
+
     if (!existing) {
-      // Brand new URL - needs extraction and classification
       newUrls.push(url);
       needsClassification.push(url);
     } else if (!existing.contentExtracted && existing.retryCount < MAX_RETRIES) {
-      // Failed extraction - retry
       newUrls.push(url);
       needsClassification.push(url);
     } else if (existing.contentExtracted && !existing.hasClassification) {
-      // Has content but no classification
       needsClassification.push(url);
       existingUrls.push(url);
     } else {
-      // Fully processed - just reuse
       existingUrls.push(url);
     }
   }
-  
+
   // Insert new URLs into inventory
   if (newUrls.length > 0) {
     const { data: insertedUrls } = await supabase
@@ -226,122 +229,114 @@ async function categorizeUrls(citations) {
         { onConflict: 'url' }
       )
       .select('id, url');
-    
-    // Update map with newly inserted URLs
+
     (insertedUrls || []).forEach(u => {
       existingUrlMap.set(u.url, { id: u.id, contentExtracted: false, retryCount: 0, hasClassification: false });
     });
   }
-  
+
   return { newUrls, existingUrls, needsClassification, urlMap: existingUrlMap };
 }
 
 // ========== STEP 3: Extract via Tavily ==========
 async function extractUrlsViaTavily(urls) {
   if (urls.length === 0) return [];
-  
-  const results = [];
-  const batchSize = 20; // Tavily API limit
-  
-  for (let i = 0; i < urls.length; i += batchSize) {
-    const batch = urls.slice(i, i + batchSize);
-    console.log(`🔍 [TAVILY] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(urls.length/batchSize)} (${batch.length} URLs)`);
-    
+
+  const batchSize = 20;
+  const batches = [];
+  for (let i = 0; i < urls.length; i += batchSize) batches.push(urls.slice(i, i + batchSize));
+
+  console.log(`🔍 [TAVILY] Firing ${batches.length} batches in parallel (${urls.length} URLs total)`);
+
+  async function extractBatch(batch, batchIndex) {
     try {
       const response = await fetch('https://api.tavily.com/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: tavilyApiKey,
-          urls: batch
-        })
+        body: JSON.stringify({ api_key: tavilyApiKey, urls: batch })
       });
-      
+
       if (!response.ok) {
-        console.error(`❌ [TAVILY] API Error: ${response.status}`);
-        batch.forEach(url => results.push({ url, success: false, error: `API error ${response.status}` }));
-        continue;
+        console.error(`❌ [TAVILY] Batch ${batchIndex}: HTTP ${response.status}`);
+        return batch.map(url => ({ url, success: false, error: `API error ${response.status}` }));
       }
-      
+
       const data = await response.json();
-      
-      // Process successful extractions
+      const batchResults = [];
+
       (data.results || []).forEach(result => {
-        results.push({
+        batchResults.push({
           url: result.url,
           content: result.raw_content,
           title: extractTitleFromContent(result.raw_content),
           success: true
         });
       });
-      
-      // Process failed extractions
+
       (data.failed_results || []).forEach(result => {
-        results.push({
-          url: result.url,
-          success: false,
-          error: result.error
-        });
+        batchResults.push({ url: result.url, success: false, error: result.error });
       });
-      
-      if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
+
+      console.log(`✅ [TAVILY] Batch ${batchIndex}: ${(data.results || []).length} ok / ${(data.failed_results || []).length} failed`);
+      return batchResults;
+
     } catch (error) {
-      console.error(`❌ [TAVILY] Batch error:`, error.message);
-      batch.forEach(url => results.push({ url, success: false, error: error.message }));
+      console.error(`❌ [TAVILY] Batch ${batchIndex} error:`, error.message);
+      return batch.map(url => ({ url, success: false, error: error.message }));
     }
   }
-  
-  return results;
+
+  const batchResults = await Promise.all(batches.map((batch, i) => extractBatch(batch, i + 1)));
+  return batchResults.flat();
 }
 
-// ========== STEP 3b: Store URL Content ==========
-async function storeUrlContent(extractions, urlList) {
+// ========== STEP 3b: Store URL Content — bulk upsert ==========
+// Uses urlMap to get IDs directly — no per-URL DB lookups.
+// 2 queries total regardless of how many URLs (was 3 queries per URL before).
+async function storeUrlContent(extractions, urlMap) {
+  const contentFactsRows = [];
+  const urlIds = [];
+
   for (const extraction of extractions) {
-    const { data: urlInventory } = await supabase
-      .from('url_inventory')
-      .select('id')
-      .eq('url', extraction.url)
-      .single();
-    
-    if (!urlInventory) continue;
-    
-    // Store content facts
-    await supabase
-      .from('url_content_facts')
-      .upsert({
-        url_id: urlInventory.id,
-        title: extraction.title || '',
-        description: (extraction.content || '').substring(0, 500),
-        raw_content: extraction.content || '',
-        content_snippet: (extraction.content || '').substring(0, 2000)
-      }, { onConflict: 'url_id' });
-    
-    // Update url_inventory
-    await supabase
-      .from('url_inventory')
-      .update({
-        content_extracted: true,
-        content_extracted_at: new Date().toISOString()
-      })
-      .eq('id', urlInventory.id);
+    const entry = urlMap.get(extraction.url);
+    if (!entry?.id) continue;
+
+    contentFactsRows.push({
+      url_id: entry.id,
+      title: extraction.title || '',
+      description: (extraction.content || '').substring(0, 500),
+      raw_content: extraction.content || '',
+      content_snippet: (extraction.content || '').substring(0, 2000)
+    });
+    urlIds.push(entry.id);
+
+    // Update in-memory map so downstream steps see the new state
+    entry.contentExtracted = true;
   }
+
+  if (contentFactsRows.length === 0) return;
+
+  // Single bulk upsert for all content
+  const { error: upsertErr } = await supabase
+    .from('url_content_facts')
+    .upsert(contentFactsRows, { onConflict: 'url_id' });
+  if (upsertErr) console.warn(`⚠️ [STORE] url_content_facts upsert error: ${upsertErr.message}`);
+
+  // Single bulk update for all inventory flags
+  const { error: updateErr } = await supabase
+    .from('url_inventory')
+    .update({ content_extracted: true, content_extracted_at: new Date().toISOString() })
+    .in('id', urlIds);
+  if (updateErr) console.warn(`⚠️ [STORE] url_inventory update error: ${updateErr.message}`);
 }
 
 // ========== STEP 3c: Update Retry Counters ==========
-async function updateRetryCounters(failedExtractions, urlList) {
+async function updateRetryCounters(failedExtractions, urlMap) {
   for (const failed of failedExtractions) {
-    const { data: urlInventory } = await supabase
-      .from('url_inventory')
-      .select('id, retry_count')
-      .eq('url', failed.url)
-      .single();
-    
-    if (!urlInventory) continue;
-    
-    const newRetryCount = (urlInventory.retry_count || 0) + 1;
+    const entry = urlMap.get(failed.url);
+    if (!entry?.id) continue;
+
+    const newRetryCount = (entry.retryCount || 0) + 1;
     await supabase
       .from('url_inventory')
       .update({
@@ -349,8 +344,10 @@ async function updateRetryCounters(failedExtractions, urlList) {
         last_retry_at: new Date().toISOString(),
         last_retry_error: failed.error
       })
-      .eq('id', urlInventory.id);
-    
+      .eq('id', entry.id);
+
+    entry.retryCount = newRetryCount;
+
     if (newRetryCount >= MAX_RETRIES) {
       console.log(`⚠️  ${failed.url} - Max retries (${MAX_RETRIES}) reached`);
     }
@@ -358,19 +355,48 @@ async function updateRetryCounters(failedExtractions, urlList) {
 }
 
 // ========== STEP 4: Prepare Classification Inputs ==========
-async function prepareClassificationInputs(urls) {
-  const { data: urlData } = await supabase
-    .from('url_inventory')
-    .select(`
-      id,
-      url,
-      url_content_facts(title, description, content_snippet)
-    `)
-    .in('url', urls)
-    .eq('content_extracted', true);
-  
-  return (urlData || [])
-    .filter(u => u.url_content_facts && typeof u.url_content_facts === "object")
+// Queries by integer ID — works for ALL URLs regardless of encoding
+// (Hebrew %D7%..., special chars, commas, parentheses — all safe with integer IDs).
+// Includes 3-attempt retry per batch as an additional safety net.
+async function prepareClassificationInputs(urls, urlMap) {
+  // Convert URL strings → integer IDs using the in-memory map
+  const urlsWithIds = urls
+    .map(url => ({ url, id: urlMap.get(url)?.id }))
+    .filter(u => u.id);
+
+  const ids = urlsWithIds.map(u => u.id);
+  const BATCH_SIZE = 100;
+  const allRows = [];
+
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const batchIds = ids.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(ids.length / BATCH_SIZE);
+
+    let success = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { data, error } = await supabase
+        .from('url_inventory')
+        .select('id, url, url_content_facts(title, description, content_snippet)')
+        .in('id', batchIds)
+        .eq('content_extracted', true);
+
+      if (error) {
+        console.warn(`⚠️ [CLASSIFICATION] Batch ${batchNum}/${totalBatches} attempt ${attempt} error: ${error.message}`);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+      } else {
+        allRows.push(...(data || []));
+        success = true;
+        break;
+      }
+    }
+    if (!success) {
+      console.error(`❌ [CLASSIFICATION] Batch ${batchNum}/${totalBatches} failed after 3 attempts — skipping`);
+    }
+  }
+
+  return allRows
+    .filter(u => u.url_content_facts && typeof u.url_content_facts === 'object')
     .map(u => {
       const facts = u.url_content_facts;
       return {
@@ -386,17 +412,16 @@ async function prepareClassificationInputs(urls) {
 // ========== STEP 4b: Classify URL Content ==========
 async function classifyUrlContentBatch(inputs) {
   if (inputs.length === 0) return [];
-  
-  const results = [];
-  const batchSize = 10; // Process 10-15 URLs at a time
-  
-  for (let i = 0; i < inputs.length; i += batchSize) {
-    const batch = inputs.slice(i, i + batchSize);
-    console.log(`🤖 [CLASSIFICATION] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(inputs.length/batchSize)} (${batch.length} URLs)`);
-    
+
+  const batchSize = 10;
+  const batches = [];
+  for (let i = 0; i < inputs.length; i += batchSize) batches.push(inputs.slice(i, i + batchSize));
+
+  console.log(`🤖 [CLASSIFICATION] Firing ${batches.length} classification batches in parallel (${inputs.length} URLs total)`);
+
+  async function classifyBatch(batch, batchIndex) {
     try {
       const prompt = buildClassificationPrompt(batch);
-      
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -404,52 +429,45 @@ async function classifyUrlContentBatch(inputs) {
             role: 'system',
             content: 'You are a content classification expert. You classify web pages based on purpose, intent, and informational structure. Always respond with valid JSON array format.'
           },
-          {
-            role: 'user',
-            content: prompt
-          }
+          { role: 'user', content: prompt }
         ],
         temperature: 0.2,
-        max_tokens: 2000,
+        max_tokens: 4000,
         response_format: { type: 'json_object' }
       });
-      
+
       const classification = response.choices[0]?.message?.content || '';
       const batchResults = parseClassificationResponse(classification, batch.length);
-      results.push(...batchResults);
-      
-      if (i + batchSize < inputs.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
+      console.log(`✅ [CLASSIFICATION] Batch ${batchIndex}: ${batchResults.length} URLs classified`);
+      return batchResults;
+
     } catch (error) {
-      console.error(`❌ [CLASSIFICATION] Error:`, error);
-      batch.forEach(() => {
-        results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
-      });
+      console.error(`❌ [CLASSIFICATION] Batch ${batchIndex} error:`, error.message);
+      return batch.map(() => ({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} }));
     }
   }
-  
-  return results;
+
+  const batchResults = await Promise.all(batches.map((batch, i) => classifyBatch(batch, i + 1)));
+  return batchResults.flat();
 }
 
 function buildClassificationPrompt(batch) {
   let prompt = `Here are the allowed categories (with definitions):\n\n`;
-  
+
   Object.entries(CONTENT_CATEGORIES).forEach(([key, definition], index) => {
     prompt += `${index + 1}. ${key} — ${definition}\n`;
   });
-  
+
   prompt += `\n\nFor each URL below, evaluate and score ALL categories from 0.00 to 1.00 based on:\n`;
   prompt += `- Title and meta description\n`;
   prompt += `- Content summary and writing style\n`;
   prompt += `- Intent (educate? persuade? compare? narrate?)\n\n`;
-  
+
   prompt += `You MUST choose the SINGLE BEST category from the 10 options. Do NOT use OTHER_LOW_CONFIDENCE.\n`;
   prompt += `Choose the category that best matches the PRIMARY purpose, even if not 100% confident.\n\n`;
-  
+
   prompt += `URLs to classify:\n\n`;
-  
+
   batch.forEach((input, index) => {
     prompt += `URL ${index + 1}:\n`;
     prompt += `URL: ${input.url}\n`;
@@ -457,30 +475,29 @@ function buildClassificationPrompt(batch) {
     prompt += `Description: ${input.description.substring(0, 300)}\n`;
     prompt += `Content Snippet: ${input.contentSnippet.substring(0, 800)}\n\n`;
   });
-  
+
   prompt += `\n\nRespond with a JSON object containing a "classifications" array with category and scores for each URL.\n`;
-  
+
   return prompt;
 }
 
 function parseClassificationResponse(response, expectedCount) {
   const results = [];
-  
+
   try {
     const parsed = JSON.parse(response);
     const classifications = parsed.classifications || [];
-    
+
     for (let i = 0; i < expectedCount; i++) {
       const classification = classifications[i];
-      
+
       if (classification && classification.category && classification.scores) {
         const scores = classification.scores;
         const scoreEntries = Object.entries(scores);
         const maxEntry = scoreEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
         const [topCategory, topScore] = maxEntry;
-        
+
         let finalCategory = topCategory;
-        // Reject OTHER_LOW_CONFIDENCE and use next best category
         if (topCategory === "OTHER_LOW_CONFIDENCE") {
           const nonOtherEntries = scoreEntries.filter(([cat]) => cat !== "OTHER_LOW_CONFIDENCE");
           if (nonOtherEntries.length > 0) {
@@ -490,7 +507,7 @@ function parseClassificationResponse(response, expectedCount) {
             finalCategory = "COMPARISON_ANALYSIS";
           }
         }
-        
+
         results.push({
           content_structure_category: finalCategory,
           confidence: topScore,
@@ -500,18 +517,18 @@ function parseClassificationResponse(response, expectedCount) {
         results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
       }
     }
-    
+
     while (results.length < expectedCount) {
       results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
     }
-    
+
   } catch (error) {
     console.error('❌ Failed to parse classification response:', error);
     for (let i = 0; i < expectedCount; i++) {
       results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
     }
   }
-  
+
   return results;
 }
 
@@ -521,9 +538,9 @@ async function storeClassifications(classifications, inputs) {
   for (let i = 0; i < inputs.length; i++) {
     const input = inputs[i];
     const classification = classifications[i];
-    
+
     if (!classification) continue;
-    
+
     const { error } = await supabase
       .from('url_content_facts')
       .update({
@@ -533,46 +550,33 @@ async function storeClassifications(classifications, inputs) {
         classified_at: new Date().toISOString()
       })
       .eq('url_id', input.urlId);
-    
+
     if (!error) count++;
   }
-  
+
   return count;
 }
 
 // ========== STEP 5: Link Citations to Prompts ==========
-async function linkCitationsToPrompts(citations, urlList) {
-  // Batch URL lookups to avoid "fetch failed" errors with large arrays (>250 URLs)
-  const BATCH_SIZE = 100;
-  const allUrlInventory = [];
-
-  for (let i = 0; i < urlList.length; i += BATCH_SIZE) {
-    const batch = urlList.slice(i, i + BATCH_SIZE);
-    const { data } = await supabase
-      .from('url_inventory')
-      .select('id, url')
-      .in('url', batch);
-    if (data) allUrlInventory.push(...data);
-  }
-
-  const urlMap = new Map();
-  allUrlInventory.forEach(u => urlMap.set(u.url, u.id));
-
+// Uses urlMap directly — no re-query needed, works for any URL encoding.
+async function linkCitationsToPrompts(citations, urlMap) {
+  const seen = new Set();
   const citationRecords = citations.map(citation => {
-    const urlId = urlMap.get(citation.url);
-    if (!urlId) return null;
-
+    const entry = urlMap.get(citation.url);
+    if (!entry?.id) return null;
+    const key = `${entry.id}|${citation.promptResultId}|${citation.provider || 'chatgpt'}`;
+    if (seen.has(key)) return null; // deduplicate within batch
+    seen.add(key);
     return {
-      url_id: urlId,
+      url_id: entry.id,
       prompt_result_id: citation.promptResultId,
-      provider: 'chatgpt',
+      provider: citation.provider || 'chatgpt',
       cited_at: new Date().toISOString()
     };
   }).filter(Boolean);
 
   if (citationRecords.length === 0) return 0;
 
-  // Use upsert to avoid duplicates
   const { error } = await supabase
     .from('url_citations')
     .upsert(citationRecords, { onConflict: 'url_id,prompt_result_id,provider' });
@@ -588,22 +592,22 @@ async function linkCitationsToPrompts(citations, urlList) {
 // ========== UPDATE STATUS ==========
 async function updateUrlProcessingStatus(dailyReportId, status, counts = null, errorMessage = null) {
   const updateData = { url_processing_status: status };
-  
+
   if (counts) {
     updateData.urls_total = counts.total;
     updateData.urls_extracted = counts.extracted;
     updateData.urls_classified = counts.classified;
   }
-  
+
   if (errorMessage) {
     updateData.url_processing_error = errorMessage;
   }
-  
+
   const { error } = await supabase
     .from('daily_reports')
     .update(updateData)
     .eq('id', dailyReportId);
-  
+
   if (error) {
     console.error(`⚠️  Failed to update URL processing status:`, error.message);
   }
@@ -615,36 +619,30 @@ async function updateReportCompletionStatus(dailyReportId) {
     .select('chatgpt_status, url_processing_status')
     .eq('id', dailyReportId)
     .single();
-  
+
   if (error || !report) {
     console.error(`⚠️  Failed to fetch report status:`, error?.message);
     return false;
   }
-  
+
   const isChatGPTComplete = report.chatgpt_status === 'complete';
   const isUrlProcessingComplete = report.url_processing_status === 'complete';
   const shouldMarkComplete = isChatGPTComplete && isUrlProcessingComplete;
-  
+
   console.log(`🔍 [COMPLETION] Status check:`, {
     chatgpt: report.chatgpt_status,
     urlProcessing: report.url_processing_status,
     shouldMarkComplete
   });
-  
+
   if (!shouldMarkComplete) {
     console.log(`⏳ [COMPLETION] Report not yet complete (waiting for all phases)`);
     return false;
   }
-  
-  // NOTE: Status and completed_at are now set by end-of-day processor Phase 5
-  // This function only updates url_processing_status and generated flag
+
   const { error: updateError } = await supabase
     .from('daily_reports')
-    .update({
-      generated: true
-      // status: 'completed' - removed, handled by end-of-day processor
-      // completed_at - removed, handled by end-of-day processor
-    })
+    .update({ generated: true })
     .eq('id', dailyReportId);
 
   if (updateError) {
@@ -690,12 +688,12 @@ function extractTitleFromContent(content) {
 // ========== CLI ENTRY POINT ==========
 if (require.main === module) {
   const dailyReportId = process.argv[2];
-  
+
   if (!dailyReportId) {
     console.error('Usage: node process-daily-report-citations.js <daily_report_id>');
     process.exit(1);
   }
-  
+
   processDailyReportCitations(dailyReportId)
     .then((result) => {
       console.log('\n✅ [PROCESSOR] Processing complete:', result, '\n');
@@ -708,4 +706,3 @@ if (require.main === module) {
 }
 
 module.exports = { processDailyReportCitations };
-

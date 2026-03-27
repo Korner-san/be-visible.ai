@@ -28,12 +28,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
  * Use GPT-4o-mini to extract all company/brand/product entities from a response
- * in the order they first appear, then return brand rank + competitor ranks.
+ * in the order they first appear, then return the brand's rank among them.
  *
- * Returns { brandRank: number|null, competitorRanks: { name: rank|null } }
+ * Returns an integer >= 1 (e.g. 3 = brand was the 3rd entity mentioned),
+ * or null if brand not found in entity list or GPT call fails.
  */
-async function getAllEntityRanksFromGPT(responseText, brandName, competitorNames = []) {
+async function getEntityRankFromGPT(responseText, brandName) {
   try {
+    // Truncate to ~6000 chars to stay within token limits
     const truncated = responseText.length > 6000
       ? responseText.substring(0, 6000) + '\n[... truncated]'
       : responseText;
@@ -61,33 +63,31 @@ ${truncated}`
     });
 
     const content = completion.choices[0]?.message?.content;
-    if (!content) return { brandRank: null, competitorRanks: {} };
+    if (!content) return null;
 
     const parsed = JSON.parse(content);
     const entities = parsed.entities || [];
 
-    if (entities.length === 0) return { brandRank: null, competitorRanks: {} };
+    if (entities.length === 0) return null;
 
-    const findRank = (name) => {
-      const lower = name.toLowerCase();
-      for (let i = 0; i < entities.length; i++) {
-        const e = (entities[i] || '').toLowerCase();
-        if (e === lower || e.includes(lower) || lower.includes(e)) return i + 1;
+    const brandLower = brandName.toLowerCase();
+
+    // Find brand in the ordered list (exact or partial match)
+    for (let i = 0; i < entities.length; i++) {
+      const entityLower = (entities[i] || '').toLowerCase();
+      if (entityLower === brandLower ||
+          entityLower.includes(brandLower) ||
+          brandLower.includes(entityLower)) {
+        return i + 1; // 1-based rank
       }
-      return null;
-    };
-
-    const brandRank = findRank(brandName);
-    const competitorRanks = {};
-    for (const comp of competitorNames) {
-      competitorRanks[comp] = findRank(comp);
     }
 
-    return { brandRank, competitorRanks };
+    // Brand not found in entity list despite being mentioned — return null
+    return null;
 
   } catch (err) {
     console.error('   ⚠️  GPT entity rank failed (non-blocking):', err.message);
-    return { brandRank: null, competitorRanks: {} };
+    return null;
   }
 }
 
@@ -176,24 +176,16 @@ async function analyzeResults(dailyReportId, providers = ['chatgpt', 'perplexity
       else noMention++;
     }
 
-    // 4. Fire all GPT entity-rank calls in parallel (brand + competitors in one call)
-    // Include results where brand OR any competitor is mentioned
-    const resultsNeedingRanks = results.filter(r => {
-      const entry = analysisMap[r.id];
-      if (!entry) return false;
-      return entry.analysis.mentioned || entry.analysis.competitorMentions.length > 0;
-    });
-    console.log(`\n🤖 Computing entity ranks in parallel for ${resultsNeedingRanks.length} results (brand or competitor mentioned)...`);
+    // 4. Fire all GPT entity-rank calls in parallel (only for results where brand is mentioned)
+    const mentionedResults = results.filter(r => analysisMap[r.id]?.analysis.mentioned);
+    console.log(`\n🤖 Computing entity ranks in parallel for ${mentionedResults.length} mentioned results...`);
 
     const entityRankMap = {};
-    const competitorRankMap = {};
-    await Promise.all(resultsNeedingRanks.map(async result => {
+    await Promise.all(mentionedResults.map(async result => {
       const { responseText } = analysisMap[result.id];
-      const { brandRank, competitorRanks } = await getAllEntityRanksFromGPT(responseText, brandName, competitors);
-      entityRankMap[result.id] = brandRank;
-      competitorRankMap[result.id] = competitorRanks;
-      console.log('   ' + result.id.substring(0, 8) + ': brand=#' + (brandRank ?? 'null') +
-        ', competitors=' + JSON.stringify(competitorRanks));
+      const rank = await getEntityRankFromGPT(responseText, brandName);
+      entityRankMap[result.id] = rank;
+      console.log('   ' + result.id.substring(0, 8) + ': rank=' + (rank !== null ? '#' + rank : 'null'));
     }));
 
     // 5. Save all results to DB
@@ -204,20 +196,13 @@ async function analyzeResults(dailyReportId, providers = ['chatgpt', 'perplexity
 
       const { analysis } = entry;
       const entityRank = entityRankMap[result.id] ?? null;
-      const compRanks = competitorRankMap[result.id] || {};
-
-      // Merge entity_rank into each competitor mention entry
-      const competitorMentionDetails = analysis.competitorMentions.map(c => ({
-        ...c,
-        entity_rank: compRanks[c.name] ?? null
-      }));
 
       const { error: updateError } = await supabase
         .from('prompt_results')
         .update({
           brand_mentioned: analysis.mentioned,
           brand_position: entityRank,
-          competitor_mention_details: competitorMentionDetails,
+          competitor_mention_details: analysis.competitorMentions,
           sentiment_score: analysis.sentiment
         })
         .eq('id', result.id);
