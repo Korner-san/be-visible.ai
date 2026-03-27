@@ -75,28 +75,13 @@ module.exports = async function handler(req, res) {
     const answers = brand.onboarding_answers || {};
     const normalizedDomain = normalizeDomain(answers.website || brand.domain || '');
 
-    // Mark prompts as active — set status + is_active together for consistency
-    if (selectedPromptIds.length > 0) {
-      await supabase
-        .from('brand_prompts')
-        .update({ status: 'active', is_active: true })
-        .in('id', selectedPromptIds)
-        .eq('brand_id', brandId);
-    } else {
-      // If no specific IDs, activate all prompts for this brand
-      await supabase
-        .from('brand_prompts')
-        .update({ status: 'active', is_active: true })
-        .eq('brand_id', brandId)
-        .eq('status', 'inactive');
-    }
-
-    // ── Wave assignment: first 6 prompts → wave 1, rest → wave 2 ──────────
-    // Fetch all active prompts ordered by creation time
+    // ── Wave assignment: first 6 prompts → wave 1 (active), rest → wave 2 (inactive) ──
+    // Fetch all prompts for this brand that haven't been processed yet
     const { data: allPrompts } = await supabase
       .from('brand_prompts')
       .select('id')
       .eq('brand_id', brandId)
+      .in('status', ['active', 'inactive', 'improved'])
       .order('created_at', { ascending: true });
 
     if (allPrompts && allPrompts.length > 0) {
@@ -105,15 +90,16 @@ module.exports = async function handler(req, res) {
 
       if (wave1Ids.length > 0) {
         await supabase.from('brand_prompts')
-          .update({ onboarding_wave: 1, onboarding_status: 'pending' })
+          .update({ onboarding_wave: 1, onboarding_status: 'pending', status: 'active', is_active: true })
           .in('id', wave1Ids);
       }
       if (wave2Ids.length > 0) {
+        // Wave 2 stays inactive — queue-organizer activates these when Phase 2 begins
         await supabase.from('brand_prompts')
-          .update({ onboarding_wave: 2, onboarding_status: 'pending' })
+          .update({ onboarding_wave: 2, onboarding_status: 'pending', status: 'inactive', is_active: false })
           .in('id', wave2Ids);
       }
-      console.log(`[complete-final] Wave assignment: ${wave1Ids.length} wave-1, ${wave2Ids.length} wave-2`);
+      console.log(`[complete-final] Wave assignment: ${wave1Ids.length} wave-1 (active), ${wave2Ids.length} wave-2 (inactive)`);
     }
 
     // ── Pre-create daily_report row (is_partial=true, total_prompts=6) ────
@@ -186,13 +172,16 @@ module.exports = async function handler(req, res) {
     }
 
     // ── Save competitors to brand_competitors table ────────────────────────
-    const competitors = answers.competitors || [];
-    const validCompetitors = competitors.filter(c => c && c.trim());
+    // competitors may be {name,domain}[] objects or plain strings — normalize both
+    const rawCompetitors = answers.competitors || [];
+    const validCompetitors = rawCompetitors
+      .map(c => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
+      .filter(Boolean);
     if (validCompetitors.length > 0) {
       const competitorRows = validCompetitors.map(name => ({
         brand_id: brandId,
-        competitor_name: name.trim(),
-        competitor_domain: name.includes('.') ? name.trim().toLowerCase() : null,
+        competitor_name: name,
+        competitor_domain: name.includes('.') ? name.toLowerCase() : null,
       }));
       await supabase.from('brand_competitors').upsert(competitorRows, { onConflict: 'brand_id,competitor_name' });
       console.log(`[complete-final] Saved ${validCompetitors.length} competitors`);
