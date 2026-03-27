@@ -70,6 +70,7 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
   const [newPromptCategory, setNewPromptCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const activePrompts = prompts.filter(p => !p.isDeleted);
@@ -152,6 +153,7 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
 
   const handleFinish = async () => {
     setIsFinishing(true);
+    setFinishError(null);
     try {
       const kept = activePrompts;
 
@@ -194,9 +196,10 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
         ...insertedIds,
       ];
 
-      onFinish(allIds);
+      await onFinish(allIds);
     } catch (err) {
       console.error('[OnboardingEditPromptsPage] Finish error:', err);
+      setFinishError(err instanceof Error ? err.message : 'Failed to finish. Please try again.');
       setIsFinishing(false);
     }
   };
@@ -425,9 +428,14 @@ export const OnboardingEditPromptsPage: React.FC<OnboardingEditPromptsPageProps>
 
           {/* Bottom summary */}
           <div className="bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-            <p className="text-xs text-slate-500">
-              {activePrompts.length} prompts in {categories.length} categories
-            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs text-slate-500">
+                {activePrompts.length} prompts in {categories.length} categories
+              </p>
+              {finishError && (
+                <p className="text-xs text-red-600">{finishError}</p>
+              )}
+            </div>
             <button
               onClick={handleFinish}
               disabled={isFinishing || activePrompts.length === 0}

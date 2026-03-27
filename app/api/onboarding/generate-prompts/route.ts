@@ -144,22 +144,6 @@ Example format:
   }
 }
 
-// Quality control: Check for brand/competitor mentions
-const hasProblematicMentions = (prompt: string, brandName: string, competitors: string[]): boolean => {
-  const lowerPrompt = prompt.toLowerCase()
-  const lowerBrand = brandName.toLowerCase()
-  
-  // Check for brand name
-  if (lowerPrompt.includes(lowerBrand)) {
-    return true
-  }
-  
-  // Check for competitor names
-  return competitors.some(competitor => 
-    competitor.trim() && lowerPrompt.includes(competitor.toLowerCase())
-  )
-}
-
 
 export async function POST(request: NextRequest) {
   console.log('🔄 [GENERATE PROMPTS API] Starting prompt generation request')

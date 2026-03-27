@@ -223,7 +223,11 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Save competitors to brand_competitors table
-    const competitors: string[] = onboardingAnswers.competitors || []
+    // onboarding_answers.competitors may be {name,domain}[] objects or plain strings — normalize both
+    const rawCompetitors: any[] = onboardingAnswers.competitors || []
+    const competitors = rawCompetitors
+      .map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
+      .filter(Boolean)
     if (competitors.length > 0) {
       // Delete existing first (idempotent — safe if called twice)
       await adminSupabaseForCapacity.from('brand_competitors').delete().eq('brand_id', updatedBrand.id)

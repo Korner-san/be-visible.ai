@@ -173,16 +173,11 @@ function AppContent() {
         setActiveBrandId(primary.id);
         setActiveBrand(primary);
 
-        // onboarding_prompts_sent IS NULL → old brand (pre-v2) → always dashboard
-        // onboarding_prompts_sent = 0–29 AND status running/queued → progress screen
-        // onboarding_prompts_sent = 30 OR status succeeded → dashboard
-        const sent = primary.onboarding_prompts_sent;
+        // Route to progress screen if onboarding is actively running/queued,
+        // regardless of onboarding_prompts_sent (null = fresh brand, also needs progress screen).
+        // Old pre-v2 brands have first_report_status='succeeded' so they still go to dashboard.
         const activeStatuses = ['queued', 'running'];
-        if (
-          sent !== null &&
-          sent < 30 &&
-          activeStatuses.includes(primary.first_report_status ?? '')
-        ) {
+        if (activeStatuses.includes(primary.first_report_status ?? '')) {
           setAppView('AUTHENTICATED_PROGRESS');
         } else {
           setAppView('AUTHENTICATED_READY');
