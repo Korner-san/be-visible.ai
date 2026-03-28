@@ -647,7 +647,7 @@ export async function GET(request: NextRequest) {
       const brandId = searchParams.get('brand_id')
 
       // Always return the brand list
-      const { data: rawBrands } = await supabase
+      const { data: rawBrands, error: brandsError } = await supabase
         .from('brands')
         .select('id, name, domain, first_report_status, onboarding_phase, onboarding_completed, created_at, onboarding_daily_report_id, owner_user_id')
         .not('first_report_status', 'is', null)
@@ -655,10 +655,15 @@ export async function GET(request: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(50)
 
+      if (brandsError) {
+        return NextResponse.json({ success: false, error: 'brands query failed: ' + brandsError.message, brands: [], detail: null })
+      }
+
       const ownerIds = [...new Set((rawBrands || []).map((b: any) => b.owner_user_id))]
-      const { data: userRows } = ownerIds.length > 0
+      const usersResult = ownerIds.length > 0
         ? await supabase.from('users').select('id, email').in('id', ownerIds)
-        : { data: [] as any[] }
+        : { data: [] as any[], error: null }
+      const userRows = usersResult.data
 
       const userMap: Record<string, string> = {}
       for (const u of (userRows || []) as any[]) userMap[u.id] = u.email

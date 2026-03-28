@@ -182,8 +182,8 @@ export const OnboardingForensicPage: React.FC = () => {
         headers: { 'x-forensic-password': 'Korneret' },
         cache: 'no-store',
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      if (!res.ok || json.success === false) throw new Error(json.error || `HTTP ${res.status}`);
       setBrands(json.brands || []);
       if (json.detail) setDetail(json.detail);
       setLastRefresh(new Date());
