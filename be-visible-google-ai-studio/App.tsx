@@ -24,6 +24,7 @@ import { BillingPage } from './components/BillingPage';
 import { SupportPage } from './components/SupportPage';
 import { UserSettingsPage } from './components/UserSettingsPage';
 import { ForensicPage } from './components/ForensicPage';
+import { OnboardingForensicPage } from './components/OnboardingForensicPage';
 import { ContentPage } from './components/ContentPage';
 import { PartialReportBanner } from './components/PartialReportBanner';
 import { TimeRange, PromptStats, Competitor } from './types';
@@ -468,7 +469,9 @@ function AppContent() {
       case 'User Settings':
         return <UserSettingsPage onNavigateToForensic={() => setActiveTab('Forensic')} onTimezoneChange={setUserTimezone} />;
       case 'Forensic':
-        return <ForensicPage />;
+        return <ForensicPage onNavigateToOnboardingForensic={() => setActiveTab('Onboarding Forensic')} />;
+      case 'Onboarding Forensic':
+        return <OnboardingForensicPage />;
       case 'Content':
         return <ContentPage brandId={activeBrandId} timeRange={timeRange} />;
       default:

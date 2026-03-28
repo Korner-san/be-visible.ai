@@ -171,7 +171,7 @@ const ModelExecBadge: React.FC<{ exec: ModelExecution | null }> = ({ exec }) => 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export const ForensicPage: React.FC = () => {
+export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => void }> = ({ onNavigateToOnboardingForensic }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
@@ -351,14 +351,24 @@ export const ForensicPage: React.FC = () => {
             <p className="text-xs text-slate-400 mt-1">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
           )}
         </div>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-2xl text-xs font-bold text-slate-600 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {onNavigateToOnboardingForensic && (
+            <button
+              onClick={onNavigateToOnboardingForensic}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-all shadow-sm"
+            >
+              Onboarding Forensic →
+            </button>
+          )}
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-2xl text-xs font-bold text-slate-600 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Error */}
