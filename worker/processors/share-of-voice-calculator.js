@@ -137,8 +137,11 @@ function mergeEntities(entities) {
   return Object.values(merged).sort((a, b) => b.mentions - a.mentions);
 }
 
+const CHUNK_SIZE = 5;
+
 /**
  * Run extraction for a set of response texts and return cleaned SoV data.
+ * Splits responses into chunks of CHUNK_SIZE to avoid GPT token limits.
  * Returns null if no texts provided.
  */
 async function buildSovData(responseTexts, brandName, competitorNames, label) {
@@ -147,15 +150,28 @@ async function buildSovData(responseTexts, brandName, competitorNames, label) {
     return null;
   }
 
-  console.log('   🤖 Extracting entities for ' + label + ' (' + responseTexts.length + ' responses)...');
-  const rawEntities = await extractEntitiesWithGPT(responseTexts);
+  // Split into chunks of CHUNK_SIZE
+  const chunks = [];
+  for (let i = 0; i < responseTexts.length; i += CHUNK_SIZE) {
+    chunks.push(responseTexts.slice(i, i + CHUNK_SIZE));
+  }
+  console.log('   🤖 Extracting entities for ' + label + ' (' + responseTexts.length + ' responses, ' + chunks.length + ' chunks)...');
 
-  if (rawEntities.length === 0) {
+  // Run GPT extraction on each chunk and collect all raw entities
+  const allRawEntities = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkEntities = await extractEntitiesWithGPT(chunks[i]);
+    console.log('     chunk ' + (i + 1) + '/' + chunks.length + ': ' + chunkEntities.length + ' entities found');
+    allRawEntities.push(...chunkEntities);
+  }
+
+  if (allRawEntities.length === 0) {
     console.log('   ⚠️  No entities found for ' + label);
     return { entities: [], total_mentions: 0, calculated_at: new Date().toISOString() };
   }
 
-  const categorized = categorizeEntities(rawEntities, brandName, competitorNames);
+  // Categorize then merge (mergeEntities sums duplicate names across chunks)
+  const categorized = categorizeEntities(allRawEntities, brandName, competitorNames);
   const merged = mergeEntities(categorized);
   const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
 
@@ -265,13 +281,34 @@ async function calculateShareOfVoice(dailyReportId) {
       }
     }
 
-    // 7. Run combined extraction (all providers) for the aggregate view
-    console.log('\n🔍 Combined extraction (all providers):');
-    const combinedSov = await buildSovData(allTexts, brand.name, competitorNames, 'ALL');
+    // 7. Build combined view by mathematically merging per-provider results (no extra GPT call)
+    console.log('\n🔢 Building combined SoV by merging per-provider results...');
+    const mergedMap = {};
+    for (const provSov of Object.values(shareOfVoiceByProvider)) {
+      for (const entity of provSov.entities) {
+        const key = entity.name.toLowerCase();
+        if (mergedMap[key]) {
+          mergedMap[key].mentions += entity.mentions;
+        } else {
+          mergedMap[key] = { ...entity };
+        }
+      }
+    }
+    const mergedEntities = Object.values(mergedMap).sort((a, b) => b.mentions - a.mentions);
+    const mergedTotal = mergedEntities.reduce((sum, e) => sum + e.mentions, 0);
+
+    const combinedSov = mergedTotal > 0
+      ? { entities: mergedEntities, total_mentions: mergedTotal, calculated_at: new Date().toISOString() }
+      : null;
 
     if (!combinedSov) {
       return { success: true, message: 'No entities found', totalMentions: 0 };
     }
+
+    mergedEntities.forEach(e => {
+      const pct = ((e.mentions / mergedTotal) * 100).toFixed(1);
+      console.log('  [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%)');
+    });
 
     // 8. Save both to daily_reports
     console.log('\n💾 Saving SoV data...');
