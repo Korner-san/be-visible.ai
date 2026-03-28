@@ -66,7 +66,8 @@ async function fetchMentionRateValue(bId: string, from: string, to: string, mode
     .from('prompt_results')
     .select('*', { count: 'exact', head: true })
     .in('daily_report_id', reportIds)
-    .in('provider', models);
+    .in('provider', models)
+    .not('brand_mentioned', 'is', null);
   const { count: mentioned } = await supabase
     .from('prompt_results')
     .select('*', { count: 'exact', head: true })

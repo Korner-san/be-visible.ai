@@ -193,7 +193,17 @@ async function analyzeResults(dailyReportId, providers = ['chatgpt', 'perplexity
         ', competitors=' + JSON.stringify(competitorRanks));
     }));
 
-    // 5. Save all results to DB
+    // 5a. Mark no-response rows as brand_mentioned = null (no attempt, excluded from mention rate)
+    const noResponseIds = results.filter(r => !analysisMap[r.id]).map(r => r.id);
+    if (noResponseIds.length > 0) {
+      await supabase
+        .from('prompt_results')
+        .update({ brand_mentioned: null })
+        .in('id', noResponseIds);
+      console.log('   ℹ️  Marked ' + noResponseIds.length + ' no-response rows as brand_mentioned=null');
+    }
+
+    // 5b. Save analyzed results to DB
     let analyzed = 0;
     for (const result of results) {
       const entry = analysisMap[result.id];
