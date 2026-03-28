@@ -106,10 +106,10 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
       <div className="flex items-start justify-between mb-4">
         <div className="space-y-1">
           <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
-            Visibility score over time
+            Visibility index over time
             <HelpCircle size={14} className="text-gray-300" />
           </h3>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Total Score based on weighted metrics</p>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Percentile rank among all entities in AI responses</p>
         </div>
 
         <div className="text-right">

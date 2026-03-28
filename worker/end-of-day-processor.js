@@ -31,6 +31,7 @@ const reportAggregator = require('./processors/report-aggregator');
 const visibilityScoreCalculator = require('./processors/visibility-score-calculator');
 const citationShareCalculator = require('./processors/citation-share-calculator');
 const shareOfVoiceCalculator = require('./processors/share-of-voice-calculator');
+const visibilityIndexCalculator = require('./processors/visibility-index-calculator');
 const competitorMetricsCalculator = require('./processors/competitor-metrics-calculator');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -120,6 +121,20 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
       console.log('✅ Phase 5 complete: entities=' + (sovResult.totalEntities || 0) + ', brandShare=' + (sovResult.brandShare || 0) + '%');
     } catch (sovError) {
       console.error('⚠️  Phase 5 failed (non-blocking):', sovError.message);
+    }
+
+    // PHASE 5b: VISIBILITY INDEX (runs after SOV — requires position_score_sum from SOV data)
+    console.log('\n🏆 PHASE 5b: VISIBILITY INDEX');
+    console.log('─'.repeat(70));
+    try {
+      const indexResult = await visibilityIndexCalculator.calculateVisibilityIndex(dailyReportId);
+      if (indexResult.success) {
+        console.log('✅ Phase 5b complete: brandIndex=' + indexResult.brandIndex + '/100, entities=' + indexResult.entityCount);
+      } else {
+        console.log('⚠️  Phase 5b skipped: ' + indexResult.reason);
+      }
+    } catch (indexError) {
+      console.error('⚠️  Phase 5b failed (non-blocking):', indexError.message);
     }
 
     // PHASE 6: CITATION SHARE (always runs)

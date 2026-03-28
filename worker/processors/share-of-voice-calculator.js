@@ -7,14 +7,18 @@
  * - Known competitors
  * - Other discovered entities
  *
+ * Also captures per-response entity ranks to enable Visibility Index calculation.
+ *
  * Uses GPT-4o-mini for entity extraction from response texts.
  *
  * Process:
  * 1. Load all prompt_results for the daily report (all providers)
  * 2. Run entity extraction once per provider (chatgpt, google_ai_overview, claude, perplexity)
- * 3. Run one combined extraction across all providers for the aggregate view
+ * 3. Build combined view by mathematically merging per-provider results
  * 4. Store per-provider results in daily_reports.share_of_voice_by_provider
  * 5. Store combined result in daily_reports.share_of_voice_data
+ *    (each entity includes: mentions, type, position_score_sum)
+ *    (top-level includes: total_responses for use by visibility-index-calculator)
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -36,9 +40,14 @@ const PROVIDER_RESPONSE_COLUMNS = {
 };
 
 /**
- * Extract entities from response texts using GPT-4o-mini
- * @param {string[]} responseTexts - Array of AI response texts
- * @returns {Object[]} Array of { name, mentions } objects
+ * Extract entities per response with their rank using GPT-4o-mini.
+ * Returns per-response data: [{response_index, entities: [{name, rank}]}]
+ *
+ * rank=1 means most prominent / first mentioned in that response.
+ * JS code calculates position score = (N - rank) / N where N = total entities in response.
+ *
+ * @param {string[]} responseTexts - Array of AI response texts (chunk of up to CHUNK_SIZE)
+ * @returns {Array} Array of per-response objects
  */
 async function extractEntitiesWithGPT(responseTexts) {
   const combinedText = responseTexts
@@ -55,33 +64,43 @@ async function extractEntitiesWithGPT(responseTexts) {
     messages: [
       {
         role: 'system',
-        content: `You are an entity extraction expert. Extract all company names, software tools, platforms, and product names mentioned in the provided AI responses. Count how many separate responses mention each entity (not total occurrences within a single response — count each response that mentions the entity once). Always respond with valid JSON.`
+        content: `You are an entity extraction expert. For each AI response, extract all company names, software tools, platforms, and product names mentioned. List them in order of prominence (rank 1 = first mentioned / most prominent). Normalize names consistently. Always respond with valid JSON.`
       },
       {
         role: 'user',
-        content: `Extract all company/software/tool/platform entities from these AI responses. For each entity, count in how many separate responses it appears (each "--- Response N ---" block counts as one response).
+        content: `For each response block below, list all company/software/tool/platform entities in order of prominence (rank 1 = first mentioned or most prominent).
 
 Return JSON format:
 {
-  "entities": [
-    {"name": "EntityName", "mentions": 5},
-    {"name": "AnotherEntity", "mentions": 3}
+  "responses": [
+    {
+      "response_index": 1,
+      "entities": [
+        {"name": "EntityName", "rank": 1},
+        {"name": "AnotherEntity", "rank": 2}
+      ]
+    },
+    {
+      "response_index": 2,
+      "entities": [...]
+    }
   ]
 }
 
 Rules:
 - Normalize names (e.g., "GitHub Actions" not "github actions" or "Github actions")
-- Merge obvious variants (e.g., "GitLab CI" and "GitLab CI/CD" = "GitLab CI")
+- Merge obvious variants within the same response (e.g., "GitLab CI" and "GitLab CI/CD" = "GitLab CI")
 - Only include companies, software tools, platforms, and products
-- Do NOT include generic terms like "AI", "cloud", "CI/CD" as entities
-- Count = number of distinct responses mentioning the entity, not total occurrences
+- Do NOT include generic terms like "AI", "cloud", "CI/CD", "search engine"
+- rank = position of the entity by prominence in that response (1 = first/most prominent)
+- Include ALL responses from the input, even if a response mentions no entities (use empty entities array)
 
 Responses:
 ${truncated}`
       }
     ],
     temperature: 0.1,
-    max_tokens: 2000,
+    max_tokens: 3000,
     response_format: { type: 'json_object' }
   });
 
@@ -91,7 +110,7 @@ ${truncated}`
   }
 
   const parsed = JSON.parse(content);
-  return parsed.entities || [];
+  return parsed.responses || [];
 }
 
 /**
@@ -122,7 +141,8 @@ function categorizeEntities(entities, brandName, competitorNames) {
 }
 
 /**
- * Merge duplicate entities after categorization
+ * Merge duplicate entities after categorization.
+ * Sums both mentions and position_score_sum for duplicates.
  */
 function mergeEntities(entities) {
   const merged = {};
@@ -130,6 +150,7 @@ function mergeEntities(entities) {
     const key = entity.name.toLowerCase();
     if (merged[key]) {
       merged[key].mentions += entity.mentions;
+      merged[key].position_score_sum = (merged[key].position_score_sum || 0) + (entity.position_score_sum || 0);
     } else {
       merged[key] = { ...entity };
     }
@@ -143,6 +164,11 @@ const CHUNK_SIZE = 5;
  * Run extraction for a set of response texts and return cleaned SoV data.
  * Splits responses into chunks of CHUNK_SIZE to avoid GPT token limits.
  * Returns null if no texts provided.
+ *
+ * Each entity in the returned data includes:
+ *   - name, type, mentions, position_score_sum
+ *
+ * Top-level includes total_responses (denominator for Visibility Index).
  */
 async function buildSovData(responseTexts, brandName, competitorNames, label) {
   if (!responseTexts || responseTexts.length === 0) {
@@ -150,39 +176,68 @@ async function buildSovData(responseTexts, brandName, competitorNames, label) {
     return null;
   }
 
+  const totalResponses = responseTexts.length;
+
   // Split into chunks of CHUNK_SIZE
   const chunks = [];
   for (let i = 0; i < responseTexts.length; i += CHUNK_SIZE) {
     chunks.push(responseTexts.slice(i, i + CHUNK_SIZE));
   }
-  console.log('   🤖 Extracting entities for ' + label + ' (' + responseTexts.length + ' responses, ' + chunks.length + ' chunks)...');
+  console.log('   🤖 Extracting entities for ' + label + ' (' + totalResponses + ' responses, ' + chunks.length + ' chunks)...');
 
-  // Run GPT extraction on each chunk and collect all raw entities
-  const allRawEntities = [];
+  // entityMap: name_lower → {name, mentions, position_score_sum}
+  const entityMap = {};
+
   for (let i = 0; i < chunks.length; i++) {
-    const chunkEntities = await extractEntitiesWithGPT(chunks[i]);
-    console.log('     chunk ' + (i + 1) + '/' + chunks.length + ': ' + chunkEntities.length + ' entities found');
-    allRawEntities.push(...chunkEntities);
+    const perResponseData = await extractEntitiesWithGPT(chunks[i]);
+    console.log('     chunk ' + (i + 1) + '/' + chunks.length + ': ' + perResponseData.length + ' responses processed');
+
+    for (const responseData of perResponseData) {
+      const entities = responseData.entities || [];
+      const N = entities.length; // total distinct entities in this response
+
+      for (const entity of entities) {
+        const K = entity.rank; // 1-indexed rank
+        // Position score: rank 1 out of 5 → (5-1)/5 = 0.80; rank 5 out of 5 → 0.00
+        const posScore = N > 1 ? (N - K) / N : (N === 1 ? 1.0 : 0);
+
+        const key = entity.name.toLowerCase();
+        if (!entityMap[key]) {
+          entityMap[key] = { name: entity.name, mentions: 0, position_score_sum: 0 };
+        }
+        entityMap[key].mentions += 1;
+        entityMap[key].position_score_sum += posScore;
+      }
+    }
   }
 
-  if (allRawEntities.length === 0) {
+  const rawEntities = Object.values(entityMap);
+
+  if (rawEntities.length === 0) {
     console.log('   ⚠️  No entities found for ' + label);
-    return { entities: [], total_mentions: 0, calculated_at: new Date().toISOString() };
+    return { entities: [], total_mentions: 0, total_responses: totalResponses, calculated_at: new Date().toISOString() };
   }
 
-  // Categorize then merge (mergeEntities sums duplicate names across chunks)
-  const categorized = categorizeEntities(allRawEntities, brandName, competitorNames);
+  // Categorize then merge (handles cases where categorization renames to same entity)
+  const categorized = categorizeEntities(rawEntities, brandName, competitorNames);
   const merged = mergeEntities(categorized);
   const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
 
   merged.forEach(e => {
     const pct = totalMentions > 0 ? ((e.mentions / totalMentions) * 100).toFixed(1) : '0.0';
-    console.log('     [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%)');
+    const posImpact = totalResponses > 0 ? (e.position_score_sum / totalResponses * 100).toFixed(1) : '0.0';
+    console.log('     [' + e.type + '] ' + e.name + ': ' + e.mentions + ' mentions (' + pct + '%), pos_impact=' + posImpact + '%');
   });
 
   return {
-    entities: merged.map(e => ({ name: e.name, mentions: e.mentions, type: e.type })),
+    entities: merged.map(e => ({
+      name: e.name,
+      mentions: e.mentions,
+      type: e.type,
+      position_score_sum: parseFloat((e.position_score_sum || 0).toFixed(4))
+    })),
     total_mentions: totalMentions,
+    total_responses: totalResponses,
     calculated_at: new Date().toISOString()
   };
 }
@@ -281,24 +336,34 @@ async function calculateShareOfVoice(dailyReportId) {
       }
     }
 
-    // 7. Build combined view by mathematically merging per-provider results (no extra GPT call)
+    // 7. Build combined view by mathematically merging per-provider results
     console.log('\n🔢 Building combined SoV by merging per-provider results...');
     const mergedMap = {};
+    let totalResponsesSum = 0;
+
     for (const provSov of Object.values(shareOfVoiceByProvider)) {
+      totalResponsesSum += provSov.total_responses || 0;
       for (const entity of provSov.entities) {
         const key = entity.name.toLowerCase();
         if (mergedMap[key]) {
           mergedMap[key].mentions += entity.mentions;
+          mergedMap[key].position_score_sum = (mergedMap[key].position_score_sum || 0) + (entity.position_score_sum || 0);
         } else {
           mergedMap[key] = { ...entity };
         }
       }
     }
+
     const mergedEntities = Object.values(mergedMap).sort((a, b) => b.mentions - a.mentions);
     const mergedTotal = mergedEntities.reduce((sum, e) => sum + e.mentions, 0);
 
     const combinedSov = mergedTotal > 0
-      ? { entities: mergedEntities, total_mentions: mergedTotal, calculated_at: new Date().toISOString() }
+      ? {
+          entities: mergedEntities,
+          total_mentions: mergedTotal,
+          total_responses: totalResponsesSum,
+          calculated_at: new Date().toISOString()
+        }
       : null;
 
     if (!combinedSov) {
@@ -307,7 +372,8 @@ async function calculateShareOfVoice(dailyReportId) {
 
     mergedEntities.forEach(e => {
       const pct = ((e.mentions / mergedTotal) * 100).toFixed(1);
-      console.log('  [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%)');
+      const posImpact = totalResponsesSum > 0 ? ((e.position_score_sum || 0) / totalResponsesSum * 100).toFixed(1) : '0.0';
+      console.log('  [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%), pos_impact=' + posImpact + '%');
     });
 
     // 8. Save both to daily_reports
@@ -335,9 +401,10 @@ async function calculateShareOfVoice(dailyReportId) {
     console.log('\n' + '='.repeat(70));
     console.log('📊 SUMMARY');
     console.log('  Combined: ' + combinedSov.entities.length + ' entities, ' + combinedSov.total_mentions + ' mentions, brand=' + brandShare + '%');
+    console.log('  Total responses analyzed: ' + totalResponsesSum);
     activeProviders.forEach(p => {
       const d = shareOfVoiceByProvider[p];
-      if (d) console.log('  ' + p + ': ' + d.entities.length + ' entities, ' + d.total_mentions + ' mentions');
+      if (d) console.log('  ' + p + ': ' + d.entities.length + ' entities, ' + d.total_mentions + ' mentions, ' + d.total_responses + ' responses');
     });
     console.log('='.repeat(70) + '\n');
 
@@ -345,6 +412,7 @@ async function calculateShareOfVoice(dailyReportId) {
       success: true,
       totalEntities: combinedSov.entities.length,
       totalMentions: combinedSov.total_mentions,
+      totalResponses: totalResponsesSum,
       brandShare: parseFloat(brandShare),
       providers: activeProviders
     };

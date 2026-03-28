@@ -32,6 +32,7 @@ interface DetectedEntity {
   name: string;
   mentionRate: number;
   visibilityScore: number;
+  visibilityIndex?: number;
 }
 
 const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
@@ -177,7 +178,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         }
 
         const totalReports = reports.length;
-        const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number }> = {};
+        const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number; visibilityIndex?: number }> = {};
         let totalMentions = 0;
 
         for (const report of reports) {
@@ -218,6 +219,10 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             if (!seenInReport.has(key)) {
               entityMap[key].reportCount++;
               seenInReport.add(key);
+            }
+            // Track latest visibility_index from enriched SOV data (overwrites — last report wins)
+            if (entity.visibility_index != null) {
+              entityMap[key].visibilityIndex = entity.visibility_index;
             }
           }
           totalMentions += sov.total_mentions || 0;
@@ -302,6 +307,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             name: e.name,
             mentionRate: parseFloat(((e.reportCount / totalReports) * 100).toFixed(2)),
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
+            visibilityIndex: e.visibilityIndex,
           }))
           .sort((a, b) => b.mentionRate - a.mentionRate);
 
@@ -940,7 +946,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
               <div className="grid grid-cols-12 gap-4 px-5 py-2.5 bg-gray-50/60">
                 <div className="col-span-5 text-[9px] font-black uppercase tracking-widest text-slate-400">Entity</div>
                 <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Mention Rate</div>
-                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400">SOV Share</div>
+                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400">Visibility Index</div>
                 <div className="col-span-2" />
               </div>
 
@@ -963,7 +969,11 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                       <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">{Number(entity.mentionRate).toFixed(2)}%</span>
                     </div>
                     <div className="col-span-2">
-                      <span className="text-[11px] font-black text-slate-500">{entity.visibilityScore}%</span>
+                      {entity.visibilityIndex != null ? (
+                        <span className="text-[11px] font-black text-slate-700">{entity.visibilityIndex.toFixed(1)}</span>
+                      ) : (
+                        <span className="text-[11px] font-black text-slate-300">—</span>
+                      )}
                     </div>
                     <div className="col-span-2 flex justify-end">
                       {isTracked ? (
