@@ -470,7 +470,8 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
             chatgpt_ok: reportOk,
             chatgpt_no_result: reportFail
           })
-          .eq('id', reportId);
+          .eq('id', reportId)
+          .neq('status', 'completed');
 
         if (updateError) {
           console.error('⚠️  Failed to update daily_report ' + reportId + ':', updateError);
