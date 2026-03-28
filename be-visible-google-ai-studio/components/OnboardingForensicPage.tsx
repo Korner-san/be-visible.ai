@@ -176,8 +176,9 @@ export const OnboardingForensicPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const url = `/api/admin/onboarding-forensic${brandId ? `?brand_id=${brandId}` : ''}`;
-      const res = await fetch(`${url}&t=${Date.now()}`, {
+      const params = new URLSearchParams({ t: String(Date.now()) });
+      if (brandId) params.set('brand_id', brandId);
+      const res = await fetch(`/api/admin/onboarding-forensic?${params}`, {
         headers: { 'x-forensic-password': 'Korneret' },
         cache: 'no-store',
       });
