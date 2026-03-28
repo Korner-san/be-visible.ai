@@ -42,8 +42,8 @@ function buildTwoSliceData(sovData: ShareOfVoiceData): ShareData[] {
   const brandMentions = brand ? brand.mentions : 0;
   const otherMentions = total_mentions - brandMentions;
 
-  const brandPct = Math.round((brandMentions / total_mentions) * 100);
-  const otherPct = 100 - brandPct;
+  const brandPct = parseFloat(((brandMentions / total_mentions) * 100).toFixed(2));
+  const otherPct = parseFloat((100 - brandPct).toFixed(2));
 
   return [
     { name: brand?.name || 'Brand', value: brandPct, color: BRAND_COLOR },
@@ -139,7 +139,7 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend
             </PieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className="text-2xl font-black text-slate-900 leading-none">{brandPercent}%</span>
+            <span className="text-2xl font-black text-slate-900 leading-none">{Number(brandPercent).toFixed(2)}%</span>
             <span className="text-[9px] font-bold text-gray-400 tracking-tighter mt-1">Brand</span>
           </div>
         </div>
@@ -152,7 +152,7 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
                 <span className="text-[11px] font-bold text-slate-600 truncate max-w-[80px]">{item.name}</span>
               </div>
-              <span className="text-xs font-black text-slate-900 tabular-nums">{item.value}%</span>
+              <span className="text-xs font-black text-slate-900 tabular-nums">{Number(item.value).toFixed(2)}%</span>
             </div>
           ))}
         </div>

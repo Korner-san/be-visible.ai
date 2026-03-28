@@ -302,7 +302,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           .filter(e => e.type !== 'brand')
           .map(e => ({
             name: e.name,
-            mentionRate: Math.round((e.reportCount / totalReports) * 100),
+            mentionRate: parseFloat(((e.reportCount / totalReports) * 100).toFixed(2)),
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
           }))
           .sort((a, b) => b.mentionRate - a.mentionRate);
@@ -498,10 +498,10 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         // Build mention rows with trends
         const mentionRows: CompetitorRow[] = allNames.map((name, idx) => {
           const agg = mentionAgg[name];
-          const currRate = agg.totalResponses > 0 ? Math.round((agg.totalMentions / agg.totalResponses) * 100) : 0;
+          const currRate = agg.totalResponses > 0 ? parseFloat(((agg.totalMentions / agg.totalResponses) * 100).toFixed(2)) : 0;
           const prevAgg = prevMentionAgg[name];
           const prevRate = prevAgg && prevAgg.totalResponses > 0
-            ? Math.round((prevAgg.totalMentions / prevAgg.totalResponses) * 100)
+            ? parseFloat(((prevAgg.totalMentions / prevAgg.totalResponses) * 100).toFixed(2))
             : null;
           return {
             name,
@@ -962,7 +962,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full bg-brand-brown/60 rounded-full" style={{ width: `${entity.mentionRate}%` }} />
                       </div>
-                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">{entity.mentionRate}%</span>
+                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">{Number(entity.mentionRate).toFixed(2)}%</span>
                     </div>
                     <div className="col-span-2">
                       <span className="text-[11px] font-black text-slate-500">{entity.visibilityScore}%</span>

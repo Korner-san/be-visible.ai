@@ -116,7 +116,7 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, tren
         {/* Center Label */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none space-y-0.5">
           <span className="text-4xl font-black transition-colors duration-300" style={{ color: fillColor }}>
-            {Math.round(displayValue)}%
+            {Number(displayValue).toFixed(2)}%
           </span>
           <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Rate</span>
         </div>
