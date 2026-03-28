@@ -182,7 +182,7 @@ async function main() {
         prompt_text: promptText,
         claude_response: text,
         chatgpt_citations: citationUrls, // picked up by Tavily citation processor
-        brand_mentioned: false,           // set by brand-analyzer during EOD
+        brand_mentioned: null,             // set by brand-analyzer during EOD
         brand_position: null,
       });
 
@@ -205,7 +205,7 @@ async function main() {
             prompt_text: promptText,
             claude_response: text,
             chatgpt_citations: citationUrls,
-            brand_mentioned: false,
+            brand_mentioned: null,
             brand_position: null,
           });
           continue;

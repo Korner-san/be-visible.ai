@@ -183,7 +183,7 @@ async function main() {
           prompt_text: promptText,
           google_ai_overview_response: null,
           chatgpt_citations: [],
-          brand_mentioned: false,
+          brand_mentioned: null,
           brand_position: null,
         });
 
@@ -203,7 +203,7 @@ async function main() {
           prompt_text: promptText,
           google_ai_overview_response: text,
           chatgpt_citations: sourceUrls,  // picked up by Tavily citation processor
-          brand_mentioned: false,          // set by brand-analyzer during EOD
+          brand_mentioned: null,          // set by brand-analyzer during EOD
           brand_position: null,
         });
       }
