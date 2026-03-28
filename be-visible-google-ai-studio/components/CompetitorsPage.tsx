@@ -234,17 +234,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         // ── SOV slices ──
         const slices: SovSlice[] = [];
         let colorIdx = 0;
-        if (brand) slices.push({ name: brand.name, voice: Math.round((brand.mentions / totalMentions) * 100), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
+        if (brand) slices.push({ name: brand.name, voice: parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         for (const comp of trackedComps) {
-          const pct = Math.round((comp.mentions / totalMentions) * 100);
+          const pct = parseFloat(((comp.mentions / totalMentions) * 100).toFixed(2));
           if (pct > 0) slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         }
         if (otherMentions > 0) {
-          const pct = Math.round((otherMentions / totalMentions) * 100);
+          const pct = parseFloat(((otherMentions / totalMentions) * 100).toFixed(2));
           if (pct > 0) slices.push({ name: 'Other', voice: pct, color: '#94a3b8' });
         }
-        const sum = slices.reduce((s, item) => s + item.voice, 0);
-        if (sum !== 100 && slices.length > 0) slices[0].voice += 100 - sum;
 
         setSovSlices(slices);
         setSovBrandPct(slices[0]?.voice ?? 0);
@@ -764,7 +762,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             )}
             {(hasRealSov || showSample) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-2xl font-black text-slate-800 leading-none">{centerPct}%</span>
+              <span className="text-2xl font-black text-slate-800 leading-none">{Number(centerPct).toFixed(2)}%</span>
               <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter mt-1">Primary</span>
             </div>
             )}
@@ -780,7 +778,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     <span className="truncate max-w-[90px]">{c.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span>{c.voice}%</span>
+                    <span>{Number(c.voice).toFixed(2)}%</span>
                     <TrendBadge trend={trend} size="xs" />
                   </div>
                 </div>
