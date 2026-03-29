@@ -619,7 +619,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
               <tr>
                 <th className="w-1/2 px-8 py-4 font-bold">Topic group / prompt</th>
                 <th className="w-[15%] px-4 py-4 font-bold text-center">
-                  <HeaderWithInfo title="Visibility index" info="Position-weighted visibility index for this query (0–100)." align="center" />
+                  <HeaderWithInfo title="Visibility index" info="How visible your brand is relative to other entities in AI answers. Combines whether you were mentioned and where you ranked among all entities in each response." align="center" />
                 </th>
                 <th className="w-[15%] px-4 py-4 font-bold text-center">
                   <HeaderWithInfo title="Average position" info="Average rank in AI generated lists." align="center" />

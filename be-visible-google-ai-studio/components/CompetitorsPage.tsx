@@ -946,7 +946,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
               <div className="grid grid-cols-12 gap-4 px-5 py-2.5 bg-gray-50/60">
                 <div className="col-span-5 text-[9px] font-black uppercase tracking-widest text-slate-400">Entity</div>
                 <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Mention Rate</div>
-                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400">Visibility Index</div>
+                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
+                  Visibility Index
+                  <span className="relative group cursor-help">
+                    <HelpCircle size={10} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
+                    <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-56 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10 normal-case tracking-normal">
+                      How visible your brand is relative to other entities in AI answers. Combines whether you were mentioned and where you ranked among all entities in each response.
+                    </div>
+                  </span>
+                </div>
                 <div className="col-span-2" />
               </div>
 

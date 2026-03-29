@@ -107,7 +107,12 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
         <div className="space-y-1">
           <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
             Visibility index over time
-            <HelpCircle size={14} className="text-gray-300" />
+            <span className="relative group cursor-help">
+              <HelpCircle size={14} className="text-gray-300 group-hover:text-gray-400 transition-colors" />
+              <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-56 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10">
+                How visible your brand is relative to other entities in AI answers. Combines whether you were mentioned and where you ranked among all entities in each response.
+              </div>
+            </span>
           </h3>
           <p className="text-[11px] text-slate-500 font-medium mt-0.5">Percentile rank among all entities in AI responses</p>
         </div>
