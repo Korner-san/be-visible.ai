@@ -133,16 +133,41 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
         const currentIds = (currentReports || []).map((r: any) => r.id);
         const previousIds = (previousReports || []).map((r: any) => r.id);
 
-        // Step 3: Build score map — default 0 for every prompt
-        const scoreMap: Record<string, { mentioned: number; total: number }> = {};
-        brandPrompts.forEach((p: any) => { scoreMap[p.id] = { mentioned: 0, total: 0 }; });
+        // Step 3: Get avg entities per response (N) from latest completed report's SOV data
+        // Used to compute per-result position score = (N - K) / N, matching Visibility Index formula
+        let avgN = 8; // fallback if no SOV data yet
+        if (currentIds.length > 0) {
+          const { data: sovReport } = await supabase
+            .from('daily_reports')
+            .select('share_of_voice_data')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('share_of_voice_data', 'is', null)
+            .gte('report_date', current.from)
+            .lte('report_date', current.to)
+            .order('report_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        // Step 4: Overlay results if any completed reports exist
+          if (sovReport?.share_of_voice_data) {
+            const sov = sovReport.share_of_voice_data as any;
+            if (sov.total_mentions > 0 && sov.total_responses > 0) {
+              avgN = sov.total_mentions / sov.total_responses;
+            }
+          }
+        }
+
+        // Step 4: Build score map — default 0 for every prompt
+        // Score per result: if mentioned at rank K → (avgN - K) / avgN; if not mentioned → 0
+        const scoreMap: Record<string, { scoreSum: number; total: number }> = {};
+        brandPrompts.forEach((p: any) => { scoreMap[p.id] = { scoreSum: 0, total: 0 }; });
+
         if (currentIds.length > 0) {
           let q = supabase
             .from('prompt_results')
-            .select('brand_prompt_id, brand_mentioned')
+            .select('brand_prompt_id, brand_mentioned, brand_position')
             .in('daily_report_id', currentIds)
+            .not('brand_mentioned', 'is', null)
             .eq('provider_status', 'ok');
           if (selectedModels && selectedModels.length > 0) {
             q = q.in('provider', selectedModels);
@@ -150,20 +175,46 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: currentResults } = await q;
 
           for (const r of (currentResults || [])) {
-            if (scoreMap[r.brand_prompt_id]) {
-              scoreMap[r.brand_prompt_id].total++;
-              if (r.brand_mentioned) scoreMap[r.brand_prompt_id].mentioned++;
+            if (!scoreMap[r.brand_prompt_id]) continue;
+            scoreMap[r.brand_prompt_id].total++;
+            if (r.brand_mentioned) {
+              const K = r.brand_position ?? 1;
+              const posScore = Math.max(0, (avgN - K) / avgN);
+              scoreMap[r.brand_prompt_id].scoreSum += posScore;
             }
           }
         }
 
-        // Step 5: Build previous period score map for trend arrows
+        // Step 5: Build previous period score map for trend arrows (same formula)
+        let prevAvgN = avgN;
+        if (previousIds.length > 0) {
+          const { data: prevSovReport } = await supabase
+            .from('daily_reports')
+            .select('share_of_voice_data')
+            .eq('brand_id', brandId)
+            .eq('status', 'completed')
+            .not('share_of_voice_data', 'is', null)
+            .gte('report_date', previous.from)
+            .lte('report_date', previous.to)
+            .order('report_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (prevSovReport?.share_of_voice_data) {
+            const sov = prevSovReport.share_of_voice_data as any;
+            if (sov.total_mentions > 0 && sov.total_responses > 0) {
+              prevAvgN = sov.total_mentions / sov.total_responses;
+            }
+          }
+        }
+
         let prevScoreMap: Record<string, number> = {};
         if (previousIds.length > 0) {
           let pq = supabase
             .from('prompt_results')
-            .select('brand_prompt_id, brand_mentioned')
+            .select('brand_prompt_id, brand_mentioned, brand_position')
             .in('daily_report_id', previousIds)
+            .not('brand_mentioned', 'is', null)
             .eq('provider_status', 'ok');
           if (selectedModels && selectedModels.length > 0) {
             pq = pq.in('provider', selectedModels);
@@ -171,15 +222,19 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: prevResults } = await pq;
 
           if (prevResults && prevResults.length > 0) {
-            const prevMap: Record<string, { mentioned: number; total: number }> = {};
+            const prevMap: Record<string, { scoreSum: number; total: number }> = {};
             for (const r of prevResults) {
               const key = r.brand_prompt_id;
-              if (!prevMap[key]) prevMap[key] = { mentioned: 0, total: 0 };
+              if (!prevMap[key]) prevMap[key] = { scoreSum: 0, total: 0 };
               prevMap[key].total++;
-              if (r.brand_mentioned) prevMap[key].mentioned++;
+              if (r.brand_mentioned) {
+                const K = r.brand_position ?? 1;
+                const posScore = Math.max(0, (prevAvgN - K) / prevAvgN);
+                prevMap[key].scoreSum += posScore;
+              }
             }
             for (const [key, val] of Object.entries(prevMap)) {
-              prevScoreMap[key] = val.total > 0 ? Math.round((val.mentioned / val.total) * 100) : 0;
+              prevScoreMap[key] = val.total > 0 ? Math.round((val.scoreSum / val.total) * 100) : 0;
             }
           }
         }
@@ -189,7 +244,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const text = p.improved_prompt || p.raw_prompt || 'Unknown prompt';
           const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
           const agg = scoreMap[p.id];
-          const currentScore = agg.total > 0 ? Math.round((agg.mentioned / agg.total) * 100) : 0;
+          const currentScore = agg.total > 0 ? Math.round((agg.scoreSum / agg.total) * 100) : 0;
           return {
             promptText: `"${short}"`,
             currentScore,
@@ -225,7 +280,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Prompt performance</h3>
-          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Visibility score per prompt (0–100)</p>
+          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Position-weighted visibility index per prompt</p>
         </div>
         {isLoading ? (
           <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
