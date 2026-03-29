@@ -326,13 +326,13 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
             visibilityIndex: getPercentile(e.name.toLowerCase()),
           }))
-          .sort((a, b) => b.mentionRate - a.mentionRate);
+          .sort((a, b) => (b.visibilityIndex ?? 0) - (a.visibilityIndex ?? 0));
 
         // Brand position indicator in the detected entities list
         if (brand && totalResponses > 0) {
           const brandMentionRate = parseFloat((Math.min(100, (brand.mentions / totalResponses) * 100)).toFixed(1));
           const brandVisibility = getPercentile(brand.name.toLowerCase());
-          const insertIndex = detected.findIndex(e => e.mentionRate < brandMentionRate);
+          const insertIndex = detected.findIndex(e => (e.visibilityIndex ?? 0) < (brandVisibility ?? 0));
           setBrandInEntities({
             name: brand.name,
             mentionRate: brandMentionRate,
