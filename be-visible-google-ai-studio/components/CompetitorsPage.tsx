@@ -132,6 +132,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
   // Detected entities state
   const [detectedEntities, setDetectedEntities] = useState<DetectedEntity[]>([]);
+  const [brandInEntities, setBrandInEntities] = useState<{ name: string; mentionRate: number; visibilityIndex: number | undefined; insertIndex: number } | null>(null);
   const [isLoadingEntities, setIsLoadingEntities] = useState(false);
   const [addingEntity, setAddingEntity] = useState<string | null>(null);
   const [addedEntities, setAddedEntities] = useState<Set<string>>(new Set());
@@ -326,6 +327,21 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             visibilityIndex: getPercentile(e.name.toLowerCase()),
           }))
           .sort((a, b) => b.mentionRate - a.mentionRate);
+
+        // Brand position indicator in the detected entities list
+        if (brand && totalResponses > 0) {
+          const brandMentionRate = parseFloat((Math.min(100, (brand.mentions / totalResponses) * 100)).toFixed(1));
+          const brandVisibility = getPercentile(brand.name.toLowerCase());
+          const insertIndex = detected.findIndex(e => e.mentionRate < brandMentionRate);
+          setBrandInEntities({
+            name: brand.name,
+            mentionRate: brandMentionRate,
+            visibilityIndex: brandVisibility,
+            insertIndex: insertIndex === -1 ? detected.length : insertIndex,
+          });
+        } else {
+          setBrandInEntities(null);
+        }
 
         setDetectedEntities(detected);
       } catch (err) {
@@ -961,8 +977,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             <div className="divide-y divide-gray-50">
               <div className="grid grid-cols-12 gap-4 px-5 py-2.5 bg-gray-50/60">
                 <div className="col-span-5 text-[9px] font-black uppercase tracking-widest text-slate-400">Entity</div>
-                <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Mention Rate</div>
-                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
+                <div className="col-span-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Mention Rate</div>
+                <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center justify-center gap-1">
                   Visibility Index
                   <span className="relative group cursor-help">
                     <HelpCircle size={10} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
@@ -974,25 +990,49 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 <div className="col-span-2" />
               </div>
 
-              {detectedEntities.map((entity) => {
+              {detectedEntities.map((entity, idx) => {
                 const key = entity.name.toLowerCase();
                 const isTracked = trackedNames.has(key);
                 const isAdding = addingEntity === entity.name;
                 return (
-                  <div key={entity.name} className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
+                  <React.Fragment key={entity.name}>
+                    {brandInEntities && brandInEntities.insertIndex === idx && (
+                      <div className="grid grid-cols-12 gap-4 px-5 py-2.5 items-center bg-brand-brown/5 border-y border-brand-brown/10">
+                        <div className="col-span-5 flex items-center gap-3">
+                          <div className="w-7 h-7 rounded-lg bg-brand-brown/20 flex items-center justify-center text-[10px] font-black text-brand-brown shrink-0">
+                            {brandInEntities.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-bold text-brand-brown truncate">{brandInEntities.name}</span>
+                            <span className="text-[8px] font-black text-brand-brown bg-brand-brown/10 px-1.5 py-0.5 rounded shrink-0">YOUR BRAND</span>
+                          </div>
+                        </div>
+                        <div className="col-span-3 flex flex-col items-center gap-1.5">
+                          <span className="text-[11px] font-black text-brand-brown">{brandInEntities.mentionRate.toFixed(1)}%</span>
+                          <div className="w-full h-1.5 bg-brand-brown/10 rounded-full overflow-hidden">
+                            <div className="h-full bg-brand-brown rounded-full" style={{ width: `${brandInEntities.mentionRate}%` }} />
+                          </div>
+                        </div>
+                        <div className="col-span-2 flex items-center justify-center">
+                          <span className="text-[11px] font-black text-brand-brown">{brandInEntities.visibilityIndex ?? '—'}</span>
+                        </div>
+                        <div className="col-span-2" />
+                      </div>
+                    )}
+                    <div className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
                     <div className="col-span-5 flex items-center gap-3">
                       <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
                         {entity.name.charAt(0).toUpperCase()}
                       </div>
                       <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
                     </div>
-                    <div className="col-span-3 flex flex-col gap-1.5 justify-center">
-                      <span className="text-[11px] font-black text-slate-600 text-center">{Number(entity.mentionRate).toFixed(1)}%</span>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="col-span-3 flex flex-col items-center gap-1.5">
+                      <span className="text-[11px] font-black text-slate-600">{Number(entity.mentionRate).toFixed(1)}%</span>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full bg-brand-brown/60 rounded-full" style={{ width: `${entity.mentionRate}%` }} />
                       </div>
                     </div>
-                    <div className="col-span-2">
+                    <div className="col-span-2 flex items-center justify-center">
                       {entity.visibilityIndex != null ? (
                         <span className="text-[11px] font-black text-slate-700">{entity.visibilityIndex}</span>
                       ) : (
@@ -1016,8 +1056,32 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                       )}
                     </div>
                   </div>
+                  </React.Fragment>
                 );
               })}
+              {brandInEntities && brandInEntities.insertIndex >= detectedEntities.length && (
+                <div className="grid grid-cols-12 gap-4 px-5 py-2.5 items-center bg-brand-brown/5 border-t border-brand-brown/10">
+                  <div className="col-span-5 flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-brand-brown/20 flex items-center justify-center text-[10px] font-black text-brand-brown shrink-0">
+                      {brandInEntities.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold text-brand-brown truncate">{brandInEntities.name}</span>
+                      <span className="text-[8px] font-black text-brand-brown bg-brand-brown/10 px-1.5 py-0.5 rounded shrink-0">YOUR BRAND</span>
+                    </div>
+                  </div>
+                  <div className="col-span-3 flex flex-col items-center gap-1.5">
+                    <span className="text-[11px] font-black text-brand-brown">{brandInEntities.mentionRate.toFixed(1)}%</span>
+                    <div className="w-full h-1.5 bg-brand-brown/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-brand-brown rounded-full" style={{ width: `${brandInEntities.mentionRate}%` }} />
+                    </div>
+                  </div>
+                  <div className="col-span-2 flex items-center justify-center">
+                    <span className="text-[11px] font-black text-brand-brown">{brandInEntities.visibilityIndex ?? '—'}</span>
+                  </div>
+                  <div className="col-span-2" />
+                </div>
+              )}
             </div>
           )}
         </div>
