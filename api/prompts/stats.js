@@ -2,7 +2,7 @@
  * Vercel Serverless Function: /api/prompts/stats
  *
  * Returns per-prompt stats for the Prompts page:
- *   - visibilityScore      : % of runs where brand was mentioned
+ *   - visibilityScore      : visibility index (0-100), relative mention rate + position impact
  *   - avgPosition          : avg numbered-list position of brand in response (1 decimal)
  *   - citationShare        : brand domain citations / total citations % (same as CitationShareChart)
  *   - citations            : total citation URLs across all runs
@@ -11,6 +11,14 @@
  *   - recentResults        : last 5 prompt_results rows
  *   - citationDomains      : per-domain stats (uniqueUrls, mentions, pctTotal, coverage)
  *   - contentTypeBreakdown : content type distribution (single-prompt only)
+ *
+ * Visibility Index formula (per prompt):
+ *   mention_rate = brand_mentions / total_runs
+ *   relative_mention_score = min(1, mention_rate / avg_entity_mention_rate)
+ *     where avg_entity_mention_rate comes from per_prompt_entity_stats (SOV calculator)
+ *     falls back to raw mention_rate if no entity stats available
+ *   position_impact = avg of (avgN - K) / avgN across mentioned runs only
+ *   visibilityScore = round((0.5 * relative_mention_score + 0.5 * position_impact) * 100)
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -72,16 +80,15 @@ module.exports = async function handler(req, res) {
   if (!brand) return res.status(404).json({ success: false, error: 'Brand not found' });
 
   const brandNameLower = brand.name.toLowerCase();
-  // Normalise domain: strip protocol + www, keep just hostname
   const brandDomain = (brand.domain || '')
     .replace(/^https?:\/\/(www\.)?/, '')
     .split('/')[0]
     .toLowerCase();
 
-  // 2. Get completed reports within date range (also fetch SOV data for avg_N)
+  // 2. Get completed reports within date range
   const { data: reports } = await supabase
     .from('daily_reports')
-    .select('id, report_date, share_of_voice_data')
+    .select('id, report_date, share_of_voice_data, per_prompt_entity_stats')
     .eq('brand_id', brandId)
     .eq('status', 'completed')
     .gte('report_date', cutoffStr)
@@ -96,19 +103,27 @@ module.exports = async function handler(req, res) {
   const reportIds = reports.map(r => r.id);
   const reportDateMap = Object.fromEntries(reports.map(r => [r.id, r.report_date]));
 
-  // avg_N = average number of entities per response, derived from SOV data.
-  // Used for position score: (N - K) / N per run (same formula as Visibility Index).
-  // Fall back to 8 if no SOV data available yet.
+  // avgN = average entities per response from most recent SOV data (used for position scoring)
   let avgN = 8;
   for (const r of reports) {
     const sov = r.share_of_voice_data;
     if (sov && sov.total_mentions > 0 && sov.total_responses > 0) {
       avgN = sov.total_mentions / sov.total_responses;
-      break; // use most recent report with SOV data
+      break;
     }
   }
 
-  // 3. Fetch prompt_results (optionally filtered to one prompt)
+  // per-prompt entity stats: avg entity mention rate per prompt (for relative mention scoring)
+  // Use most recent report that has this data
+  const promptEntityStats = {};
+  for (const r of reports) {
+    if (r.per_prompt_entity_stats && Object.keys(r.per_prompt_entity_stats).length > 0) {
+      Object.assign(promptEntityStats, r.per_prompt_entity_stats);
+      break;
+    }
+  }
+
+  // 3. Fetch prompt_results
   let resultsQuery = supabase
     .from('prompt_results')
     .select('id, brand_prompt_id, daily_report_id, provider, chatgpt_response, google_ai_overview_response, claude_response, chatgpt_citations, brand_mentioned, brand_position, brand_mention_count, prompt_text, created_at')
@@ -150,21 +165,11 @@ module.exports = async function handler(req, res) {
       ? citations.filter(url => (url || '').toLowerCase().includes(brandDomain)).length
       : 0;
 
-    // brand_position is pre-computed by brand-analyzer.js (entity rank, not char index)
     const position = (mentioned && row.brand_position != null) ? row.brand_position : null;
-
     const reportDate = reportDateMap[row.daily_report_id] || '';
-
     const mentionCount = row.brand_mention_count || 0;
-    // Per-run Visibility Index score: 50% mention + 50% position impact
-    // position_impact = (N - K) / N where N = avg entities per response, K = brand rank
-    const mentionContrib = mentioned ? 0.5 : 0;
-    const posContrib = (mentioned && position != null)
-      ? 0.5 * Math.max(0, (avgN - position) / avgN)
-      : 0;
-    const runScore = (mentionContrib + posContrib) * 100;
 
-    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount, score: runScore });
+    grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount });
 
     if (grouped[pid].recentResults.length < 15) {
       grouped[pid].recentResults.push({
@@ -173,10 +178,10 @@ module.exports = async function handler(req, res) {
         response: responseText,
         mentioned,
         citationCount,
-        citations: citations,
+        citations,
         date: reportDate,
         provider: row.provider,
-        position: (mentioned && row.brand_position != null) ? row.brand_position : null,
+        position,
       });
     }
   }
@@ -188,67 +193,95 @@ module.exports = async function handler(req, res) {
     const { runs, recentResults } = data;
     const total = runs.length;
     const mentionedCount = runs.filter(r => r.mentioned).length;
-    const mentionRate = total > 0 ? Math.round((mentionedCount / total) * 100) : 0;
+    const mentionRate = total > 0 ? mentionedCount / total : 0;
+
+    // Relative mention score: compare brand mention rate vs avg entity mention rate for this prompt
+    const entityStats = promptEntityStats[pid];
+    const avgEntityMentionRate = entityStats?.avg_entity_mention_rate;
+    const relativeMentionScore = avgEntityMentionRate && avgEntityMentionRate > 0
+      ? Math.min(1, mentionRate / avgEntityMentionRate)
+      : mentionRate;
+
+    // Position impact: avg position score on mentioned runs only
+    const mentionedWithPos = runs.filter(r => r.mentioned && r.position != null);
+    const positionImpact = mentionedWithPos.length > 0
+      ? mentionedWithPos.reduce((s, r) => s + Math.max(0, (avgN - r.position) / avgN), 0) / mentionedWithPos.length
+      : 0;
+
+    const visibilityScore = Math.round((0.5 * relativeMentionScore + 0.5 * positionImpact) * 100);
+
+    const mentionRatePct = Math.round(mentionRate * 100);
+
     const totalCitations = runs.reduce((sum, r) => sum + r.citationCount, 0);
     const totalBrandCitations = runs.reduce((sum, r) => sum + r.brandCitationCount, 0);
 
-    // Average position (1 decimal) — only runs where brand appeared in a numbered list
+    // Average position (only runs where brand appeared in a numbered list)
     const positionedRuns = runs.filter(r => r.position !== null);
     const avgPosition = positionedRuns.length > 0
       ? Math.round(positionedRuns.reduce((s, r) => s + r.position, 0) / positionedRuns.length * 10) / 10
       : null;
 
-    // Citation share: brand domain URLs / total citation URLs (same basis as CitationShareChart)
     const citationShare = totalCitations > 0
-      ? Math.round((totalBrandCitations / totalCitations) * 1000) / 10  // 1 decimal %
+      ? Math.round((totalBrandCitations / totalCitations) * 1000) / 10
       : 0;
 
-    // Daily history for chart — all four metrics per date
+    // Daily history — use new formula per day
     const byDate = {};
     for (const run of runs) {
       if (!run.reportDate) continue;
-      if (!byDate[run.reportDate]) byDate[run.reportDate] = { scores: [], positions: [], mentioned: 0, total: 0, brandCits: 0, totalCits: 0 };
+      if (!byDate[run.reportDate]) {
+        byDate[run.reportDate] = { mentioned: 0, total: 0, positions: [], brandCits: 0, totalCits: 0 };
+      }
       const d = byDate[run.reportDate];
-      d.scores.push(run.score);
       d.total++;
       if (run.mentioned) d.mentioned++;
       if (run.position != null) d.positions.push(run.position);
       d.brandCits += run.brandCitationCount;
       d.totalCits += run.citationCount;
     }
+
     const history = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, d]) => ({
-        date: date.slice(5),
-        visibility: Math.round(d.scores.reduce((a, b) => a + b, 0) / d.scores.length),
-        mentionRate: d.total > 0 ? Math.round((d.mentioned / d.total) * 100) : 0,
-        avgPosition: d.positions.length > 0
-          ? Math.round(d.positions.reduce((a, b) => a + b, 0) / d.positions.length * 10) / 10
-          : null,
-        citationShare: d.totalCits > 0
-          ? Math.round((d.brandCits / d.totalCits) * 1000) / 10
-          : 0,
-      }));
+      .map(([date, d]) => {
+        const dayMentionRate = d.total > 0 ? d.mentioned / d.total : 0;
+        const dayRelMentionScore = avgEntityMentionRate && avgEntityMentionRate > 0
+          ? Math.min(1, dayMentionRate / avgEntityMentionRate)
+          : dayMentionRate;
+        // position scores for mentioned runs (d.positions already only has positions from mentioned runs)
+        const dayPosImpact = d.positions.length > 0
+          ? d.positions.reduce((acc, K) => acc + Math.max(0, (avgN - K) / avgN), 0) / d.positions.length
+          : 0;
+        return {
+          date: date.slice(5),
+          visibility: Math.round((0.5 * dayRelMentionScore + 0.5 * dayPosImpact) * 100),
+          mentionRate: Math.round(dayMentionRate * 100),
+          avgPosition: d.positions.length > 0
+            ? Math.round(d.positions.reduce((a, b) => a + b, 0) / d.positions.length * 10) / 10
+            : null,
+          citationShare: d.totalCits > 0
+            ? Math.round((d.brandCits / d.totalCits) * 1000) / 10
+            : 0,
+        };
+      });
 
-    // Trend: last 7 vs previous 7 (using 40/30/30 scores)
-    const recent7 = runs.slice(0, 7);
-    const prev7 = runs.slice(7, 14);
-    const recentVis = recent7.length ? recent7.reduce((s, r) => s + r.score, 0) / recent7.length : 0;
-    const prevVis = prev7.length ? prev7.reduce((s, r) => s + r.score, 0) / prev7.length : 0;
-    const visibilityTrend = Math.round(recentVis - prevVis);
+    // Trend: compare recent half vs older half of history
+    const halfIdx = Math.ceil(history.length / 2);
+    const recentHistory = history.slice(halfIdx);
+    const olderHistory = history.slice(0, halfIdx);
+    const recentVis = recentHistory.length
+      ? recentHistory.reduce((s, h) => s + h.visibility, 0) / recentHistory.length
+      : 0;
+    const olderVis = olderHistory.length
+      ? olderHistory.reduce((s, h) => s + h.visibility, 0) / olderHistory.length
+      : 0;
+    const visibilityTrend = Math.round(recentVis - olderVis);
 
-    // Citation domain breakdown (for Citation sources tab)
-    const domainData = {};
-    runs.forEach((run, runIdx) => {
-      // We don't have per-run URL arrays here; collect from recentResults + approximate
-    });
-    // Build from all result citations directly
+    // Citation domain breakdown
     const allResultsForPrompt = results.filter(r => r.brand_prompt_id === pid);
     const domainMap = {};
     let grandTotalMentions = 0;
     allResultsForPrompt.forEach((row, runIdx) => {
-      const urls = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : []; // chatgpt_citations stores citations for all providers
-      const domainsInRun = new Set();
+      const urls = Array.isArray(row.chatgpt_citations) ? row.chatgpt_citations : [];
       urls.forEach(url => {
         const domain = (url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0].toLowerCase();
         if (!domain) return;
@@ -272,16 +305,11 @@ module.exports = async function handler(req, res) {
       .sort((a, b) => b.mentions - a.mentions)
       .slice(0, 15);
 
-    // Visibility score = avg of per-run 40/30/30 scores
-    const visibilityScore = total > 0
-      ? Math.round(runs.reduce((s, r) => s + r.score, 0) / total)
-      : 0;
-
     stats[pid] = {
       visibilityScore,
       visibilityTrend,
       avgPosition,
-      mentionRate,
+      mentionRate: mentionRatePct,
       citationShare,
       citations: totalCitations,
       lastRun: runs[0]?.reportDate || '',

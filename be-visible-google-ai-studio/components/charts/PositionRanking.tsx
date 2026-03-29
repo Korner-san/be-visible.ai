@@ -134,13 +134,13 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
         const currentIds = (currentReports || []).map((r: any) => r.id);
         const previousIds = (previousReports || []).map((r: any) => r.id);
 
-        // Step 3: Get avg entities per response (N) from latest completed report's SOV data
-        // Used to compute per-result position score = (N - K) / N, matching Visibility Index formula
-        let avgN = 8; // fallback if no SOV data yet
+        // Step 3: Fetch avgN (entities per response) and per-prompt entity stats from most recent report
+        let avgN = 8;
+        let perPromptEntityStats: Record<string, { avg_entity_mention_rate: number }> = {};
         if (currentIds.length > 0) {
           const { data: sovReport } = await supabase
             .from('daily_reports')
-            .select('share_of_voice_data')
+            .select('share_of_voice_data, per_prompt_entity_stats')
             .eq('brand_id', brandId)
             .eq('status', 'completed')
             .not('share_of_voice_data', 'is', null)
@@ -156,12 +156,14 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
               avgN = sov.total_mentions / sov.total_responses;
             }
           }
+          if (sovReport?.per_prompt_entity_stats) {
+            perPromptEntityStats = sovReport.per_prompt_entity_stats as any;
+          }
         }
 
-        // Step 4: Build score map — default 0 for every prompt
-        // Score per result: if mentioned at rank K → (avgN - K) / avgN; if not mentioned → 0
-        const scoreMap: Record<string, { scoreSum: number; total: number }> = {};
-        brandPrompts.forEach((p: any) => { scoreMap[p.id] = { scoreSum: 0, total: 0 }; });
+        // Step 4: Aggregate per-prompt: mention count, total runs, position scores (on mentioned runs)
+        const promptAgg: Record<string, { mentions: number; total: number; posScores: number[] }> = {};
+        brandPrompts.forEach((p: any) => { promptAgg[p.id] = { mentions: 0, total: 0, posScores: [] }; });
 
         if (currentIds.length > 0) {
           let q = supabase
@@ -176,21 +178,25 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: currentResults } = await q;
 
           for (const r of (currentResults || [])) {
-            if (!scoreMap[r.brand_prompt_id]) continue;
-            scoreMap[r.brand_prompt_id].total++;
-            const mentionContrib = r.brand_mentioned ? 0.5 : 0;
-            const K = r.brand_position ?? 1;
-            const posContrib = r.brand_mentioned ? 0.5 * Math.max(0, (avgN - K) / avgN) : 0;
-            scoreMap[r.brand_prompt_id].scoreSum += mentionContrib + posContrib;
+            if (!promptAgg[r.brand_prompt_id]) continue;
+            promptAgg[r.brand_prompt_id].total++;
+            if (r.brand_mentioned) {
+              promptAgg[r.brand_prompt_id].mentions++;
+              if (r.brand_position != null) {
+                const K = r.brand_position;
+                promptAgg[r.brand_prompt_id].posScores.push(Math.max(0, (avgN - K) / avgN));
+              }
+            }
           }
         }
 
-        // Step 5: Build previous period score map for trend arrows (same formula)
+        // Step 5: Previous period — same structure
         let prevAvgN = avgN;
+        let prevPerPromptEntityStats: Record<string, { avg_entity_mention_rate: number }> = perPromptEntityStats;
         if (previousIds.length > 0) {
           const { data: prevSovReport } = await supabase
             .from('daily_reports')
-            .select('share_of_voice_data')
+            .select('share_of_voice_data, per_prompt_entity_stats')
             .eq('brand_id', brandId)
             .eq('status', 'completed')
             .not('share_of_voice_data', 'is', null)
@@ -202,9 +208,10 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
 
           if (prevSovReport?.share_of_voice_data) {
             const sov = prevSovReport.share_of_voice_data as any;
-            if (sov.total_mentions > 0 && sov.total_responses > 0) {
-              prevAvgN = sov.total_mentions / sov.total_responses;
-            }
+            if (sov.total_mentions > 0 && sov.total_responses > 0) prevAvgN = sov.total_mentions / sov.total_responses;
+          }
+          if (prevSovReport?.per_prompt_entity_stats) {
+            prevPerPromptEntityStats = prevSovReport.per_prompt_entity_stats as any;
           }
         }
 
@@ -222,28 +229,44 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const { data: prevResults } = await pq;
 
           if (prevResults && prevResults.length > 0) {
-            const prevMap: Record<string, { scoreSum: number; total: number }> = {};
+            const prevAgg: Record<string, { mentions: number; total: number; posScores: number[] }> = {};
             for (const r of prevResults) {
               const key = r.brand_prompt_id;
-              if (!prevMap[key]) prevMap[key] = { scoreSum: 0, total: 0 };
-              prevMap[key].total++;
-              const mentionContrib = r.brand_mentioned ? 0.5 : 0;
-              const K = r.brand_position ?? 1;
-              const posContrib = r.brand_mentioned ? 0.5 * Math.max(0, (prevAvgN - K) / prevAvgN) : 0;
-              prevMap[key].scoreSum += mentionContrib + posContrib;
+              if (!prevAgg[key]) prevAgg[key] = { mentions: 0, total: 0, posScores: [] };
+              prevAgg[key].total++;
+              if (r.brand_mentioned) {
+                prevAgg[key].mentions++;
+                if (r.brand_position != null) {
+                  prevAgg[key].posScores.push(Math.max(0, (prevAvgN - r.brand_position) / prevAvgN));
+                }
+              }
             }
-            for (const [key, val] of Object.entries(prevMap)) {
-              prevScoreMap[key] = val.total > 0 ? Math.round((val.scoreSum / val.total) * 100) : 0;
+            for (const [key, agg] of Object.entries(prevAgg)) {
+              const mr = agg.total > 0 ? agg.mentions / agg.total : 0;
+              const entityStats = (prevPerPromptEntityStats[key] as any);
+              const avgEMR = entityStats?.avg_entity_mention_rate;
+              const relMS = avgEMR && avgEMR > 0 ? Math.min(1, mr / avgEMR) : mr;
+              const pi = agg.posScores.length > 0
+                ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length
+                : 0;
+              prevScoreMap[key] = Math.round((0.5 * relMS + 0.5 * pi) * 100);
             }
           }
         }
 
-        // Step 6: Build scores array for all prompts
+        // Step 6: Build scores array for all prompts using new formula
         const scores: PromptScore[] = brandPrompts.map((p: any) => {
           const text = p.improved_prompt || p.raw_prompt || 'Unknown prompt';
           const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
-          const agg = scoreMap[p.id];
-          const currentScore = agg.total > 0 ? Math.round((agg.scoreSum / agg.total) * 100) : 0;
+          const agg = promptAgg[p.id];
+          const mentionRate = agg.total > 0 ? agg.mentions / agg.total : 0;
+          const entityStats = (perPromptEntityStats[p.id] as any);
+          const avgEMR = entityStats?.avg_entity_mention_rate;
+          const relMentionScore = avgEMR && avgEMR > 0 ? Math.min(1, mentionRate / avgEMR) : mentionRate;
+          const posImpact = agg.posScores.length > 0
+            ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length
+            : 0;
+          const currentScore = Math.round((0.5 * relMentionScore + 0.5 * posImpact) * 100);
           return {
             promptText: `"${short}"`,
             currentScore,
