@@ -78,10 +78,10 @@ module.exports = async function handler(req, res) {
     .split('/')[0]
     .toLowerCase();
 
-  // 2. Get completed reports within date range
+  // 2. Get completed reports within date range (also fetch SOV data for avg_N)
   const { data: reports } = await supabase
     .from('daily_reports')
-    .select('id, report_date')
+    .select('id, report_date, share_of_voice_data')
     .eq('brand_id', brandId)
     .eq('status', 'completed')
     .gte('report_date', cutoffStr)
@@ -95,6 +95,18 @@ module.exports = async function handler(req, res) {
 
   const reportIds = reports.map(r => r.id);
   const reportDateMap = Object.fromEntries(reports.map(r => [r.id, r.report_date]));
+
+  // avg_N = average number of entities per response, derived from SOV data.
+  // Used for position score: (N - K) / N per run (same formula as Visibility Index).
+  // Fall back to 8 if no SOV data available yet.
+  let avgN = 8;
+  for (const r of reports) {
+    const sov = r.share_of_voice_data;
+    if (sov && sov.total_mentions > 0 && sov.total_responses > 0) {
+      avgN = sov.total_mentions / sov.total_responses;
+      break; // use most recent report with SOV data
+    }
+  }
 
   // 3. Fetch prompt_results (optionally filtered to one prompt)
   let resultsQuery = supabase
@@ -144,11 +156,13 @@ module.exports = async function handler(req, res) {
     const reportDate = reportDateMap[row.daily_report_id] || '';
 
     const mentionCount = row.brand_mention_count || 0;
-    // Per-run 40/30/30 visibility score
-    const runM = mentioned ? 100 : 0;
-    const runP = (mentioned && position != null) ? Math.max(0, 100 - (position - 1) * 10) : 0;
-    const runC = citationCount > 0 ? (brandCitationCount / citationCount) * 100 : 0;
-    const runScore = (runM * 0.4) + (runP * 0.3) + (runC * 0.3);
+    // Per-run Visibility Index score: 50% mention + 50% position impact
+    // position_impact = (N - K) / N where N = avg entities per response, K = brand rank
+    const mentionContrib = mentioned ? 0.5 : 0;
+    const posContrib = (mentioned && position != null)
+      ? 0.5 * Math.max(0, (avgN - position) / avgN)
+      : 0;
+    const runScore = (mentionContrib + posContrib) * 100;
 
     grouped[pid].runs.push({ mentioned, citationCount, brandCitationCount, position, reportDate, mentionCount, score: runScore });
 
