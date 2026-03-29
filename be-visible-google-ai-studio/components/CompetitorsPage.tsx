@@ -300,15 +300,30 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         setSovEntityTrends(trends);
 
         // ── Detected entities ──
+        // Compute raw_score per entity (same formula as visibility-index-calculator.js)
+        // then compute percentile rank among ALL entities (same scale as daily_reports.visibility_score)
+        const allEntityList = Object.values(entityMap);
+        const N = allEntityList.length;
+        const entityRawScores: Record<string, number> = {};
+        if (totalResponses > 0) {
+          for (const e of allEntityList) {
+            entityRawScores[e.name.toLowerCase()] = 0.5 * (e.mentions / totalResponses) + 0.5 * (e.positionScoreSum / totalResponses);
+          }
+        }
+        const getPercentile = (key: string): number | undefined => {
+          if (totalResponses === 0 || N === 0) return undefined;
+          const raw = entityRawScores[key] ?? 0;
+          const lowerCount = Object.values(entityRawScores).filter(r => r < raw).length;
+          return N > 1 ? Math.round((lowerCount / (N - 1)) * 100) : 100;
+        };
+
         const detected: DetectedEntity[] = entities
           .filter(e => e.type !== 'brand')
           .map(e => ({
             name: e.name,
             mentionRate: parseFloat((Math.min(100, totalResponses > 0 ? (e.mentions / totalResponses) * 100 : 0)).toFixed(1)),
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
-            visibilityIndex: totalResponses > 0
-              ? Math.round((0.5 * (e.mentions / totalResponses) + 0.5 * (e.positionScoreSum / totalResponses)) * 100)
-              : undefined,
+            visibilityIndex: getPercentile(e.name.toLowerCase()),
           }))
           .sort((a, b) => b.mentionRate - a.mentionRate);
 
