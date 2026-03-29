@@ -983,7 +983,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   <span className="relative group cursor-help">
                     <HelpCircle size={10} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
                     <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-56 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10 normal-case tracking-normal">
-                      Percentile rank among all entities detected in AI responses — same scale as your brand's Visibility Index. 100 = most visible, 0 = least. Combines how often the entity is mentioned and how highly it ranks in AI answers.
+                      A 0–100 score measuring how prominent this entity is across AI responses. Higher means it's mentioned more frequently and tends to rank higher when it appears.
                     </div>
                   </span>
                 </div>
