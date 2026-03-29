@@ -7,7 +7,8 @@
  * - Known competitors
  * - Other discovered entities
  *
- * Also captures per-response entity ranks to enable Visibility Index calculation.
+ * Also captures per-response entity ranks to enable Visibility Index calculation,
+ * and per-prompt entity stats to enable relative mention rate scoring.
  *
  * Uses GPT-4o-mini for entity extraction from response texts.
  *
@@ -19,6 +20,8 @@
  * 5. Store combined result in daily_reports.share_of_voice_data
  *    (each entity includes: mentions, type, position_score_sum)
  *    (top-level includes: total_responses for use by visibility-index-calculator)
+ * 6. Store per_prompt_entity_stats: avg entity mention rate per prompt
+ *    (used by scoring to relativize brand mention rate vs other entities)
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -42,19 +45,12 @@ const PROVIDER_RESPONSE_COLUMNS = {
 /**
  * Extract entities per response with their rank using GPT-4o-mini.
  * Returns per-response data: [{response_index, entities: [{name, rank}]}]
- *
- * rank=1 means most prominent / first mentioned in that response.
- * JS code calculates position score = (N - rank) / N where N = total entities in response.
- *
- * @param {string[]} responseTexts - Array of AI response texts (chunk of up to CHUNK_SIZE)
- * @returns {Array} Array of per-response objects
  */
 async function extractEntitiesWithGPT(responseTexts) {
   const combinedText = responseTexts
     .map((text, i) => `--- Response ${i + 1} ---\n${text}`)
     .join('\n\n');
 
-  // Truncate to ~12K chars to stay well within token limits for GPT-4o-mini
   const truncated = combinedText.length > 12000
     ? combinedText.substring(0, 12000) + '\n[... truncated]'
     : combinedText;
@@ -105,9 +101,7 @@ ${truncated}`
   });
 
   const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('Empty GPT response for entity extraction');
-  }
+  if (!content) throw new Error('Empty GPT response for entity extraction');
 
   const parsed = JSON.parse(content);
   return parsed.responses || [];
@@ -142,7 +136,6 @@ function categorizeEntities(entities, brandName, competitorNames) {
 
 /**
  * Merge duplicate entities after categorization.
- * Sums both mentions and position_score_sum for duplicates.
  */
 function mergeEntities(entities) {
   const merged = {};
@@ -161,46 +154,62 @@ function mergeEntities(entities) {
 const CHUNK_SIZE = 5;
 
 /**
- * Run extraction for a set of response texts and return cleaned SoV data.
- * Splits responses into chunks of CHUNK_SIZE to avoid GPT token limits.
- * Returns null if no texts provided.
+ * Run extraction for a set of response items and return cleaned SoV data + per-prompt stats.
  *
- * Each entity in the returned data includes:
- *   - name, type, mentions, position_score_sum
- *
- * Top-level includes total_responses (denominator for Visibility Index).
+ * @param {Array<{text: string, promptId: string|null}>} responseItems
+ * @param {string} brandName
+ * @param {string[]} competitorNames
+ * @param {string} label - for logging
+ * @returns {object|null} sovData with per_prompt_stats
  */
-async function buildSovData(responseTexts, brandName, competitorNames, label) {
-  if (!responseTexts || responseTexts.length === 0) {
+async function buildSovData(responseItems, brandName, competitorNames, label) {
+  if (!responseItems || responseItems.length === 0) {
     console.log('   ⚠️  No responses for ' + label + ', skipping');
     return null;
   }
 
-  const totalResponses = responseTexts.length;
+  const totalResponses = responseItems.length;
 
-  // Split into chunks of CHUNK_SIZE
   const chunks = [];
-  for (let i = 0; i < responseTexts.length; i += CHUNK_SIZE) {
-    chunks.push(responseTexts.slice(i, i + CHUNK_SIZE));
+  for (let i = 0; i < responseItems.length; i += CHUNK_SIZE) {
+    chunks.push(responseItems.slice(i, i + CHUNK_SIZE));
   }
   console.log('   🤖 Extracting entities for ' + label + ' (' + totalResponses + ' responses, ' + chunks.length + ' chunks)...');
 
-  // entityMap: name_lower → {name, mentions, position_score_sum}
   const entityMap = {};
+  // perPromptMap: promptId → { entityKeys: Set<string>, numRuns: number, totalMentions: number }
+  const perPromptMap = {};
 
-  for (let i = 0; i < chunks.length; i++) {
-    const perResponseData = await extractEntitiesWithGPT(chunks[i]);
-    console.log('     chunk ' + (i + 1) + '/' + chunks.length + ': ' + perResponseData.length + ' responses processed');
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    const chunkTexts = chunk.map(item => item.text);
+    const perResponseData = await extractEntitiesWithGPT(chunkTexts);
+    console.log('     chunk ' + (ci + 1) + '/' + chunks.length + ': ' + perResponseData.length + ' responses processed');
 
     for (const responseData of perResponseData) {
+      const localIdx = responseData.response_index - 1; // 0-indexed within chunk
+      const globalIdx = ci * CHUNK_SIZE + localIdx;
+      const promptId = responseItems[globalIdx]?.promptId || null;
+
       const entities = responseData.entities || [];
-      const N = entities.length; // total distinct entities in this response
+      const N = entities.length;
 
+      // Per-prompt tracking
+      if (promptId) {
+        if (!perPromptMap[promptId]) {
+          perPromptMap[promptId] = { entityKeys: new Set(), numRuns: 0, totalMentions: 0 };
+        }
+        perPromptMap[promptId].numRuns++;
+        perPromptMap[promptId].totalMentions += N;
+        for (const entity of entities) {
+          perPromptMap[promptId].entityKeys.add(entity.name.toLowerCase());
+        }
+      }
+
+      // Global entity map
       for (const entity of entities) {
-        const K = entity.rank; // 1-indexed rank
-        // Position score: rank 1 out of 5 → (5-1)/5 = 0.80; rank 5 out of 5 → 0.00
+        const K = entity.rank;
         const posScore = N > 1 ? (N - K) / N : (N === 1 ? 1.0 : 0);
-
         const key = entity.name.toLowerCase();
         if (!entityMap[key]) {
           entityMap[key] = { name: entity.name, mentions: 0, position_score_sum: 0 };
@@ -211,14 +220,35 @@ async function buildSovData(responseTexts, brandName, competitorNames, label) {
     }
   }
 
+  // Build per-prompt stats
+  const perPromptStats = {};
+  for (const [promptId, data] of Object.entries(perPromptMap)) {
+    const uniqueEntities = data.entityKeys.size;
+    const avgEntityMentionRate = uniqueEntities > 0 && data.numRuns > 0
+      ? parseFloat((data.totalMentions / (uniqueEntities * data.numRuns)).toFixed(4))
+      : 0;
+    perPromptStats[promptId] = {
+      num_runs: data.numRuns,
+      unique_entities: uniqueEntities,
+      total_entity_mentions: data.totalMentions,
+      avg_entity_mention_rate: avgEntityMentionRate,
+      entity_names: [...data.entityKeys], // needed for true cross-provider union
+    };
+  }
+
   const rawEntities = Object.values(entityMap);
 
   if (rawEntities.length === 0) {
     console.log('   ⚠️  No entities found for ' + label);
-    return { entities: [], total_mentions: 0, total_responses: totalResponses, calculated_at: new Date().toISOString() };
+    return {
+      entities: [],
+      total_mentions: 0,
+      total_responses: totalResponses,
+      calculated_at: new Date().toISOString(),
+      per_prompt_stats: Object.keys(perPromptStats).length > 0 ? perPromptStats : null,
+    };
   }
 
-  // Categorize then merge (handles cases where categorization renames to same entity)
   const categorized = categorizeEntities(rawEntities, brandName, competitorNames);
   const merged = mergeEntities(categorized);
   const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
@@ -234,11 +264,12 @@ async function buildSovData(responseTexts, brandName, competitorNames, label) {
       name: e.name,
       mentions: e.mentions,
       type: e.type,
-      position_score_sum: parseFloat((e.position_score_sum || 0).toFixed(4))
+      position_score_sum: parseFloat((e.position_score_sum || 0).toFixed(4)),
     })),
     total_mentions: totalMentions,
     total_responses: totalResponses,
-    calculated_at: new Date().toISOString()
+    calculated_at: new Date().toISOString(),
+    per_prompt_stats: Object.keys(perPromptStats).length > 0 ? perPromptStats : null,
   };
 }
 
@@ -287,11 +318,11 @@ async function calculateShareOfVoice(dailyReportId) {
     const competitorNames = (competitors || []).map(c => c.competitor_name);
     console.log('✅ Competitors: ' + competitorNames.join(', '));
 
-    // 4. Load all prompt results with all provider response columns
+    // 4. Load all prompt results — include brand_prompt_id for per-prompt entity stats
     console.log('\n📝 Loading prompt results (all providers)...');
     const { data: promptResults, error: promptError } = await supabase
       .from('prompt_results')
-      .select('id, provider, chatgpt_response, google_ai_overview_response, claude_response, perplexity_response')
+      .select('id, brand_prompt_id, provider, chatgpt_response, google_ai_overview_response, claude_response, perplexity_response')
       .eq('daily_report_id', dailyReportId);
 
     if (promptError) {
@@ -300,9 +331,8 @@ async function calculateShareOfVoice(dailyReportId) {
 
     console.log('✅ Loaded ' + (promptResults || []).length + ' results');
 
-    // 5. Group response texts by provider
+    // 5. Group response items by provider — keep promptId alongside text
     const byProvider = {};
-    const allTexts = [];
 
     for (const result of (promptResults || [])) {
       const provider = result.provider;
@@ -312,14 +342,13 @@ async function calculateShareOfVoice(dailyReportId) {
       if (!text || !text.trim()) continue;
 
       if (!byProvider[provider]) byProvider[provider] = [];
-      byProvider[provider].push(text.trim());
-      allTexts.push(text.trim());
+      byProvider[provider].push({ text: text.trim(), promptId: result.brand_prompt_id || null });
     }
 
     const activeProviders = Object.keys(byProvider);
     console.log('Active providers: ' + activeProviders.map(p => p + '(' + byProvider[p].length + ')').join(', '));
 
-    if (allTexts.length === 0) {
+    if (activeProviders.length === 0) {
       console.log('⚠️  No response texts found across any provider');
       return { success: true, message: 'No responses to analyze', totalMentions: 0 };
     }
@@ -336,7 +365,7 @@ async function calculateShareOfVoice(dailyReportId) {
       }
     }
 
-    // 7. Build combined view by mathematically merging per-provider results
+    // 7. Build combined SoV by merging per-provider results
     console.log('\n🔢 Building combined SoV by merging per-provider results...');
     const mergedMap = {};
     let totalResponsesSum = 0;
@@ -362,7 +391,7 @@ async function calculateShareOfVoice(dailyReportId) {
           entities: mergedEntities,
           total_mentions: mergedTotal,
           total_responses: totalResponsesSum,
-          calculated_at: new Date().toISOString()
+          calculated_at: new Date().toISOString(),
         }
       : null;
 
@@ -376,13 +405,46 @@ async function calculateShareOfVoice(dailyReportId) {
       console.log('  [' + e.type + '] ' + e.name + ': ' + e.mentions + ' (' + pct + '%), pos_impact=' + posImpact + '%');
     });
 
-    // 8. Save both to daily_reports
+    // 7b. Merge per-prompt entity stats across providers
+    // Use true union of entity names across providers (not average) to avoid always getting rate=1.0
+    console.log('\n📊 Merging per-prompt entity stats...');
+    const mergedPerPromptMap = {};
+    for (const provSov of Object.values(shareOfVoiceByProvider)) {
+      if (!provSov.per_prompt_stats) continue;
+      for (const [promptId, stats] of Object.entries(provSov.per_prompt_stats)) {
+        if (!mergedPerPromptMap[promptId]) {
+          mergedPerPromptMap[promptId] = { totalMentions: 0, totalRuns: 0, entityNamesSet: new Set() };
+        }
+        mergedPerPromptMap[promptId].totalMentions += stats.total_entity_mentions || 0;
+        mergedPerPromptMap[promptId].totalRuns += stats.num_runs || 0;
+        for (const name of (stats.entity_names || [])) {
+          mergedPerPromptMap[promptId].entityNamesSet.add(name);
+        }
+      }
+    }
+
+    const perPromptEntityStats = {};
+    for (const [promptId, data] of Object.entries(mergedPerPromptMap)) {
+      const trueUniqueEntities = data.entityNamesSet.size;
+      const avgEntityMentionRate = trueUniqueEntities > 0 && data.totalRuns > 0
+        ? parseFloat((data.totalMentions / (trueUniqueEntities * data.totalRuns)).toFixed(4))
+        : 0;
+      perPromptEntityStats[promptId] = {
+        num_runs: data.totalRuns,
+        avg_entity_mention_rate: avgEntityMentionRate,
+      };
+      console.log('  Prompt ' + promptId.slice(0, 8) + ': ' + trueUniqueEntities + ' unique entities, ' + data.totalRuns + ' runs, avg_mention_rate=' + avgEntityMentionRate);
+    }
+    console.log('  Per-prompt stats computed for ' + Object.keys(perPromptEntityStats).length + ' prompts');
+
+    // 8. Save SoV data + per-prompt entity stats
     console.log('\n💾 Saving SoV data...');
     const { error: updateError } = await supabase
       .from('daily_reports')
       .update({
         share_of_voice_data: combinedSov,
-        share_of_voice_by_provider: shareOfVoiceByProvider
+        share_of_voice_by_provider: shareOfVoiceByProvider,
+        per_prompt_entity_stats: Object.keys(perPromptEntityStats).length > 0 ? perPromptEntityStats : null,
       })
       .eq('id', dailyReportId);
 
@@ -390,7 +452,7 @@ async function calculateShareOfVoice(dailyReportId) {
       throw new Error('Failed to save SoV data: ' + updateError.message);
     }
 
-    console.log('✅ Saved share_of_voice_data (combined) and share_of_voice_by_provider');
+    console.log('✅ Saved share_of_voice_data, share_of_voice_by_provider, per_prompt_entity_stats');
 
     // 9. Summary
     const brandEntity = combinedSov.entities.find(e => e.type === 'brand');
@@ -414,7 +476,7 @@ async function calculateShareOfVoice(dailyReportId) {
       totalMentions: combinedSov.total_mentions,
       totalResponses: totalResponsesSum,
       brandShare: parseFloat(brandShare),
-      providers: activeProviders
+      providers: activeProviders,
     };
 
   } catch (error) {
@@ -426,5 +488,5 @@ async function calculateShareOfVoice(dailyReportId) {
 }
 
 module.exports = {
-  calculateShareOfVoice
+  calculateShareOfVoice,
 };
