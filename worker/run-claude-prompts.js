@@ -143,6 +143,7 @@ async function main() {
   await updateBME({ status: 'running', started_at: new Date().toISOString(), prompts_attempted: prompts.length });
 
   let okCount = 0;
+  let skippedCount = 0;
   let errorCount = 0;
   const errorReasons = {};
   let firstErrorMessage = null;
@@ -165,7 +166,7 @@ async function main() {
 
       if (existing) {
         console.log('  ⏭ Already processed, skipping');
-        okCount++;
+        skippedCount++;
         continue;
       }
 
@@ -230,7 +231,7 @@ async function main() {
         prompt_text: promptText,
         claude_response: null,
         chatgpt_citations: [],
-        brand_mentioned: false,
+        brand_mentioned: null,
         brand_position: null,
       });
     }
@@ -240,31 +241,42 @@ async function main() {
     }
   }
 
-  // Update daily report stats
+  // Update daily report stats (skips count as ok — data already exists)
   await supabase
     .from('daily_reports')
     .update({
-      claude_ok: okCount,
-      claude_status: okCount > 0 ? 'complete' : (errorCount > 0 ? 'failed' : 'no_results'),
+      claude_ok: okCount + skippedCount,
+      claude_status: okCount + skippedCount > 0 ? 'complete' : (errorCount > 0 ? 'failed' : 'no_results'),
     })
     .eq('id', DAILY_REPORT_ID);
+
+  // BME status reflects only actual API calls this run (not idempotency skips)
+  const actualAttempts = okCount + errorCount;
+  let bmeStatus;
+  if (actualAttempts === 0) {
+    bmeStatus = skippedCount > 0 ? 'skipped' : 'failed';
+  } else {
+    bmeStatus = errorCount === actualAttempts ? 'failed' : 'completed';
+  }
 
   const errorSummary = firstErrorMessage
     ? `${errorCount} failed: ${firstErrorMessage}`
     : Object.entries(errorReasons).map(([k, v]) => `${v}× ${k}`).join(', ');
   await updateBME({
-    status: errorCount === prompts.length ? 'failed' : 'completed',
+    status: bmeStatus,
     completed_at: new Date().toISOString(),
     prompts_ok: okCount,
     prompts_failed: errorCount,
+    ...(skippedCount > 0 && { prompts_no_result: skippedCount }),
     ...(errorCount > 0 && { error_message: errorSummary }),
   });
 
   console.log('\n' + '='.repeat(60));
   console.log('📊 CLAUDE SUMMARY');
   console.log('='.repeat(60));
-  console.log('OK:     ', okCount);
-  console.log('Errors: ', errorCount);
+  console.log('OK:      ', okCount);
+  console.log('Skipped: ', skippedCount);
+  console.log('Errors:  ', errorCount);
   console.log('='.repeat(60) + '\n');
 }
 
