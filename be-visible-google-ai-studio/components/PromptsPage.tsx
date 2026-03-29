@@ -619,7 +619,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
               <tr>
                 <th className="w-1/2 px-8 py-4 font-bold">Topic group / prompt</th>
                 <th className="w-[15%] px-4 py-4 font-bold text-center">
-                  <HeaderWithInfo title="Visibility score" info="Brand visibility percentage for this query." align="center" />
+                  <HeaderWithInfo title="Visibility index" info="Position-weighted visibility index for this query (0–100)." align="center" />
                 </th>
                 <th className="w-[15%] px-4 py-4 font-bold text-center">
                   <HeaderWithInfo title="Average position" info="Average rank in AI generated lists." align="center" />
@@ -659,7 +659,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                       </td>
                       <td className="px-4 py-5 text-center">
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.visibility}%</span>
+                          <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.visibility}</span>
                           {group.stats.visibilityTrend != null && group.stats.visibilityTrend !== 0 && (
                             <PromptTrendBadge trend={group.stats.visibilityTrend} />
                           )}
@@ -695,7 +695,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                         </td>
                         <td className="px-4 py-4 text-center">
                           <div className="flex flex-col items-center gap-0.5">
-                            <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}%</span>
+                            <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}</span>
                             {prompt.visibilityTrend !== 0 && (
                               <PromptTrendBadge trend={prompt.visibilityTrend} />
                             )}
@@ -851,9 +851,9 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
                      <div className="col-span-12 lg:col-span-5 grid grid-cols-2 gap-4">
                        <MetricCard
-                         label="Visibility score"
-                         value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore}%`}
-                         trend={`${(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? '+' : ''}${popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend}% vs prev`}
+                         label="Visibility index"
+                         value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore}`}
+                         trend={`${(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? '+' : ''}${popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend} vs prev`}
                          trendColor={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? 'text-emerald-500' : 'text-rose-500'}
                          isDown={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) < 0}
                          isHighlighted={activeChartMetric === 'visibility'}

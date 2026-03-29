@@ -177,11 +177,10 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           for (const r of (currentResults || [])) {
             if (!scoreMap[r.brand_prompt_id]) continue;
             scoreMap[r.brand_prompt_id].total++;
-            if (r.brand_mentioned) {
-              const K = r.brand_position ?? 1;
-              const posScore = Math.max(0, (avgN - K) / avgN);
-              scoreMap[r.brand_prompt_id].scoreSum += posScore;
-            }
+            const mentionContrib = r.brand_mentioned ? 0.5 : 0;
+            const K = r.brand_position ?? 1;
+            const posContrib = r.brand_mentioned ? 0.5 * Math.max(0, (avgN - K) / avgN) : 0;
+            scoreMap[r.brand_prompt_id].scoreSum += mentionContrib + posContrib;
           }
         }
 
@@ -227,11 +226,10 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
               const key = r.brand_prompt_id;
               if (!prevMap[key]) prevMap[key] = { scoreSum: 0, total: 0 };
               prevMap[key].total++;
-              if (r.brand_mentioned) {
-                const K = r.brand_position ?? 1;
-                const posScore = Math.max(0, (prevAvgN - K) / prevAvgN);
-                prevMap[key].scoreSum += posScore;
-              }
+              const mentionContrib = r.brand_mentioned ? 0.5 : 0;
+              const K = r.brand_position ?? 1;
+              const posContrib = r.brand_mentioned ? 0.5 * Math.max(0, (prevAvgN - K) / prevAvgN) : 0;
+              prevMap[key].scoreSum += mentionContrib + posContrib;
             }
             for (const [key, val] of Object.entries(prevMap)) {
               prevScoreMap[key] = val.total > 0 ? Math.round((val.scoreSum / val.total) * 100) : 0;
