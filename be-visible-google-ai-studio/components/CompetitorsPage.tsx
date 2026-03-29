@@ -178,7 +178,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         }
 
         const totalReports = reports.length;
-        const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number; visibilityIndex?: number }> = {};
+        const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number; positionScoreSum: number }> = {};
         let totalMentions = 0;
         let totalResponses = 0;
 
@@ -214,16 +214,13 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             const key = entity.name.toLowerCase();
             if (entityMap[key]) {
               entityMap[key].mentions += entity.mentions;
+              entityMap[key].positionScoreSum += entity.position_score_sum || 0;
             } else {
-              entityMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type, reportCount: 0 };
+              entityMap[key] = { name: entity.name, mentions: entity.mentions, type: entity.type, reportCount: 0, positionScoreSum: entity.position_score_sum || 0 };
             }
             if (!seenInReport.has(key)) {
               entityMap[key].reportCount++;
               seenInReport.add(key);
-            }
-            // Track latest visibility_index from enriched SOV data (overwrites — last report wins)
-            if (entity.visibility_index != null) {
-              entityMap[key].visibilityIndex = entity.visibility_index;
             }
           }
           totalMentions += sov.total_mentions || 0;
@@ -309,7 +306,9 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             name: e.name,
             mentionRate: parseFloat((Math.min(100, totalResponses > 0 ? (e.mentions / totalResponses) * 100 : 0)).toFixed(1)),
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
-            visibilityIndex: e.visibilityIndex,
+            visibilityIndex: totalResponses > 0
+              ? Math.round((0.5 * (e.mentions / totalResponses) + 0.5 * (e.positionScoreSum / totalResponses)) * 100)
+              : undefined,
           }))
           .sort((a, b) => b.mentionRate - a.mentionRate);
 
@@ -972,15 +971,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                       </div>
                       <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
                     </div>
-                    <div className="col-span-3 flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="col-span-3 flex flex-col gap-1.5 justify-center">
+                      <span className="text-[11px] font-black text-slate-600 text-center">{Number(entity.mentionRate).toFixed(1)}%</span>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full bg-brand-brown/60 rounded-full" style={{ width: `${entity.mentionRate}%` }} />
                       </div>
-                      <span className="text-[11px] font-black text-slate-600 w-8 text-right shrink-0">{Number(entity.mentionRate).toFixed(2)}%</span>
                     </div>
                     <div className="col-span-2">
                       {entity.visibilityIndex != null ? (
-                        <span className="text-[11px] font-black text-slate-700">{Math.round(entity.visibilityIndex!)}</span>
+                        <span className="text-[11px] font-black text-slate-700">{entity.visibilityIndex}</span>
                       ) : (
                         <span className="text-[11px] font-black text-slate-300">—</span>
                       )}
