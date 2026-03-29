@@ -180,6 +180,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         const totalReports = reports.length;
         const entityMap: Record<string, { name: string; mentions: number; type: string; reportCount: number; visibilityIndex?: number }> = {};
         let totalMentions = 0;
+        let totalResponses = 0;
 
         for (const report of reports) {
           // When filtered: merge selected providers from share_of_voice_by_provider
@@ -226,6 +227,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             }
           }
           totalMentions += sov.total_mentions || 0;
+          totalResponses += sov.total_responses || 0;
         }
 
         if (totalMentions === 0) { setHasRealSov(false); return; }
@@ -305,7 +307,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           .filter(e => e.type !== 'brand')
           .map(e => ({
             name: e.name,
-            mentionRate: parseFloat(((e.reportCount / totalReports) * 100).toFixed(2)),
+            mentionRate: parseFloat((Math.min(100, totalResponses > 0 ? (e.mentions / totalResponses) * 100 : 0)).toFixed(1)),
             visibilityScore: Math.round((e.mentions / totalMentions) * 100),
             visibilityIndex: e.visibilityIndex,
           }))
@@ -978,7 +980,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     </div>
                     <div className="col-span-2">
                       {entity.visibilityIndex != null ? (
-                        <span className="text-[11px] font-black text-slate-700">{entity.visibilityIndex.toFixed(1)}</span>
+                        <span className="text-[11px] font-black text-slate-700">{Math.round(entity.visibilityIndex!)}</span>
                       ) : (
                         <span className="text-[11px] font-black text-slate-300">—</span>
                       )}
