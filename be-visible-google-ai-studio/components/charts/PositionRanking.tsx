@@ -282,8 +282,9 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
             Prompt performance
             <span className="relative group cursor-help">
               <HelpCircle size={14} className="text-gray-300 group-hover:text-gray-400 transition-colors" />
-              <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-56 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10">
-                How visible your brand is relative to other entities in AI answers. Combines whether you were mentioned and where you ranked among all entities in each response.
+              <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10">
+                Each bar shows how strongly a specific prompt triggers your brand in AI answers — combining how often you're mentioned and how highly you rank vs. other entities.<br /><br />
+                <span className="text-slate-300">e.g. mentioned in 8/10 responses, ranked 2nd out of 8 entities → score 70</span>
               </div>
             </span>
           </h3>
