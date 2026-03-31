@@ -559,13 +559,16 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
     //   locks the session in "reconnect-pending" mode (returns 429 on the original URL).
     //   Do NOT call Browserless.reconnect for Sessions API sessions.
     try {
-      if (browser._connection && browser._connection._transport) {
-        browser._connection._transport.close();
-      } else if (browser._connection) {
-        browser._connection.close();
+      const conn = browser._connection;
+      if (conn?._ws) {
+        // _ws is the raw WebSocket — close only the WS, not the browser process.
+        // processKeepAlive keeps the browser alive after this disconnect.
+        conn._ws.close();
+      } else if (conn?._transport) {
+        conn._transport.close();
       }
-    } catch (e) { /* ignore transport close errors */ }
-    console.log('   Disconnected (transport only — browser kept alive by processKeepAlive)');
+    } catch (e) { /* ignore ws close errors */ }
+    console.log('   Disconnected (WebSocket only — browser kept alive by processKeepAlive)');
 
     // 7. Display results summary
     const successCount = results.filter(r => r.success).length;
