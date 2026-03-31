@@ -32,7 +32,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -569,6 +569,20 @@ async function injectBrandIntoTomorrowSchedule(brand) {
       }
       await injectForDate(brand, prompts, scheduleDate);
     }
+
+    // Reload crontab so today's injected batches actually fire.
+    // load-daily-schedule.js is a one-shot at 15:00 UTC — any rows inserted after that
+    // won't have cron entries unless we re-run it here.
+    console.log('[INJECT] Reloading crontab via load-daily-schedule.js...');
+    const loadResult = spawnSync('node', [path.join(__dirname, 'load-daily-schedule.js')], {
+      stdio: 'inherit',
+      cwd: __dirname,
+    });
+    if (loadResult.status !== 0) {
+      console.error('[INJECT] load-daily-schedule exited with status', loadResult.status);
+    } else {
+      console.log('[INJECT] Crontab reloaded successfully.');
+    }
   } catch (err) {
     console.error('[INJECT] injectBrandIntoTomorrowSchedule error:', err.message);
   }
@@ -675,11 +689,24 @@ async function injectForDate(brand, prompts, scheduleDate) {
       };
     });
 
-    const { error } = await supabase.from('daily_schedules').insert(records);
+    const { data: inserted, error } = await supabase.from('daily_schedules').insert(records).select('id');
     if (error) {
       console.error('[INJECT] Failed to insert schedule batches:', error.message);
     } else {
       console.log('[INJECT] Injected', records.length, 'batches (', prompts.length, 'prompts) for "' + (brand.name || brand.id.substring(0, 8)) + '" into', scheduleDate);
+
+      // Create pending BME rows per schedule so forensic Table D shows all 3 models from the start
+      // (mirrors what generate-nightly-schedule-BRAND-AWARE.js does for regular brands)
+      if (inserted && inserted.length > 0) {
+        const bmeRows = inserted.flatMap(s => [
+          { schedule_id: s.id, model: 'chatgpt',            status: 'pending' },
+          { schedule_id: s.id, model: 'google_ai_overview', status: 'pending' },
+          { schedule_id: s.id, model: 'claude',             status: 'pending' },
+        ]);
+        const { error: bmeError } = await supabase.from('batch_model_executions').insert(bmeRows);
+        if (bmeError) console.warn('[INJECT] BME rows creation failed:', bmeError.message);
+        else console.log('[INJECT] Created', bmeRows.length, 'BME tracking rows (3 per batch)');
+      }
     }
   } catch (err) {
     console.error('[INJECT] injectBrandIntoTomorrowSchedule error:', err.message);

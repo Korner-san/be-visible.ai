@@ -24,7 +24,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const chatgptExecutor = require('./executors/chatgpt-executor');
+const { executeBatch, triggerAutoReinit } = require('./executors/chatgpt-executor');
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -87,7 +87,7 @@ async function runChunk() {
   console.log('[CHUNK] Prompt IDs:', chunkPrompts.map(p => p.id.substring(0, 8)).join(', '));
   console.log('='.repeat(60));
 
-  const executeBatchPromise = chatgptExecutor.executeBatch({
+  const executeBatchPromise = executeBatch({
     scheduleId: 'onboarding-' + BRAND_ID,
     userId: OWNER_USER_ID,
     brandId: BRAND_ID,
@@ -140,7 +140,10 @@ async function runChunk() {
     setTimeout(() => reject(new Error('CHUNK_TIMEOUT')), chunkTimeoutMs)
   );
 
-  await Promise.race([executeBatchPromise, timeoutPromise]).catch(async (err) => {
+  // Bug fix: executeBatch catches internal errors and returns {success:false} instead of throwing.
+  // This means Promise.race resolves (not rejects) on connection failures like 429 "session busy".
+  // Check the return value and treat success:false as a fatal error so markRemainingFailed() runs.
+  const result = await Promise.race([executeBatchPromise, timeoutPromise]).catch(async (err) => {
     if (err.message === 'CHUNK_TIMEOUT') {
       console.error('[CHUNK] TIMED OUT after', (chunkTimeoutMs / 60000).toFixed(1), 'min — marking remaining claimed prompts as failed');
       await markRemainingFailed();
@@ -149,6 +152,32 @@ async function runChunk() {
     }
     throw err; // re-throw non-timeout errors to outer catch
   });
+
+  if (result && result.success === false) {
+    const errMsg = result.error || '';
+    console.error('[CHUNK] executeBatch returned failure (error swallowed by executor):', errMsg.substring(0, 200));
+    await markRemainingFailed();
+
+    // If ChatGPT is showing the login page, cookies are expired — disable account and
+    // trigger background reinit. The init script re-enables it (is_eligible=true) on success,
+    // or sends a Make webhook for manual cookie extraction if it also sees the login page.
+    // 429 "already in use" is a transient race — no reinit needed, just retry.
+    if (errMsg.includes('not logged in') || errMsg.includes('requires re-initialization')) {
+      const accountId = process.env.CHATGPT_ACCOUNT_ID;
+      const accountEmail = process.env.CHATGPT_ACCOUNT_EMAIL;
+      console.log('[CHUNK] Session logged out — disabling account and triggering reinit for', accountEmail);
+      await supabase.from('chatgpt_accounts').update({ is_eligible: false }).eq('id', accountId);
+      // Notify organizer first so other accounts can pick up the failed prompts immediately
+      await notifyChunkComplete();
+      // Now await reinit — keeps process alive so Make webhook fires on failure
+      await triggerAutoReinit(accountEmail, 'session_not_logged_in_onboarding', 'onboarding-' + BRAND_ID)
+        .catch(e => console.warn('[CHUNK] Reinit error:', e.message));
+      process.exit(1);
+    }
+
+    await notifyChunkComplete();
+    process.exit(1);
+  }
 
   console.log('[CHUNK] Batch complete. Notifying queue-organizer via /chunk-complete webhook.');
 }

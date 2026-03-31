@@ -101,7 +101,7 @@ async function triggerAutoReinit(accountEmail, trigger, batchId) {
     }
     const { data: account } = await supabase
       .from('chatgpt_accounts')
-      .select('id, last_initialization_result, last_visual_state, browserless_session_id, proxy_host, proxy_port, browserless_stop_url')
+      .select('id, last_initialization_result, last_visual_state, browserless_session_id, proxy_host, proxy_port, browserless_stop_url, source_pc')
       .eq('email', accountEmail)
       .single();
     const reinitSucceeded = account?.last_initialization_result === 'success';
@@ -117,10 +117,13 @@ async function triggerAutoReinit(accountEmail, trigger, batchId) {
         .eq('connection_status', 'Error')
         .order('timestamp', { ascending: false })
         .limit(3);
+      const context = trigger.includes('onboarding') ? 'onboarding' : 'daily_batch';
       await sendMakeWebhook({
         account: accountEmail,
         action_required: 'manual_cookie_extraction',
+        context,
         trigger,
+        source_pc: account?.source_pc || 'unknown',
         reinit_result: account?.last_initialization_result || 'unknown',
         reinit_visual_state: visualState,
         consecutive_failures: 0,
@@ -284,6 +287,27 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
         // Type actual prompt into textarea
         await textarea.fill(prompt.promptText);
 
+        // Check for conversation rate limit modal BEFORE clicking send.
+        // ChatGPT shows this modal when an account sends too many prompts in a session.
+        // It blocks pointer events on the send button, causing a 30s timeout otherwise.
+        // We detect it early (500ms), fire a Make webhook alert, dismiss via Escape, then fail fast.
+        const rateLimitModal = page.locator('[data-testid="modal-conversation-history-rate-limit"]');
+        const hasRateLimit = await rateLimitModal.isVisible({ timeout: 500 }).catch(() => false);
+        if (hasRateLimit) {
+          console.warn('[RATE-LIMIT] Conversation rate limit modal detected for', CHATGPT_ACCOUNT_EMAIL);
+          // Try to dismiss the modal so next reconnect starts clean
+          try { await page.keyboard.press('Escape'); await page.waitForTimeout(1000); } catch (_) {}
+          await sendMakeWebhook({
+            event: 'conversation_rate_limit',
+            account: CHATGPT_ACCOUNT_EMAIL,
+            brand_id: prompt.brandId || brandId,
+            prompt_id: prompt.promptId,
+            message: 'ChatGPT showed "you are making requests too quickly" modal — account temporarily rate-limited. Prompts will be retried once limit clears.',
+            timestamp: new Date().toISOString(),
+          });
+          throw new Error('conversation_rate_limit: ChatGPT rate limit modal blocked send button');
+        }
+
         // Send prompt
         await page.locator('button[data-testid="send-button"]').click();
         console.log('✅ Prompt sent');
@@ -372,6 +396,20 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
 
       } catch (error) {
         console.error('❌ Error processing prompt ' + (i + 1) + ':', error.message);
+
+        // Fallback: if rate limit modal was missed by pre-check (e.g. appeared mid-send),
+        // detect it here and fire Make webhook if not already fired above.
+        if (error.message.includes('modal-conversation-history-rate-limit') && !error.message.startsWith('conversation_rate_limit:')) {
+          console.warn('[RATE-LIMIT] Rate limit modal caught in error handler for', CHATGPT_ACCOUNT_EMAIL);
+          await sendMakeWebhook({
+            event: 'conversation_rate_limit',
+            account: CHATGPT_ACCOUNT_EMAIL,
+            brand_id: prompt.brandId || brandId,
+            prompt_id: prompt.promptId,
+            message: 'ChatGPT showed "you are making requests too quickly" modal (caught in error handler).',
+            timestamp: new Date().toISOString(),
+          }).catch(() => {});
+        }
 
         // Resolve correct brand for this prompt (fixes cross-contamination)
         const promptBrandId = prompt.brandId || brandId;
@@ -470,7 +508,8 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
             chatgpt_ok: reportOk,
             chatgpt_no_result: reportFail
           })
-          .eq('id', reportId);
+          .eq('id', reportId)
+          .neq('status', 'completed');
 
         if (updateError) {
           console.error('⚠️  Failed to update daily_report ' + reportId + ':', updateError);
@@ -1008,5 +1047,6 @@ function decodeEntities(text) {
 }
 
 module.exports = {
-  executeBatch
+  executeBatch,
+  triggerAutoReinit,
 };
