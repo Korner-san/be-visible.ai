@@ -32,6 +32,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // AFTER requiring this module, so a module-level const would always be stale.
 let CHATGPT_ACCOUNT_EMAIL = process.env.CHATGPT_ACCOUNT_EMAIL || 'ididitforkik1000@gmail.com';
 
+// CONVERSATION REUSE: max prompts before opening a new ChatGPT conversation.
+// Spans multiple Browserless connections — URL stored in chatgpt_accounts.
+const MAX_PROMPTS_PER_CONVERSATION = 10;
+
 // FORENSIC: Global state for tracking session and visual state
 let currentAccountId = null;
 let currentSessionId = null;
@@ -167,6 +171,114 @@ async function sendMakeWebhook(payload) {
   }
 }
 
+// ============================================================================
+// CONVERSATION REUSE HELPERS
+// ============================================================================
+
+/**
+ * At the start of each executeBatch call, decide whether to continue the existing
+ * ChatGPT conversation or open a new one.
+ *
+ * Decision rule: if count + batchSize > MAX_PROMPTS_PER_CONVERSATION, start new.
+ * If no URL is stored yet, also start new.
+ *
+ * On continue: navigates to the stored /c/UUID conversation URL.
+ * On new: presses Ctrl+Shift+O. URL is captured and saved after the first prompt.
+ *
+ * Returns: { isNew: boolean }
+ */
+async function manageConversationStart(page, batchSize) {
+  const { data: account } = await supabase
+    .from('chatgpt_accounts')
+    .select('current_conversation_url, current_conversation_prompt_count')
+    .eq('email', CHATGPT_ACCOUNT_EMAIL)
+    .single();
+
+  const storedUrl = account?.current_conversation_url || null;
+  const storedCount = account?.current_conversation_prompt_count || 0;
+  const wouldExceed = storedCount + batchSize > MAX_PROMPTS_PER_CONVERSATION;
+  const shouldStartNew = !storedUrl || wouldExceed;
+
+  if (shouldStartNew) {
+    console.log(`[CONV] New conversation (count=${storedCount}, batch=${batchSize}, wouldExceed=${wouldExceed})`);
+    try {
+      await page.keyboard.press('Control+Shift+KeyO');
+      await page.waitForTimeout(2500);
+    } catch (e) {
+      console.warn('[CONV] Ctrl+Shift+O failed (non-fatal):', e.message);
+    }
+    // Clear state — URL captured after first prompt via recordPromptSent()
+    await supabase
+      .from('chatgpt_accounts')
+      .update({ current_conversation_url: null, current_conversation_prompt_count: 0 })
+      .eq('email', CHATGPT_ACCOUNT_EMAIL);
+    return { isNew: true };
+  }
+
+  // Continue existing conversation
+  console.log(`[CONV] Continuing conversation (count=${storedCount}, url=...${storedUrl.slice(-12)})`);
+  try {
+    await page.goto(storedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000);
+    const hasTextarea = await page.locator('#prompt-textarea').count() > 0;
+    if (!hasTextarea) {
+      console.warn('[CONV] Textarea missing after navigating to conversation — falling back to new conv');
+      await page.keyboard.press('Control+Shift+KeyO');
+      await page.waitForTimeout(2500);
+      await supabase
+        .from('chatgpt_accounts')
+        .update({ current_conversation_url: null, current_conversation_prompt_count: 0 })
+        .eq('email', CHATGPT_ACCOUNT_EMAIL);
+      return { isNew: true };
+    }
+  } catch (navErr) {
+    console.warn('[CONV] Navigate to conversation URL failed — starting new:', navErr.message);
+    await page.keyboard.press('Control+Shift+KeyO');
+    await page.waitForTimeout(2500);
+    await supabase
+      .from('chatgpt_accounts')
+      .update({ current_conversation_url: null, current_conversation_prompt_count: 0 })
+      .eq('email', CHATGPT_ACCOUNT_EMAIL);
+    return { isNew: true };
+  }
+  return { isNew: false };
+}
+
+/**
+ * After each successfully sent prompt:
+ * - If this is the first prompt of a NEW conversation: wait for /c/UUID URL, save it, set count=1
+ * - Otherwise: increment the count in DB
+ */
+async function recordPromptSent(page, isFirstOfNewConversation) {
+  if (isFirstOfNewConversation) {
+    // ChatGPT creates the /c/UUID URL after the first message is sent
+    await page.waitForTimeout(1500);
+    const url = page.url();
+    if (url.includes('/c/')) {
+      await supabase
+        .from('chatgpt_accounts')
+        .update({ current_conversation_url: url, current_conversation_prompt_count: 1 })
+        .eq('email', CHATGPT_ACCOUNT_EMAIL);
+      console.log('[CONV] Saved new conversation URL:', url.slice(-20), '(count=1)');
+      return;
+    }
+    // URL not yet /c/UUID — just bump count and try again next prompt
+    console.warn('[CONV] /c/ URL not yet visible after first prompt — skipping URL capture');
+  }
+  // Increment count
+  const { data: account } = await supabase
+    .from('chatgpt_accounts')
+    .select('current_conversation_prompt_count')
+    .eq('email', CHATGPT_ACCOUNT_EMAIL)
+    .single();
+  const newCount = (account?.current_conversation_prompt_count || 0) + 1;
+  await supabase
+    .from('chatgpt_accounts')
+    .update({ current_conversation_prompt_count: newCount })
+    .eq('email', CHATGPT_ACCOUNT_EMAIL);
+  console.log('[CONV] Prompt count now:', newCount);
+}
+
 /**
  * Execute a batch of prompts using ChatGPT via Browserless
  * Returns raw execution results - NO PROCESSING
@@ -240,16 +352,10 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
     });
 
 
-    // Start a fresh conversation at the top of every batch.
-    // When reconnecting to an existing session the last prompt response is
-    // still visible; Ctrl+Shift+O clears it before we begin.
-    console.log("🔄 Starting fresh conversation for this batch...");
-    try {
-      await page.keyboard.press("Control+Shift+KeyO");
-      await page.waitForTimeout(2000);
-    } catch (e) {
-      console.warn("   Could not open new conversation (non-fatal):", e.message);
-    }
+    // Manage conversation reuse: continue existing /c/UUID conversation or start new one.
+    // Decision is based on current_conversation_prompt_count stored per account in DB.
+    const convState = await manageConversationStart(page, prompts.length);
+    let isFirstOfNewConversation = convState.isNew;
 
     // 5. Process each prompt (EXECUTION ONLY - NO ANALYSIS)
     const results = [];
@@ -387,12 +493,11 @@ async function executeBatch({ scheduleId, userId, brandId, reportDate, prompts, 
           await onPromptComplete(i, true);
         }
 
-        // Start new conversation for next prompt (skip for last prompt)
-        if (i < prompts.length - 1) {
-          console.log('🔄 Starting new conversation...');
-          await page.keyboard.press('Control+Shift+KeyO');
-          await page.waitForTimeout(2000);
-        }
+        // Record prompt sent: save /c/UUID URL on first prompt of new conv, increment count otherwise
+        await recordPromptSent(page, isFirstOfNewConversation && i === 0).catch(e =>
+          console.warn('[CONV] recordPromptSent error (non-fatal):', e.message)
+        );
+        if (isFirstOfNewConversation && i === 0) isFirstOfNewConversation = false;
 
       } catch (error) {
         console.error('❌ Error processing prompt ' + (i + 1) + ':', error.message);

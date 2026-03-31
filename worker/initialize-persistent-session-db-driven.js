@@ -382,7 +382,10 @@ async function initializePersistentSession() {
         last_visual_state: visualState,
         last_visual_state_at: new Date().toISOString(),
         last_initialization_result: 'success',
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // Reset conversation state so reinit always starts a clean new conversation
+        current_conversation_url: null,
+        current_conversation_prompt_count: 0,
       })
       .eq('email', ACCOUNT_EMAIL);
 
