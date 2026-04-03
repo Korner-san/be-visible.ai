@@ -97,6 +97,22 @@ export async function GET(request: NextRequest) {
         }, { status: 500 })
       }
 
+      // Batch query: new conversations and prompts sent per account in last 24h
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { data: activityRows } = await supabase
+        .from('automation_forensics')
+        .select('chatgpt_account_email, operation_type')
+        .in('operation_type', ['new_conversation', 'prompt_sent'])
+        .gte('timestamp', since24h)
+
+      const activityMap: Record<string, { convs24h: number; prompts24h: number }> = {}
+      for (const row of (activityRows || [])) {
+        const email = row.chatgpt_account_email
+        if (!activityMap[email]) activityMap[email] = { convs24h: 0, prompts24h: 0 }
+        if (row.operation_type === 'new_conversation') activityMap[email].convs24h++
+        if (row.operation_type === 'prompt_sent') activityMap[email].prompts24h++
+      }
+
       // For each account, calculate health metrics
       const storageStateHealth = await Promise.all(
         (accounts || []).map(async (account: any) => {
@@ -157,6 +173,8 @@ export async function GET(request: NextRequest) {
             status,
             lastSuccess: lastSuccessData?.timestamp || null,
             visualStateTrend,
+            convs24h: activityMap[account.email]?.convs24h ?? 0,
+            prompts24h: activityMap[account.email]?.prompts24h ?? 0,
           }
         })
       )

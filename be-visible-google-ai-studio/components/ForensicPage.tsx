@@ -78,6 +78,8 @@ interface StorageStateHealth {
   status: string;
   lastSuccess: string | null;
   visualStateTrend: string;
+  convs24h: number;
+  prompts24h: number;
 }
 
 interface ForensicData {
@@ -398,14 +400,14 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Extraction PC', 'ChatGPT Account', 'Eligible', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State'].map(h => (
+                    {['Extraction PC', 'ChatGPT Account', 'Eligible', 'Proxy', 'Age (Days)', 'Status', 'Last Success', 'Visual State', 'Convs (24h)', 'Prompts (24h)'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {data.storageStateHealth.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
+                    <tr><td colSpan={10} className="text-center px-4 py-8 text-sm text-slate-400">No storage state data found</td></tr>
                   ) : data.storageStateHealth.map((s, i) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-3 font-semibold text-slate-700 text-xs">{s.extractionPc}</td>
@@ -432,6 +434,12 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         {s.lastSuccess ? fmt(s.lastSuccess) : <span className="text-slate-300">No success</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">{s.visualStateTrend}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${s.convs24h >= 8 ? 'bg-red-100 text-red-700' : s.convs24h >= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {s.convs24h}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-slate-600 font-mono">{s.prompts24h}</td>
                     </tr>
                   ))}
                 </tbody>
