@@ -40,13 +40,77 @@ export async function POST(request: NextRequest) {
     const brandIds = (brands || []).map(b => b.id)
 
     if (brandIds.length > 0) {
-      // 2. Delete prompt_results (via brand_prompts join)
+      // 2. Collect prompt IDs (needed for schedule cleanup before deletion)
       const { data: prompts } = await supabaseAdmin
         .from('brand_prompts')
         .select('id')
         .in('brand_id', brandIds)
 
       const promptIds = (prompts || []).map(p => p.id)
+      const deletedPromptSet = new Set(promptIds)
+      const today = new Date().toISOString().split('T')[0]
+
+      // 3. Surgical batch cleanup — must run BEFORE brand_prompts is deleted
+      //    (needs brand_prompts to look up the surviving brand for reassignment)
+      if (promptIds.length > 0) {
+        // Direction A: rows OWNED by deleted brand (brand_id IN brandIds) that also
+        // contain prompts from OTHER brands. Reassign those rows to the surviving brand
+        // so the other brands' prompts are not lost when we delete owned rows below.
+        const { data: ownedSchedules } = await supabaseAdmin
+          .from('daily_schedules')
+          .select('id, prompt_ids, brand_id')
+          .in('brand_id', brandIds)
+          .eq('status', 'pending')
+          .gte('schedule_date', today)
+
+        for (const schedule of (ownedSchedules || [])) {
+          const originalIds: string[] = schedule.prompt_ids || []
+          const survivingIds = originalIds.filter((pid: string) => !deletedPromptSet.has(pid))
+          if (survivingIds.length > 0) {
+            // Row has other brands' prompts — reassign brand_id to the surviving first prompt's brand
+            const { data: firstPromptRow } = await supabaseAdmin
+              .from('brand_prompts')
+              .select('brand_id')
+              .eq('id', survivingIds[0])
+              .single()
+            await supabaseAdmin
+              .from('daily_schedules')
+              .update({
+                prompt_ids: survivingIds,
+                batch_size: survivingIds.length,
+                brand_id: firstPromptRow?.brand_id ?? null,
+              })
+              .eq('id', schedule.id)
+          }
+          // survivingIds === 0: row is entirely this brand's prompts → step 5 will delete it
+        }
+
+        // Direction B: rows owned by OTHER brands (brand_id NOT IN brandIds) that
+        // contain some of the deleted brand's prompts mixed in. Remove those prompts.
+        const { data: crossBrandSchedules } = await supabaseAdmin
+          .from('daily_schedules')
+          .select('id, prompt_ids')
+          .not('brand_id', 'in', `(${brandIds.join(',')})`)
+          .eq('status', 'pending')
+          .gte('schedule_date', today)
+
+        for (const schedule of (crossBrandSchedules || [])) {
+          const originalIds: string[] = schedule.prompt_ids || []
+          const cleanedIds = originalIds.filter((pid: string) => !deletedPromptSet.has(pid))
+          if (cleanedIds.length === 0) {
+            // Batch became empty — delete it and its BME rows
+            await supabaseAdmin.from('batch_model_executions').delete().eq('schedule_id', schedule.id)
+            await supabaseAdmin.from('daily_schedules').delete().eq('id', schedule.id)
+          } else if (cleanedIds.length !== originalIds.length) {
+            await supabaseAdmin
+              .from('daily_schedules')
+              .update({ prompt_ids: cleanedIds, batch_size: cleanedIds.length })
+              .eq('id', schedule.id)
+          }
+        }
+      }
+
+      // 4. Delete prompt_results
       if (promptIds.length > 0) {
         await supabaseAdmin
           .from('prompt_results')
@@ -54,64 +118,38 @@ export async function POST(request: NextRequest) {
           .in('brand_prompt_id', promptIds)
       }
 
-      // 3. Delete brand_prompts
+      // 5. Delete brand_prompts
       await supabaseAdmin
         .from('brand_prompts')
         .delete()
         .in('brand_id', brandIds)
 
-      // 4. Delete daily_reports
+      // 6. Delete daily_reports
       await supabaseAdmin
         .from('daily_reports')
         .delete()
         .in('brand_id', brandIds)
 
-      // 5. Delete daily_schedules owned by this user's brands
+      // 7. Delete remaining daily_schedules owned by this brand
+      //    (safe now — Direction A above already reassigned cross-brand rows)
       await supabaseAdmin
         .from('daily_schedules')
         .delete()
         .in('brand_id', brandIds)
 
-      // 5b. Clean orphaned prompt IDs from other brands' pending schedule rows
-      if (promptIds.length > 0) {
-        const { data: survivingSchedules } = await supabaseAdmin
-          .from('daily_schedules')
-          .select('id, prompt_ids')
-          .eq('status', 'pending')
-          .not('brand_id', 'in', `(${brandIds.join(',')})`)
-
-        if (survivingSchedules && survivingSchedules.length > 0) {
-          const deletedPromptSet = new Set(promptIds)
-          for (const schedule of survivingSchedules) {
-            const originalIds: string[] = schedule.prompt_ids || []
-            const cleanedIds = originalIds.filter((pid: string) => !deletedPromptSet.has(pid))
-            if (cleanedIds.length === 0) {
-              // Entire batch was for this brand's prompts — delete the row
-              await supabaseAdmin.from('daily_schedules').delete().eq('id', schedule.id)
-            } else if (cleanedIds.length !== originalIds.length) {
-              // Some prompts were removed — update the row
-              await supabaseAdmin
-                .from('daily_schedules')
-                .update({ prompt_ids: cleanedIds, batch_size: cleanedIds.length })
-                .eq('id', schedule.id)
-            }
-          }
-        }
-      }
-
-      // 6. Delete brand_competitors
+      // 8. Delete brand_competitors
       await supabaseAdmin
         .from('brand_competitors')
         .delete()
         .in('brand_id', brandIds)
 
-      // 6.5. Delete prompt_execution_log
+      // 9. Delete prompt_execution_log
       await supabaseAdmin
         .from('prompt_execution_log')
         .delete()
         .in('brand_id', brandIds)
 
-      // 7. Delete brands
+      // 10. Delete brands
       await supabaseAdmin
         .from('brands')
         .delete()
