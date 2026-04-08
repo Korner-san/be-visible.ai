@@ -31,7 +31,8 @@ The only exception: `app/api/` routes are still the active backend — edit thos
 
 ### Supabase
 - **Project ID**: tzfvtofjcvpddqfgxdtn
-- Do NOT use Supabase MCP. When a DB change is needed, give the user exact SQL to run at:
+- **MCP**: Supabase MCP is configured globally (`~/.claude.json`) — use it for DB reads/queries.
+- For DB **writes** (INSERT/UPDATE/DELETE/DDL), run SQL at:
   https://supabase.com/dashboard/project/tzfvtofjcvpddqfgxdtn/sql/new
 
 ### GitHub
