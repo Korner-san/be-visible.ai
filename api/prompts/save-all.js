@@ -72,9 +72,45 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // ── 2. Insert new prompts ─────────────────────────────────────────────────
+  // ── 2. Insert new prompts (respecting active limit) ──────────────────────
+  const insertedAsInactive = []; // tempIds that were auto-downgraded due to limit
+
   if (toAdd.length > 0) {
+    // Determine how many active slots remain after deletes
+    const { data: brandData } = await supabase
+      .from('brands')
+      .select('owner_user_id')
+      .eq('id', brandId)
+      .single();
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('subscription_plan')
+      .eq('id', brandData?.owner_user_id)
+      .single();
+
+    const planLimits = { free_trial: 5, basic: 10, advanced: 15, business: 20, corporate: 30 };
+    const maxActive = planLimits[userData?.subscription_plan] ?? 30;
+
+    const { count: currentActive } = await supabase
+      .from('brand_prompts')
+      .select('id', { count: 'exact', head: true })
+      .eq('brand_id', brandId)
+      .eq('is_active', true);
+
+    let activeSlots = maxActive - (currentActive || 0);
+
     for (const p of toAdd) {
+      const wantsActive = p.isActive !== false;
+      let insertActive = false;
+      if (wantsActive && activeSlots > 0) {
+        insertActive = true;
+        activeSlots--;
+      } else if (wantsActive) {
+        // Would exceed limit — insert as inactive
+        insertedAsInactive.push(p.tempId);
+      }
+
       const { data, error } = await supabase
         .from('brand_prompts')
         .insert({
@@ -82,8 +118,8 @@ module.exports = async function handler(req, res) {
           raw_prompt: p.text.trim(),
           improved_prompt: p.text.trim(),
           category: p.category || 'General',
-          status: p.isActive ? 'active' : 'inactive',
-          is_active: p.isActive !== false,
+          status: insertActive ? 'active' : 'inactive',
+          is_active: insertActive,
         })
         .select('id')
         .single();
@@ -93,7 +129,7 @@ module.exports = async function handler(req, res) {
         return res.status(500).json({ success: false, error: 'Insert failed: ' + error.message });
       }
 
-      added.push({ tempId: p.tempId, id: data.id });
+      added.push({ tempId: p.tempId, id: data.id, isActive: insertActive });
     }
   }
 
@@ -130,6 +166,6 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  console.log(`[save-all] brand=${brandId} deleted=${deleted} added=${added.length} updated=${updated}`);
-  return res.status(200).json({ success: true, deleted, added, updated });
+  console.log(`[save-all] brand=${brandId} deleted=${deleted} added=${added.length} updated=${updated} insertedAsInactive=${insertedAsInactive.length}`);
+  return res.status(200).json({ success: true, deleted, added, updated, insertedAsInactive });
 };

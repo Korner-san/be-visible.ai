@@ -60,6 +60,8 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [inactiveNotice, setInactiveNotice] = useState<number>(0);
 
   // ── Diff computation ──────────────────────────────────────────────────────
   const diff = useMemo(() => {
@@ -92,6 +94,8 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
   const handleSave = async () => {
     if (!brandId || !hasUnsavedChanges) return;
     setIsSaving(true);
+    setSaveError(null);
+    setInactiveNotice(0);
     try {
       const res = await fetch('/api/prompts/save-all', {
         method: 'POST',
@@ -100,15 +104,20 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        console.error('[ManagePrompts] Save failed:', data.error);
+        setSaveError(data.error || 'Save failed. Please try again.');
         return;
       }
 
-      // Remap temp IDs to real DB IDs
+      // Remap temp IDs to real DB IDs, and apply any auto-inactive downgrades
+      const inactiveSet = new Set(data.insertedAsInactive || []);
       let finalPrompts = [...localPrompts];
-      for (const { tempId, id } of (data.added || [])) {
-        finalPrompts = finalPrompts.map(p => p.id === tempId ? { ...p, id } : p);
+      for (const { tempId, id, isActive } of (data.added || [])) {
+        finalPrompts = finalPrompts.map(p =>
+          p.id === tempId ? { ...p, id, isActive: isActive ?? p.isActive } : p
+        );
       }
+
+      if (inactiveSet.size > 0) setInactiveNotice(inactiveSet.size);
 
       // Sync snapshot + parent state
       snapshotRef.current = finalPrompts;
@@ -116,6 +125,7 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
       setPrompts(finalPrompts);
     } catch (err) {
       console.error('[ManagePrompts] Save error:', err);
+      setSaveError('Network error. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -382,6 +392,24 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
         </div>
       )}
 
+      {/* ── Save Error Banner ──────────────────────────────────────────────── */}
+      {saveError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-rose-600 text-white rounded-xl shadow-xl text-xs font-black max-w-lg">
+          <AlertTriangle size={15} className="shrink-0" />
+          <span>{saveError}</span>
+          <button onClick={() => setSaveError(null)} className="ml-2 p-0.5 hover:opacity-70"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* ── Inactive Auto-Downgrade Notice ─────────────────────────────────── */}
+      {inactiveNotice > 0 && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-amber-500 text-white rounded-xl shadow-xl text-xs font-black max-w-lg">
+          <AlertTriangle size={15} className="shrink-0" />
+          <span>{inactiveNotice} prompt{inactiveNotice !== 1 ? 's were' : ' was'} saved as Inactive — active prompt limit reached.</span>
+          <button onClick={() => setInactiveNotice(0)} className="ml-2 p-0.5 hover:opacity-70"><X size={14} /></button>
+        </div>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="h-14 bg-white border-b border-gray-200 px-6 flex items-center justify-between shrink-0 z-30">
         <div className="flex items-center gap-4">
@@ -397,7 +425,9 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-gray-200">
             <Layers size={12} className="text-slate-400" />
-            <span className="text-[10px] font-black text-slate-600">{localPrompts.length} / 500 Queries active</span>
+            <span className="text-[10px] font-black text-slate-600">
+              {localPrompts.filter(p => p.isActive).length} active · {localPrompts.length} total
+            </span>
           </div>
 
           {/* Save button — only visible when there are unsaved changes */}

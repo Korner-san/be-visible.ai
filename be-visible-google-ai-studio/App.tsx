@@ -210,9 +210,8 @@ function AppContent() {
     const fetchPrompts = async () => {
       const { data, error } = await supabase
         .from('brand_prompts')
-        .select('id, raw_prompt, improved_prompt, category, status, created_at')
+        .select('id, raw_prompt, improved_prompt, category, status, is_active, created_at')
         .eq('brand_id', activeBrandId)
-        .neq('status', 'inactive')
         .order('category')
         .order('created_at');
 
