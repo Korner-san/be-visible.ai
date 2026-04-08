@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Check,
   AlertTriangle,
+  ClipboardList,
 } from 'lucide-react';
 import { PromptStats } from '../types';
 
@@ -50,6 +51,9 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
   const [isAddingPrompt, setIsAddingPrompt] = useState(false);
   const [newPromptText, setNewPromptText] = useState('');
   const [newPromptCategory, setNewPromptCategory] = useState('');
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [bulkCategory, setBulkCategory] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // ── Modal state ───────────────────────────────────────────────────────────
@@ -241,6 +245,41 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
     setIsAddingPrompt(false);
   };
 
+  // Parse bulk paste: split on blank lines, trim each block
+  const parsedBulkPrompts = bulkPasteText
+    .split(/\n\s*\n/)
+    .map(block => block.trim())
+    .filter(Boolean);
+
+  const handleBulkAdd = () => {
+    if (parsedBulkPrompts.length === 0) return;
+    const category = bulkCategory || (selectedCategory !== 'ALL' ? selectedCategory : 'General');
+    const newPrompts: PromptStats[] = parsedBulkPrompts.map((text, i) => ({
+      id: `p-bulk-${Date.now()}-${i}`,
+      text,
+      category,
+      isActive: true,
+      visibilityScore: 0,
+      visibilityTrend: 0,
+      avgPosition: 0,
+      citationShare: 0,
+      citations: 0,
+      citationTrend: 0,
+      lastRun: 'Never',
+      history: [],
+      language: 'EN',
+      regions: [],
+      tags: [],
+      platforms: [],
+      lastUpdated: 'Just now',
+    }));
+    setLocalPrompts(prev => [...prev, ...newPrompts]);
+    setBulkPasteText('');
+    setBulkCategory('');
+    setIsAddingPrompt(false);
+    setIsBulkMode(false);
+  };
+
   useEffect(() => {
     if (isAddingCategory && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
@@ -377,7 +416,16 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
           )}
 
           <button
-            onClick={() => setIsAddingPrompt(!isAddingPrompt)}
+            onClick={() => {
+              if (isAddingPrompt) {
+                setIsAddingPrompt(false);
+                setIsBulkMode(false);
+                setBulkPasteText('');
+                setBulkCategory('');
+              } else {
+                setIsAddingPrompt(true);
+              }
+            }}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-black transition-all shadow-lg ${isAddingPrompt ? 'bg-slate-100 text-slate-500 shadow-none' : 'bg-brand-brown text-white hover:brightness-110 shadow-brand-brown/10'}`}
           >
             {isAddingPrompt ? <X size={14} /> : <Plus size={14} />}
@@ -479,48 +527,133 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
           {/* Add Prompt Form */}
           {isAddingPrompt && (
             <div className="px-6 py-4 border-b border-brand-brown/10 bg-white animate-slideDown shadow-lg z-20">
-              <form onSubmit={handleCreatePrompt} className="max-w-4xl space-y-4">
-                <h3 className="text-sm font-black text-slate-900 tracking-tight">Create new prompt</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="md:col-span-3 space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 ml-0.5">Prompt text</label>
-                    <textarea
-                      autoFocus
-                      required
-                      placeholder="e.g. What are the best plastic building solutions for residential projects?"
-                      className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all min-h-[60px] resize-none text-sm"
-                      value={newPromptText}
-                      onChange={(e) => setNewPromptText(e.target.value)}
-                    />
+              <div className="max-w-4xl space-y-4">
+                {/* Mode toggle */}
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                    {isBulkMode ? 'Paste multiple prompts' : 'Create new prompt'}
+                  </h3>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkMode(false)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black transition-all ${!isBulkMode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      <Plus size={11} /> Single
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkMode(true)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black transition-all ${isBulkMode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      <ClipboardList size={11} /> Bulk paste
+                    </button>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 ml-0.5">Category</label>
-                    <div className="relative">
-                      <select
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all appearance-none text-xs"
-                        value={newPromptCategory}
-                        onChange={(e) => setNewPromptCategory(e.target.value)}
-                      >
-                        <option value="">Select or type new...</option>
-                        {categories.map(c => <option key={c} value={c}>{formatCategory(c)}</option>)}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+
+                {/* Single mode */}
+                {!isBulkMode && (
+                  <form onSubmit={handleCreatePrompt} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="md:col-span-3 space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 ml-0.5">Prompt text</label>
+                        <textarea
+                          autoFocus
+                          required
+                          placeholder="e.g. What are the best plastic building solutions for residential projects?"
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all min-h-[60px] resize-none text-sm"
+                          value={newPromptText}
+                          onChange={(e) => setNewPromptText(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 ml-0.5">Category</label>
+                        <div className="relative">
+                          <select
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all appearance-none text-xs"
+                            value={newPromptCategory}
+                            onChange={(e) => setNewPromptCategory(e.target.value)}
+                          >
+                            <option value="">Select or type new...</option>
+                            {categories.map(c => <option key={c} value={c}>{formatCategory(c)}</option>)}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Or enter new..."
+                          className="w-full px-3 py-2 mt-1 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all text-[11px]"
+                          value={newPromptCategory}
+                          onChange={(e) => setNewPromptCategory(e.target.value)}
+                        />
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      placeholder="Or enter new..."
-                      className="w-full px-3 py-2 mt-1 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all text-[11px]"
-                      value={newPromptCategory}
-                      onChange={(e) => setNewPromptCategory(e.target.value)}
-                    />
+                    <div className="flex justify-end pt-1">
+                      <button type="submit" className="px-6 py-2 bg-brand-brown text-white rounded-lg text-[10px] font-black shadow-md shadow-brand-brown/10 hover:scale-[1.02] transition-all flex items-center gap-1.5">
+                        <Plus size={12} /> Add to list
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Bulk paste mode */}
+                {isBulkMode && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="md:col-span-3 space-y-1.5">
+                        <div className="flex items-center justify-between ml-0.5">
+                          <label className="text-[9px] font-black text-slate-400">Prompts</label>
+                          <span className="text-[9px] text-slate-400 font-medium">Separate prompts with a blank line</span>
+                        </div>
+                        <textarea
+                          autoFocus
+                          placeholder={`What are the best solutions for residential projects?\n\nWhich company leads in sustainable construction\nmaterials for commercial buildings?\n\nHow do contractors choose building suppliers?`}
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-medium text-slate-700 transition-all min-h-[140px] resize-y text-sm leading-relaxed"
+                          value={bulkPasteText}
+                          onChange={(e) => setBulkPasteText(e.target.value)}
+                        />
+                        {parsedBulkPrompts.length > 0 && (
+                          <p className="text-[10px] font-black text-brand-brown ml-0.5">
+                            {parsedBulkPrompts.length} prompt{parsedBulkPrompts.length !== 1 ? 's' : ''} detected
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black text-slate-400 ml-0.5">Category for all</label>
+                        <div className="relative">
+                          <select
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all appearance-none text-xs"
+                            value={bulkCategory}
+                            onChange={(e) => setBulkCategory(e.target.value)}
+                          >
+                            <option value="">Select or type new...</option>
+                            {categories.map(c => <option key={c} value={c}>{formatCategory(c)}</option>)}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Or enter new..."
+                          className="w-full px-3 py-2 mt-1 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-brown/10 focus:border-brand-brown outline-none font-bold text-slate-700 transition-all text-[11px]"
+                          value={bulkCategory}
+                          onChange={(e) => setBulkCategory(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        disabled={parsedBulkPrompts.length === 0}
+                        onClick={handleBulkAdd}
+                        className="px-6 py-2 bg-brand-brown text-white rounded-lg text-[10px] font-black shadow-md shadow-brand-brown/10 hover:scale-[1.02] transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      >
+                        <ClipboardList size={12} />
+                        Add {parsedBulkPrompts.length > 0 ? parsedBulkPrompts.length : ''} prompt{parsedBulkPrompts.length !== 1 ? 's' : ''} to list
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex justify-end pt-1">
-                  <button type="submit" className="px-6 py-2 bg-brand-brown text-white rounded-lg text-[10px] font-black shadow-md shadow-brand-brown/10 hover:scale-[1.02] transition-all flex items-center gap-1.5">
-                    <Plus size={12} /> Add to list
-                  </button>
-                </div>
-              </form>
+                )}
+              </div>
             </div>
           )}
 
