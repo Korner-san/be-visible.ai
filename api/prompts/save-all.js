@@ -73,7 +73,8 @@ module.exports = async function handler(req, res) {
   }
 
   // ── 2. Insert new prompts (respecting active limit) ──────────────────────
-  const insertedAsInactive = []; // tempIds that were auto-downgraded due to limit
+  const insertedAsInactive = []; // tempIds auto-downgraded due to active limit
+  const skippedDuplicates = [];  // tempIds skipped due to unique constraint
 
   if (toAdd.length > 0) {
     // Determine how many active slots remain after deletes
@@ -125,6 +126,14 @@ module.exports = async function handler(req, res) {
         .single();
 
       if (error) {
+        // Unique constraint violation — prompt already exists, skip silently
+        if (error.code === '23505') {
+          console.log('[save-all] Skipping duplicate prompt:', p.text.trim().slice(0, 60));
+          skippedDuplicates.push(p.tempId);
+          // Undo the active slot we reserved for this one
+          if (insertActive) activeSlots++;
+          continue;
+        }
         console.error('[save-all] Insert error:', error.message);
         return res.status(500).json({ success: false, error: 'Insert failed: ' + error.message });
       }
@@ -166,6 +175,6 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  console.log(`[save-all] brand=${brandId} deleted=${deleted} added=${added.length} updated=${updated} insertedAsInactive=${insertedAsInactive.length}`);
-  return res.status(200).json({ success: true, deleted, added, updated, insertedAsInactive });
+  console.log(`[save-all] brand=${brandId} deleted=${deleted} added=${added.length} updated=${updated} insertedAsInactive=${insertedAsInactive.length} skippedDuplicates=${skippedDuplicates.length}`);
+  return res.status(200).json({ success: true, deleted, added, updated, insertedAsInactive, skippedDuplicates });
 };

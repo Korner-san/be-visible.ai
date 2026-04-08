@@ -62,6 +62,7 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [inactiveNotice, setInactiveNotice] = useState<number>(0);
+  const [duplicateNotice, setDuplicateNotice] = useState<number>(0);
 
   // ── Diff computation ──────────────────────────────────────────────────────
   const diff = useMemo(() => {
@@ -108,16 +109,17 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
         return;
       }
 
-      // Remap temp IDs to real DB IDs, and apply any auto-inactive downgrades
-      const inactiveSet = new Set(data.insertedAsInactive || []);
-      let finalPrompts = [...localPrompts];
+      // Remap temp IDs to real DB IDs, apply auto-inactive downgrades, remove duplicates
+      const duplicateSet = new Set(data.skippedDuplicates || []);
+      let finalPrompts = localPrompts.filter(p => !duplicateSet.has(p.id));
       for (const { tempId, id, isActive } of (data.added || [])) {
         finalPrompts = finalPrompts.map(p =>
           p.id === tempId ? { ...p, id, isActive: isActive ?? p.isActive } : p
         );
       }
 
-      if (inactiveSet.size > 0) setInactiveNotice(inactiveSet.size);
+      if ((data.insertedAsInactive || []).length > 0) setInactiveNotice(data.insertedAsInactive.length);
+      if (duplicateSet.size > 0) setDuplicateNotice(duplicateSet.size);
 
       // Sync snapshot + parent state
       snapshotRef.current = finalPrompts;
@@ -398,6 +400,15 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
           <AlertTriangle size={15} className="shrink-0" />
           <span>{saveError}</span>
           <button onClick={() => setSaveError(null)} className="ml-2 p-0.5 hover:opacity-70"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* ── Duplicate Skipped Notice ───────────────────────────────────────── */}
+      {duplicateNotice > 0 && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-slate-700 text-white rounded-xl shadow-xl text-xs font-black max-w-lg">
+          <AlertTriangle size={15} className="shrink-0" />
+          <span>{duplicateNotice} prompt{duplicateNotice !== 1 ? 's were' : ' was'} skipped — already exist in your library.</span>
+          <button onClick={() => setDuplicateNotice(0)} className="ml-2 p-0.5 hover:opacity-70"><X size={14} /></button>
         </div>
       )}
 
