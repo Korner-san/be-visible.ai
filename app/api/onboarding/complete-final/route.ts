@@ -166,14 +166,40 @@ export async function POST(request: NextRequest) {
     console.log('🌊 [COMPLETE-FINAL API] Assigning onboarding waves to brand_prompts...')
     const { data: allPrompts } = await adminSupabaseForCapacity
       .from('brand_prompts')
-      .select('id')
+      .select('id, generation_metadata')
       .eq('brand_id', updatedBrand.id)
       .in('status', ['active', 'inactive', 'improved'])
       .order('created_at', { ascending: true })
 
     if (allPrompts && allPrompts.length > 0) {
-      const wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
-      const wave2Ids = allPrompts.slice(6).map((p: any) => p.id)
+      // Pick 1 prompt per intent_type family for wave 1 — ensures diverse first-look coverage
+      const intentGroups: Record<string, any[]> = {}
+      for (const p of allPrompts) {
+        const intent = (p.generation_metadata as any)?.intent_type || 'other'
+        if (!intentGroups[intent]) intentGroups[intent] = []
+        intentGroups[intent].push(p)
+      }
+
+      const wave1Ids: string[] = []
+      const wave1Set = new Set<string>()
+
+      // One from each intent group
+      for (const group of Object.values(intentGroups)) {
+        if (wave1Ids.length >= 6) break
+        wave1Ids.push(group[0].id)
+        wave1Set.add(group[0].id)
+      }
+
+      // Fill remaining slots (if fewer than 6 intent types exist)
+      for (const p of allPrompts) {
+        if (wave1Ids.length >= 6) break
+        if (!wave1Set.has(p.id)) {
+          wave1Ids.push(p.id)
+          wave1Set.add(p.id)
+        }
+      }
+
+      const wave2Ids = allPrompts.filter((p: any) => !wave1Set.has(p.id)).map((p: any) => p.id)
 
       await Promise.all([
         // Wave 1 (first 6): active — these run immediately in Phase 1

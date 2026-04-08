@@ -11,169 +11,193 @@ interface OnboardingFormData {
   goalFacilitated: string
   keyFeatures: string[]
   useCases: string[]
-  competitors: string[]
+  competitors: Array<string | { name: string; domain?: string }>
   uniqueSellingProps: string[]
+  // Rich fields from website scan
+  businessSummary?: string
+  coreFunction?: string
+  industryKeywords?: string[]
+  businessLabel?: string
+  businessType?: string   // 'saas_platform' | 'agency_service' | 'local_service' | 'ecommerce' | 'other'
+  marketScope?: string    // 'local' | 'global'
+  marketCountry?: string | null
 }
-
 
 interface GeneratedPrompt {
   rawPrompt: string
   category: string
+  intentType: string
   source: 'ai_generated'
 }
 
-// Generate discovery-focused prompts using GPT-4o
+// Prompt families adapt to business type
+const getPromptFamilies = (businessType: string, marketScope: string, country: string | null): string => {
+  const geo = country ? ` in ${country}` : ''
+
+  if (businessType === 'saas_platform') {
+    return `Family 1 — Problem/Discovery (6 prompts): Users trying to find a tool or solution category for a specific problem
+Family 2 — Comparison/Evaluation (6 prompts): Users comparing tools, platforms, or approaches in this category
+Family 3 — Implementation/Integration (6 prompts): Users trying to get a tool to work with their stack, workflow, or team
+Family 4 — Constraint-based (6 prompts): Users with real practical constraints — budget, team size, scale, reliability, compliance
+Family 5 — Expert/Advanced (6 prompts): Experienced users seeking best practices, deeper solutions, or advanced use cases`
+  }
+
+  if (businessType === 'agency_service') {
+    return `Family 1 — Service Discovery (6 prompts): Who provides this type of service? What type of service exists for this need?
+Family 2 — Provider Comparison (6 prompts): Agency vs freelancer, in-house vs outsourced, comparing provider types
+Family 3 — Budget/Scope (6 prompts): Cost, timeline, and scope questions for this type of service
+Family 4 — Industry-specific (6 prompts): This service applied to a specific industry, audience, or business context
+Family 5 — Outcome/Trust (6 prompts): How to evaluate, vet, or choose a provider — quality signals, reviews, credentials`
+  }
+
+  if (businessType === 'local_service') {
+    return `Family 1 — Location-based Discovery (6 prompts): Finding this service${geo} — "best X near me" or "X in [city]" style
+Family 2 — Provider Comparison (6 prompts): Comparing local options, chains vs independent, quality vs price tradeoffs
+Family 3 — Urgency/Price (6 prompts): Affordable, fast, or emergency versions of this service${geo}
+Family 4 — Trust/Quality (6 prompts): Reviews, reliability, certifications, or safety signals for this service type
+Family 5 — Situation-specific (6 prompts): This service for a specific personal situation, life stage, condition, or need`
+  }
+
+  if (businessType === 'ecommerce') {
+    return `Family 1 — Product Discovery (6 prompts): Finding the right product type for a specific need or use
+Family 2 — Comparison (6 prompts): Product vs product, brand comparisons, material or spec tradeoffs
+Family 3 — Budget/Value (6 prompts): Best product under a price point, budget picks, value recommendations
+Family 4 — Use-case suitability (6 prompts): Best product for a specific activity, person type, or situation
+Family 5 — Alternatives/Recommendations (6 prompts): What to buy recommendations, alternatives to known products`
+  }
+
+  // default / other
+  return `Family 1 — Discovery (6 prompts): Users discovering this category of solution for the first time
+Family 2 — Comparison (6 prompts): Users evaluating options within this category
+Family 3 — Problem-solving (6 prompts): Users with a specific problem looking for how to solve it
+Family 4 — Constraint-based (6 prompts): Users with budget, time, geography, or scale constraints
+Family 5 — Expert guidance (6 prompts): Users looking for best practices, recommendations, or advanced approaches`
+}
+
 const generatePromptsWithGPT = async (formData: OnboardingFormData): Promise<GeneratedPrompt[]> => {
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  })
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-  // Create structured input exactly as you specified
-  const structuredInput = `
+  // Normalize competitors to name strings (may come in as objects or strings)
+  const competitorNames = (formData.competitors || [])
+    .map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
+    .filter(Boolean)
+
+  const businessType = formData.businessType || 'other'
+  const marketScope = formData.marketScope || 'global'
+  const marketCountry = formData.marketCountry || null
+
+  const structuredInput = `BUSINESS SUMMARY: ${formData.businessSummary || '(not provided)'}
+CORE FUNCTION: ${formData.coreFunction || '(not provided)'}
+BUSINESS TYPE: ${formData.businessLabel || businessType} (${businessType})
+MARKET: ${marketScope === 'local' ? `${marketCountry} (local)` : 'Global'}
+
 Industry: ${formData.industry}
-Product Category: ${formData.productCategory}
-Problem Solved: ${formData.problemSolved}
-Tasks Helped: ${formData.tasksHelped.join(', ')}
-Goal Facilitated: ${formData.goalFacilitated}
-Key Features: ${formData.keyFeatures.join(', ')}
-Use Cases: ${formData.useCases.join(', ')}
-Unique Selling Props: ${formData.uniqueSellingProps.join(', ')}
-`
+Product category: ${formData.productCategory}
+Industry keywords: ${(formData.industryKeywords || []).join(', ') || '(none)'}
 
-  // Use EXACT system prompt you provided
-  const systemPrompt = `You are a prompt generator helping a brand appear in AI search results (e.g. ChatGPT or Perplexity).
+Problem solved: ${formData.problemSolved}
+Tasks helped: ${(formData.tasksHelped || []).join(', ')}
+Goal facilitated: ${formData.goalFacilitated}
+Key features: ${(formData.keyFeatures || []).join(', ')}
+Use cases: ${(formData.useCases || []).join(', ')}
+Unique selling props: ${(formData.uniqueSellingProps || []).join(', ')}
 
-Your goal is to come up with natural-sounding, curiosity-driven search questions that users might type *without knowing about the brand* — but whose answers would logically include this brand.
+Competitors (internal reference only — do NOT mention in prompts): ${competitorNames.join(', ') || 'none'}
+Brand name (do NOT include in any prompt): ${formData.brandName || '(none)'}`
 
-Do NOT include brand names or specific competitors.
+  const promptFamilies = getPromptFamilies(businessType, marketScope, marketCountry)
 
-Use the following brand information to understand what problems the product solves, who it helps, what features it offers, and where it fits:
+  const systemPrompt = `You are generating search prompts for a brand AI visibility tracking platform.
+
+Mission: Generate EXACTLY 30 prompts that real users would type into ChatGPT when they have a need, problem, or question this business solves — WITHOUT knowing this brand exists. These prompts will be used to test whether this brand appears in AI answers.
 
 ${structuredInput}
 
-Output 15–30 unique, realistic search prompts.
+Generate EXACTLY 30 prompts split across these 5 families of 6 prompts each:
 
-They should simulate questions a user might ask if they were trying to solve these problems or find tools in this category.
+${promptFamilies}
 
-Return the response as a valid JSON object with a "prompts" field containing an array of objects with "prompt" and "category" fields. Do not wrap the JSON in markdown code blocks or any other formatting. Return only the raw JSON object.
+Realism rules:
+- Write as a real person speaking to ChatGPT — conversational and goal-focused, not formal or academic
+- Vary length: some short (5–8 words), some with context (up to 20 words)
+- Include practical constraints in constraint-based prompts (specific budgets, team sizes, timelines, geographies)
+- Use vocabulary from the industry keywords list — authentic domain language, not marketing copy
+- NEVER include "${formData.brandName || 'the brand name'}" or any of these names: ${competitorNames.join(', ') || 'none'}
+- Prefer user-goal phrasing over product-feature phrasing ("how do I track X" not "tool with X feature")
+- Prompts should feel like real buying moments, research moments, or problem-solving moments
 
-Example format:
+Return ONLY valid JSON, no markdown:
 {
   "prompts": [
-    {"prompt": "What are the best tools for...", "category": "Discovery"},
-    {"prompt": "How to solve...", "category": "Problem Solving"}
+    {
+      "prompt": "...",
+      "category": "Family Name",
+      "intent_type": "discovery|comparison|implementation|constraint|expert|local|transactional|troubleshooting"
+    }
   ]
 }`
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: "Generate discovery-focused prompts based on the brand information provided. Return only valid JSON, no markdown formatting."
-        }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: 'Generate the 30 prompts. Return only valid JSON.' },
       ],
       temperature: 0.7,
-      max_tokens: 3000,
-      response_format: { type: "json_object" }
+      max_tokens: 4500,
+      response_format: { type: 'json_object' },
     })
 
-    const response = completion.choices[0]?.message?.content?.trim()
-    
-    if (!response) {
-      throw new Error('No response from OpenAI')
+    const raw = completion.choices[0]?.message?.content?.trim()
+    if (!raw) throw new Error('No response from OpenAI')
+
+    let cleanRaw = raw
+    if (cleanRaw.startsWith('```json')) cleanRaw = cleanRaw.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+    else if (cleanRaw.startsWith('```')) cleanRaw = cleanRaw.replace(/^```\s*/, '').replace(/\s*```$/, '')
+
+    console.log('🔧 [GPT RESPONSE] Raw length:', raw.length, '| First 200:', raw.substring(0, 200))
+
+    let promptsData: any
+    try {
+      promptsData = JSON.parse(cleanRaw)
+    } catch (parseError) {
+      console.error('❌ [GPT RESPONSE] JSON parse failed:', parseError, '| Raw:', cleanRaw)
+      throw new Error(`Failed to parse GPT response as JSON: ${parseError instanceof Error ? parseError.message : 'Unknown'}`)
     }
 
-    // Clean and parse JSON response (handle markdown code blocks)
-    let cleanResponse = response.trim()
-    
-    // Remove markdown code blocks if present
-    if (cleanResponse.startsWith('```json')) {
-      cleanResponse = cleanResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '')
-    } else if (cleanResponse.startsWith('```')) {
-      cleanResponse = cleanResponse.replace(/^```\s*/, '').replace(/\s*```$/, '')
+    if (!promptsData?.prompts || !Array.isArray(promptsData.prompts)) {
+      throw new Error('GPT response missing prompts array')
     }
-    
-    console.log('🔧 [GPT RESPONSE] Raw response length:', response.length)
-    console.log('🔧 [GPT RESPONSE] Raw first 200 chars:', response.substring(0, 200))
-    console.log('🔧 [GPT RESPONSE] Cleaned response length:', cleanResponse.length)
-    console.log('🔧 [GPT RESPONSE] Cleaned first 200 chars:', cleanResponse.substring(0, 200))
-    
-    let promptsData
-    try {
-      promptsData = JSON.parse(cleanResponse)
-    } catch (parseError) {
-      console.error('❌ [GPT RESPONSE] JSON parse failed:', parseError)
-      console.error('❌ [GPT RESPONSE] Full cleaned response:', cleanResponse)
-      throw new Error(`Failed to parse GPT response as JSON: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
-    }
-    
-    // Validate the response structure
-    if (typeof promptsData !== 'object' || !promptsData.prompts) {
-      console.error('❌ [GPT RESPONSE] Response missing prompts field:', promptsData)
-      throw new Error('GPT response missing prompts field')
-    }
-    
-    if (!Array.isArray(promptsData.prompts)) {
-      console.error('❌ [GPT RESPONSE] Prompts field is not an array:', typeof promptsData.prompts)
-      throw new Error('GPT response prompts field is not an array')
-    }
-    
-    // Convert to our format
-    const generatedPrompts: GeneratedPrompt[] = promptsData.prompts.map((item: any, index: number) => {
+
+    return promptsData.prompts.map((item: any, index: number) => {
       if (!item.prompt || typeof item.prompt !== 'string') {
-        throw new Error(`Invalid prompt at index ${index}: missing or invalid prompt field`)
+        throw new Error(`Invalid prompt at index ${index}`)
       }
-      
       return {
         rawPrompt: item.prompt,
         category: item.category || 'Discovery',
-        source: 'ai_generated' as const
+        intentType: item.intent_type || 'discovery',
+        source: 'ai_generated' as const,
       }
     })
-
-    return generatedPrompts
   } catch (error) {
     console.error('Error generating prompts with GPT:', error)
     throw error
   }
 }
 
-
 export async function POST(request: NextRequest) {
-  console.log('🔄 [GENERATE PROMPTS API] Starting prompt generation request')
-  console.log('🔄 [GENERATE PROMPTS API] Timestamp:', new Date().toISOString())
-  
+  console.log('🔄 [GENERATE PROMPTS API] Starting — timestamp:', new Date().toISOString())
+
   try {
-    // Get user from server-side auth
     const supabase = await createClient()
-    console.log('🔍 [GENERATE PROMPTS API] Getting user from server auth...')
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    console.log('📊 [GENERATE PROMPTS API] Auth result:', {
-      hasUser: !!user,
-      userId: user?.id,
-      userEmail: user?.email,
-      authError: authError?.message
-    })
-    
+
     if (authError || !user) {
-      console.error('❌ [GENERATE PROMPTS API] Auth failed:', authError)
-      return NextResponse.json({
-        success: false,
-        error: 'Unauthorized'
-      }, { status: 401 })
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('🔄 [GENERATE PROMPTS] Starting generation for user:', user.id)
-
-    // Get the user's pending brand and onboarding answers
-    console.log('🔍 [GENERATE PROMPTS API] Looking for pending brand for user:', user.id)
     const { data: pendingBrands, error: brandError } = await supabase
       .from('brands')
       .select('id, onboarding_answers, name, onboarding_completed, owner_user_id')
@@ -183,156 +207,67 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
 
-    console.log('📊 [GENERATE PROMPTS API] Brand query result:', {
-      pendingBrandsCount: pendingBrands?.length || 0,
-      brandError: brandError?.message,
-      brands: pendingBrands?.map(b => ({
-        id: b.id,
-        name: b.name,
-        onboarding_completed: b.onboarding_completed,
-        owner_user_id: b.owner_user_id,
-        hasOnboardingAnswers: !!b.onboarding_answers
-      }))
-    })
-
-    if (brandError) {
-      console.error('❌ [GENERATE PROMPTS API] Error finding pending brand:', brandError)
-      return NextResponse.json({
-        success: false,
-        error: 'Database error while finding brand'
-      }, { status: 500 })
-    }
-
-    if (!pendingBrands || pendingBrands.length === 0) {
-      console.error('❌ [GENERATE PROMPTS API] No pending brand found for user:', user.id)
-      return NextResponse.json({
-        success: false,
-        error: 'No pending brand found. Please complete the onboarding form first.'
-      }, { status: 404 })
+    if (brandError || !pendingBrands || pendingBrands.length === 0) {
+      return NextResponse.json({ success: false, error: 'No pending brand found' }, { status: 404 })
     }
 
     const brand = pendingBrands[0]
-    console.log('✅ [GENERATE PROMPTS API] Found pending brand:', brand.id)
-    
     const onboardingAnswers = brand.onboarding_answers as OnboardingFormData
-    console.log('📝 [GENERATE PROMPTS API] Onboarding answers check:', {
-      hasOnboardingAnswers: !!onboardingAnswers,
-      brandName: onboardingAnswers?.brandName,
-      answersKeys: onboardingAnswers ? Object.keys(onboardingAnswers) : []
-    })
 
-    if (!onboardingAnswers || !onboardingAnswers.brandName) {
-      console.error('❌ [GENERATE PROMPTS API] Missing onboarding answers for brand:', brand.id)
-      return NextResponse.json({
-        success: false,
-        error: 'Onboarding answers not found. Please complete the form first.'
-      }, { status: 400 })
+    if (!onboardingAnswers?.brandName) {
+      return NextResponse.json({ success: false, error: 'Onboarding answers not found. Please complete the form first.' }, { status: 400 })
     }
 
-    // Generate discovery-focused prompts using GPT-4o
-    console.log('🤖 [GENERATE PROMPTS API] Generating prompts with GPT-4o...')
-    console.log('🎯 [GENERATE PROMPTS] Brand data:', {
-      brandName: onboardingAnswers.brandName,
-      tasksCount: onboardingAnswers.tasksHelped?.length || 0,
-      featuresCount: onboardingAnswers.keyFeatures?.length || 0,
-      useCasesCount: onboardingAnswers.useCases?.length || 0,
-      competitorsCount: onboardingAnswers.competitors?.length || 0,
-      uspsCount: onboardingAnswers.uniqueSellingProps?.length || 0
-    })
+    console.log('🎯 [GENERATE PROMPTS] Brand:', brand.id, '| Type:', onboardingAnswers.businessType, '| Market:', onboardingAnswers.marketScope)
 
     let generatedPrompts: GeneratedPrompt[]
     try {
       generatedPrompts = await generatePromptsWithGPT(onboardingAnswers)
     } catch (error) {
-      console.error('❌ [GENERATE PROMPTS API] Error generating prompts with GPT:', error)
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to generate prompts with AI. Please try again.'
-      }, { status: 500 })
+      console.error('❌ [GENERATE PROMPTS] GPT error:', error)
+      return NextResponse.json({ success: false, error: 'Failed to generate prompts. Please try again.' }, { status: 500 })
     }
 
-    console.log(`🎯 [GENERATE PROMPTS] Generated ${generatedPrompts.length} raw prompts`)
+    console.log(`🎯 [GENERATE PROMPTS] Generated ${generatedPrompts.length} prompts`)
 
-    // Upsert prompts into brand_prompts table (avoid duplicates)
-    console.log('💾 [GENERATE PROMPTS API] Preparing to save prompts to database...')
     const promptsToInsert = generatedPrompts.map((prompt, index) => ({
       brand_id: brand.id,
-      source_template_code: `gpt_${index + 1}`, // Use GPT-based template codes
+      source_template_code: `gpt_${index + 1}`,
       raw_prompt: prompt.rawPrompt,
       status: 'inactive' as const,
-      category: prompt.category
+      category: prompt.category,
+      generation_metadata: { intent_type: prompt.intentType, source: 'ai_generated' },
     }))
 
-    console.log('📊 [GENERATE PROMPTS API] Prompts to insert:', {
-      count: promptsToInsert.length,
-      brandId: brand.id,
-      samplePrompts: promptsToInsert.slice(0, 3).map(p => ({
-        templateCode: p.source_template_code,
-        promptPreview: p.raw_prompt.substring(0, 50) + '...'
-      }))
-    })
-
-    // Use upsert to handle duplicates (based on unique constraint on brand_id + raw_prompt)
-    console.log('💾 [GENERATE PROMPTS API] Executing upsert to brand_prompts table...')
     const { data: insertedPrompts, error: insertError } = await supabase
       .from('brand_prompts')
-      .upsert(promptsToInsert, {
-        onConflict: 'brand_id,raw_prompt',
-        ignoreDuplicates: false
-      })
-      .select('id, source_template_code, raw_prompt, status')
-
-    console.log('📊 [GENERATE PROMPTS API] Upsert result:', {
-      insertedCount: insertedPrompts?.length || 0,
-      insertError: insertError?.message,
-      sampleInserted: insertedPrompts?.slice(0, 3).map(p => ({
-        id: p.id,
-        templateCode: p.source_template_code,
-        status: p.status
-      }))
-    })
+      .upsert(promptsToInsert, { onConflict: 'brand_id,raw_prompt', ignoreDuplicates: false })
+      .select('id, source_template_code, raw_prompt, status, category, generation_metadata')
 
     if (insertError) {
-      console.error('❌ [GENERATE PROMPTS API] Error inserting prompts:', insertError)
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to save generated prompts'
-      }, { status: 500 })
+      console.error('❌ [GENERATE PROMPTS] Insert error:', insertError)
+      return NextResponse.json({ success: false, error: 'Failed to save generated prompts' }, { status: 500 })
     }
 
-    // Get final count of prompts for this brand
-    console.log('🔍 [GENERATE PROMPTS API] Getting final prompt count for brand:', brand.id)
     const { count: totalPrompts } = await supabase
       .from('brand_prompts')
       .select('*', { count: 'exact', head: true })
       .eq('brand_id', brand.id)
 
-    console.log(`✅ [GENERATE PROMPTS API] Generation complete:`, {
-      brandId: brand.id,
-      brandName: brand.name,
-      upsertedPrompts: insertedPrompts?.length || 0,
-      totalPromptsInDB: totalPrompts || 0
-    })
+    console.log(`✅ [GENERATE PROMPTS] Done — ${insertedPrompts?.length || 0} upserted, ${totalPrompts} total`)
 
-    const successResponse = {
+    return NextResponse.json({
       success: true,
       message: 'Prompts generated successfully',
       totalPrompts: totalPrompts || 0,
       newPrompts: insertedPrompts?.length || 0,
+      prompts: insertedPrompts || [],
       brandName: onboardingAnswers.brandName,
-      brandId: brand.id
-    }
-
-    console.log('✅ [GENERATE PROMPTS API] Returning success response:', successResponse)
-
-    return NextResponse.json(successResponse)
+      brandId: brand.id,
+    })
 
   } catch (error) {
-    console.error('❌ [GENERATE PROMPTS API] Unexpected error in generation:', error)
-    console.error('❌ [GENERATE PROMPTS API] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal server error'
-    }, { status: 500 })
+    console.error('❌ [GENERATE PROMPTS] Unexpected error:', error instanceof Error ? error.stack : error)
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
   }
 }

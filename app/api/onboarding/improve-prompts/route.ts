@@ -8,106 +8,147 @@ interface BrandPrompt {
   source_template_code: string
   raw_prompt: string
   improved_prompt?: string
+  category?: string
+  generation_metadata?: Record<string, any>
   status: string
 }
 
-// Rate limiting helper
+interface ImproveResult {
+  improved: string
+  genericity_score: number  // 1=very specific, 5=too generic
+  quality_note: string      // 'ok' | 'vague' | 'robotic' | 'duplicate_risk' | 'good'
+}
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-// Improve a single prompt using ChatGPT
-const improvePrompt = async (openai: OpenAI, rawPrompt: string, brandName: string): Promise<string> => {
-  const improvementPrompt = `
-You are a professional editor focused on light-touch improvements.
+const improvePrompt = async (openai: OpenAI, rawPrompt: string): Promise<ImproveResult> => {
+  const systemMessage = 'You are a quality controller for AI search prompts. Return only valid JSON.'
 
-Your task: Make minimal edits to fix grammar and improve clarity ONLY. Do not change meaning or reframe the question.
+  const userMessage = `Lightly improve this search prompt for naturalness and quality. Keep the meaning intact.
 
-Original query: "${rawPrompt}"
+Allowed changes:
+1. Fix grammar and typos
+2. Make phrasing sound more like a real ChatGPT user — conversational, goal-focused
+3. Remove robotic or marketing-style language
+4. Tighten verbose phrasing without losing specificity
 
-Guidelines:
-1. Fix grammar errors and typos only
-2. Improve sentence clarity without changing meaning
-3. Keep the original structure and intent intact
-4. Do not add, remove, or change any brand names, competitors, or specific details
-5. If the query is already clear and grammatically correct, return it unchanged
-6. Make minimal edits - only what's necessary for clarity
+Not allowed:
+- Changing the topic, intent, or core meaning
+- Adding brand names, product names, or competitors
+- Rewriting from scratch
+- Making it more generic
 
-Respond with ONLY the corrected query text, no explanations or additional text.
-`
+Prompt: "${rawPrompt}"
+
+Return ONLY valid JSON:
+{
+  "improved": "the improved prompt text",
+  "genericity_score": 2,
+  "quality_note": "ok"
+}
+
+Where:
+- genericity_score: 1–5 (1 = very specific and useful, 5 = so generic it could apply to anything)
+- quality_note: one of "ok", "vague", "robotic", "duplicate_risk", "good"`
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: 'gpt-4o-mini',
       messages: [
-        {
-          role: "system",
-          content: "You are a professional editor focused on light-touch improvements. Fix only grammar and clarity issues without changing meaning. Always respond with only the corrected query text."
-        },
-        {
-          role: "user",
-          content: improvementPrompt
-        }
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: userMessage },
       ],
       temperature: 0.3,
       max_tokens: 200,
+      response_format: { type: 'json_object' },
     })
 
-    const improvedPrompt = completion.choices[0]?.message?.content?.trim()
-    
-    if (!improvedPrompt) {
-      throw new Error('No response from OpenAI')
-    }
+    const raw = completion.choices[0]?.message?.content?.trim()
+    if (!raw) throw new Error('No response from OpenAI')
 
-    return improvedPrompt
+    const parsed = JSON.parse(raw) as ImproveResult
+    return {
+      improved: typeof parsed.improved === 'string' && parsed.improved.trim() ? parsed.improved.trim() : rawPrompt,
+      genericity_score: typeof parsed.genericity_score === 'number' ? parsed.genericity_score : 3,
+      quality_note: typeof parsed.quality_note === 'string' ? parsed.quality_note : 'ok',
+    }
   } catch (error) {
     console.error('Error improving prompt:', error)
-    throw error
+    // Return original prompt on failure — don't block the whole flow
+    return { improved: rawPrompt, genericity_score: 3, quality_note: 'ok' }
   }
 }
 
+// Token overlap deduplication — flags prompts sharing >60% meaningful word overlap
+const flagNearDuplicates = async (
+  supabase: any,
+  brandId: string
+): Promise<void> => {
+  const { data: allPrompts } = await supabase
+    .from('brand_prompts')
+    .select('id, improved_prompt, generation_metadata')
+    .eq('brand_id', brandId)
+    .not('improved_prompt', 'is', null)
+    .order('created_at', { ascending: true })
+
+  if (!allPrompts?.length) return
+
+  const seen: { id: string; words: Set<string> }[] = []
+  const duplicateIds: string[] = []
+
+  for (const p of allPrompts) {
+    const text = (p.improved_prompt || '').toLowerCase()
+    const words = new Set<string>(text.split(/\W+/).filter((w: string) => w.length > 3))
+
+    const isDuplicate = seen.some(s => {
+      const overlap = Array.from(words).filter(w => s.words.has(w)).length
+      return overlap / Math.max(words.size, s.words.size) > 0.6
+    })
+
+    if (isDuplicate) {
+      duplicateIds.push(p.id)
+    } else {
+      seen.push({ id: p.id, words })
+    }
+  }
+
+  if (duplicateIds.length === 0) return
+
+  console.log(`🔁 [IMPROVE PROMPTS] Flagging ${duplicateIds.length} near-duplicate prompts`)
+
+  // Fetch existing metadata for duplicate prompts, merge flag in
+  const { data: dupePrompts } = await supabase
+    .from('brand_prompts')
+    .select('id, generation_metadata')
+    .in('id', duplicateIds)
+
+  await Promise.all((dupePrompts || []).map((p: any) =>
+    supabase.from('brand_prompts').update({
+      generation_metadata: { ...(p.generation_metadata || {}), is_near_duplicate: true },
+    }).eq('id', p.id)
+  ))
+}
+
 export async function POST(request: NextRequest) {
-  console.log('🔄 [IMPROVE PROMPTS API] Starting prompt improvement request')
-  console.log('🔄 [IMPROVE PROMPTS API] Timestamp:', new Date().toISOString())
-  
+  console.log('🔄 [IMPROVE PROMPTS API] Starting — timestamp:', new Date().toISOString())
+
   try {
-    // Get user from server-side auth
     const supabase = await createClient()
-    console.log('🔍 [IMPROVE PROMPTS API] Getting user from server auth...')
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    console.log('📊 [IMPROVE PROMPTS API] Auth result:', {
-      hasUser: !!user,
-      userId: user?.id,
-      userEmail: user?.email,
-      authError: authError?.message
-    })
-    
+
     if (authError || !user) {
-      console.error('❌ [IMPROVE PROMPTS API] Auth failed:', authError)
-      return NextResponse.json({
-        success: false,
-        error: 'Unauthorized'
-      }, { status: 401 })
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('🔄 [IMPROVE PROMPTS] Starting improvement for user:', user.id)
+    const body = await request.json().catch(() => ({}))
+    const { brandId } = body
 
-    // Initialize OpenAI client
-    console.log('🔍 [IMPROVE PROMPTS API] Checking OpenAI configuration...')
     if (!process.env.OPENAI_API_KEY) {
-      console.error('❌ [IMPROVE PROMPTS API] OPENAI_API_KEY missing from environment variables')
-      return NextResponse.json({
-        success: false,
-        error: 'AI improvement service not configured'
-      }, { status: 500 })
+      return NextResponse.json({ success: false, error: 'AI improvement service not configured' }, { status: 500 })
     }
 
-    console.log('✅ [IMPROVE PROMPTS API] OpenAI client initialized')
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    // Get the user's pending brand
-    console.log('🔍 [IMPROVE PROMPTS API] Looking for pending brand for user:', user.id)
     const { data: pendingBrands, error: brandError } = await supabase
       .from('brands')
       .select('id, name, onboarding_answers, onboarding_completed, owner_user_id')
@@ -117,163 +158,112 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
 
-    console.log('📊 [IMPROVE PROMPTS API] Brand query result:', {
-      pendingBrandsCount: pendingBrands?.length || 0,
-      brandError: brandError?.message,
-      brands: pendingBrands?.map(b => ({
-        id: b.id,
-        name: b.name,
-        onboarding_completed: b.onboarding_completed,
-        owner_user_id: b.owner_user_id
-      }))
-    })
-
     if (brandError || !pendingBrands || pendingBrands.length === 0) {
-      console.error('❌ [IMPROVE PROMPTS API] No pending brand found for user:', user.id)
-      return NextResponse.json({
-        success: false,
-        error: 'No pending brand found'
-      }, { status: 404 })
+      return NextResponse.json({ success: false, error: 'No pending brand found' }, { status: 404 })
     }
 
     const brand = pendingBrands[0]
     const brandName = brand.name || (brand.onboarding_answers as any)?.brandName || 'Your Brand'
-    console.log('✅ [IMPROVE PROMPTS API] Found pending brand:', brand.id, 'name:', brandName)
 
-    // Get all inactive prompts for this brand that don't have improved versions yet
-    console.log('🔍 [IMPROVE PROMPTS API] Looking for inactive prompts for brand:', brand.id)
+    // Get all inactive prompts without improved versions yet
     const { data: draftPrompts, error: promptsError } = await supabase
       .from('brand_prompts')
-      .select('id, brand_id, source_template_code, raw_prompt, improved_prompt, status')
+      .select('id, brand_id, source_template_code, raw_prompt, improved_prompt, category, generation_metadata, status')
       .eq('brand_id', brand.id)
       .eq('status', 'inactive')
       .is('improved_prompt', null)
       .order('source_template_code')
 
-    console.log('📊 [IMPROVE PROMPTS API] Inactive prompts query result:', {
-      draftPromptsCount: draftPrompts?.length || 0,
-      promptsError: promptsError?.message,
-      samplePrompts: draftPrompts?.slice(0, 3).map(p => ({
-        id: p.id,
-        templateCode: p.source_template_code,
-        status: p.status,
-        hasImprovedPrompt: !!p.improved_prompt
-      }))
-    })
-
     if (promptsError) {
-      console.error('❌ [IMPROVE PROMPTS API] Error loading draft prompts:', promptsError)
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to load prompts'
-      }, { status: 500 })
+      return NextResponse.json({ success: false, error: 'Failed to load prompts' }, { status: 500 })
     }
 
     if (!draftPrompts || draftPrompts.length === 0) {
-      console.log('⚠️ [IMPROVE PROMPTS API] No draft prompts found to improve for brand:', brand.id)
+      console.log('⚠️ [IMPROVE PROMPTS] No draft prompts to improve for brand:', brand.id)
+      // Still return the existing prompts so the preview works
+      const { data: existingPrompts } = await supabase
+        .from('brand_prompts')
+        .select('id, raw_prompt, improved_prompt, category, generation_metadata')
+        .eq('brand_id', brand.id)
+        .order('created_at', { ascending: true })
+
       return NextResponse.json({
         success: true,
         message: 'No draft prompts found to improve',
         improvedCount: 0,
-        totalPrompts: 0
+        totalPrompts: existingPrompts?.length || 0,
+        prompts: existingPrompts || [],
       })
     }
 
-    console.log(`📝 [IMPROVE PROMPTS] Found ${draftPrompts.length} draft prompts to improve for brand: ${brandName}`)
+    console.log(`📝 [IMPROVE PROMPTS] ${draftPrompts.length} prompts to improve for: ${brandName}`)
 
     let improvedCount = 0
     let errorCount = 0
-    const batchSize = 5 // Process in small batches to avoid rate limits
-    const delayBetweenBatches = 2000 // 2 seconds between batches
+    const batchSize = 5
+    const delayBetweenBatches = 2000
 
-    // Process prompts in batches
     for (let i = 0; i < draftPrompts.length; i += batchSize) {
       const batch = draftPrompts.slice(i, i + batchSize)
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(draftPrompts.length / batchSize)}`)
-      }
 
-      // Process batch concurrently
-      const batchPromises = batch.map(async (prompt) => {
+      const batchResults = await Promise.all(batch.map(async (prompt: BrandPrompt) => {
         try {
-          const improvedPrompt = await improvePrompt(openai, prompt.raw_prompt, brandName)
-          
-          // Update the prompt in database
+          const result = await improvePrompt(openai, prompt.raw_prompt)
+
+          const mergedMetadata = {
+            ...(prompt.generation_metadata || {}),
+            genericity_score: result.genericity_score,
+            quality_note: result.quality_note,
+          }
+
           const { error: updateError } = await supabase
             .from('brand_prompts')
-            .update({
-              improved_prompt: improvedPrompt
-              // Keep status as 'inactive' - don't change it during improvement
-            })
+            .update({ improved_prompt: result.improved, generation_metadata: mergedMetadata })
             .eq('id', prompt.id)
 
           if (updateError) {
             console.error(`Error updating prompt ${prompt.id}:`, updateError)
-            return { success: false, error: updateError }
+            return { success: false }
           }
 
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`✅ Improved prompt ${prompt.source_template_code}: "${prompt.raw_prompt}" → "${improvedPrompt}"`)
-          }
-
-          return { success: true, promptId: prompt.id }
+          return { success: true }
         } catch (error) {
           console.error(`Error improving prompt ${prompt.id}:`, error)
-          return { success: false, error, promptId: prompt.id }
+          return { success: false }
         }
-      })
+      }))
 
-      // Wait for batch to complete
-      const batchResults = await Promise.all(batchPromises)
-      
-      // Count results
-      batchResults.forEach(result => {
-        if (result.success) {
-          improvedCount++
-        } else {
-          errorCount++
-        }
-      })
+      batchResults.forEach(r => r.success ? improvedCount++ : errorCount++)
 
-      // Delay between batches to respect rate limits
       if (i + batchSize < draftPrompts.length) {
         await delay(delayBetweenBatches)
       }
     }
 
-    // Get final counts
-    const { count: totalImproved } = await supabase
-      .from('brand_prompts')
-      .select('*', { count: 'exact', head: true })
-      .eq('brand_id', brand.id)
-      .eq('status', 'improved')
+    console.log(`✅ [IMPROVE PROMPTS] ${improvedCount} improved, ${errorCount} errors`)
 
-    const { count: totalPrompts } = await supabase
-      .from('brand_prompts')
-      .select('*', { count: 'exact', head: true })
-      .eq('brand_id', brand.id)
+    // Near-duplicate detection pass
+    await flagNearDuplicates(supabase, brand.id)
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`✅ Improvement completed: ${improvedCount} improved, ${errorCount} errors`)
-      console.log(`📊 Total improved prompts: ${totalImproved}, Total prompts: ${totalPrompts}`)
-    }
+    // Return final prompts for the preview step
+    const { data: finalPrompts } = await supabase
+      .from('brand_prompts')
+      .select('id, raw_prompt, improved_prompt, category, generation_metadata')
+      .eq('brand_id', brand.id)
+      .order('created_at', { ascending: true })
 
     return NextResponse.json({
       success: true,
       message: `Successfully improved ${improvedCount} prompts`,
       improvedCount,
       errorCount,
-      totalImproved: totalImproved || 0,
-      totalPrompts: totalPrompts || 0,
-      brandName
+      totalPrompts: finalPrompts?.length || 0,
+      prompts: finalPrompts || [],
+      brandName,
     })
 
   } catch (error) {
-    console.error('Error in prompt improvement:', error)
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal server error'
-    }, { status: 500 })
+    console.error('❌ [IMPROVE PROMPTS] Error:', error)
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
   }
 }
