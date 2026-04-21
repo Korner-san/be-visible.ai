@@ -36,8 +36,18 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
         body: JSON.stringify(data),
       })
 
-      if (!response.ok || !response.body) {
-        setScanError('Failed to connect to server. Please try again.')
+      if (!response.ok) {
+        let msg = `Server error (${response.status})`
+        try {
+          const errData = await response.json()
+          msg = errData.error || msg
+        } catch {}
+        setScanError(msg)
+        setState('A')
+        return
+      }
+      if (!response.body) {
+        setScanError('No response stream. Please try again.')
         setState('A')
         return
       }

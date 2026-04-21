@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
+export const maxDuration = 60 // Vercel Pro: up to 60s for the full pipeline
+
 const OPENAI_KEY = process.env.OPENAI_API_KEY!
 
 // ─── GPT-4o-mini call ─────────────────────────────────────────────────────────
