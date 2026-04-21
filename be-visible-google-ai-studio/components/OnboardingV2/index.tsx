@@ -88,7 +88,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
       }
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
-        setScanError('Connection interrupted. Please try again.')
+        setScanError(err?.message ? `Error: ${err.message}` : 'Connection interrupted. Please try again.')
         setState('A')
       }
     }

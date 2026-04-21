@@ -4,13 +4,13 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 export const maxDuration = 60 // Vercel Pro: up to 60s for the full pipeline
 
-const OPENAI_KEY = process.env.OPENAI_API_KEY!
+const OPENAI_KEY = process.env.OPENAI_API_KEY
 
 // ─── GPT-4o-mini call ─────────────────────────────────────────────────────────
 async function gpt(system: string, user: string): Promise<any> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_KEY}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_KEY!}` },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
@@ -162,6 +162,10 @@ function normalizeDomain(url: string): string {
 
 // ─── POST handler (SSE stream) ────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
+  if (!OPENAI_KEY) {
+    return new Response(JSON.stringify({ error: 'OpenAI API key not configured on this server.' }), { status: 500 })
+  }
+
   const supabase = await createClient()
   const adminSupabase = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
