@@ -1,4 +1,4 @@
 {
   "installCommand": "npm install && cd be-visible-google-ai-studio && npm install",
-  "buildCommand": "rm -rf .next && npm run build && cd be-visible-google-ai-studio && npm run build && cd .. && cp -r be-visible-google-ai-studio/dist/assets public/assets && cp be-visible-google-ai-studio/dist/index.html public/index.html && cp be-visible-google-ai-studio/dist/index.css public/index.css 2>/dev/null || true"
+  "buildCommand": "rm -rf .next && npm run build && cd be-visible-google-ai-studio && npm run build && cd .. && cp -r be-visible-google-ai-studio/dist/. public/"
 }
