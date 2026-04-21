@@ -17,6 +17,7 @@ import { ManagePromptsPage } from './components/ManagePromptsPage';
 import { ManageCompetitorsPage } from './components/ManageCompetitorsPage';
 import { IntegrationsPage } from './components/IntegrationsPage';
 import { OnboardingPage } from './components/OnboardingPage';
+import { OnboardingV2 } from './components/OnboardingV2';
 import { OnboardingEditPromptsPage } from './components/OnboardingEditPromptsPage';
 import { WaitingScreen } from './components/WaitingScreen';
 import { OnboardingProgressScreen } from './components/OnboardingProgressScreen';
@@ -373,17 +374,17 @@ function AppContent() {
     appView === 'AUTHENTICATED_NO_BRAND' ||
     appView === 'AUTHENTICATED_ONBOARDING_IN_PROGRESS'
   ) {
-    return (
-      <OnboardingPage
-        existingBrandId={appView === 'AUTHENTICATED_ONBOARDING_IN_PROGRESS' ? activeBrandId : null}
-        onComplete={handleOnboardingComplete}
-        onNavigate={(tab) => {
-          // Allow navigating away to dashboard tabs from inside onboarding if needed
-          setAppView('AUTHENTICATED_READY');
-          setActiveTab(tab);
-        }}
-      />
-    );
+    const existingId = appView === 'AUTHENTICATED_ONBOARDING_IN_PROGRESS' ? activeBrandId : null;
+    const onboardingProps = {
+      existingBrandId: existingId,
+      onComplete: handleOnboardingComplete,
+      onNavigate: (tab: string) => { setAppView('AUTHENTICATED_READY'); setActiveTab(tab); },
+    };
+    // Feature flag: set VITE_ONBOARDING_V2=true in Vercel env to enable V2 onboarding
+    if (import.meta.env.VITE_ONBOARDING_V2?.toLowerCase() === 'true') {
+      return <OnboardingV2 {...onboardingProps} />;
+    }
+    return <OnboardingPage {...onboardingProps} />;
   }
 
   // 5a. Just finished onboarding in-session — simple wait (webhook just fired)

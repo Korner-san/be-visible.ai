@@ -36,12 +36,12 @@ const STEPS = [
 
 // Returns 1–4 based on real DB signals — no time-based guessing
 // Step 1: agents not yet dispatched (queued or no prompts sent)
-// Step 2: prompts actively running in ChatGPT (sent < 6)
-// Step 3: all 6 prompts done, EOD pipeline running (brand analysis, Tavily citations, SOV)
-// Step 4: visibility score computed (EOD in final stages — competitor metrics, dashboard build)
+// Step 2: wave-1 prompts actively running in ChatGPT
+// Step 3: wave-1 done (phase1_complete), EOD pipeline running
+// Step 4: visibility score computed (EOD in final stages)
 function getCurrentStep(firstReportStatus: string, sent: number, visibilityScoreReady: boolean): number {
   if (firstReportStatus === 'queued' || sent === 0) return 1;
-  if (sent < 6) return 2;
+  if (firstReportStatus !== 'phase1_complete' && firstReportStatus !== 'succeeded') return 2;
   if (!visibilityScoreReady) return 3;
   return 4;
 }
@@ -89,10 +89,9 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     setFirstReportStatus(s || 'queued');
     setSentCount(sent);
 
-    // Once all 6 wave-1 prompts are done, check if EOD has computed the visibility score
-    // (Phase 4 of EOD). When it has, we move to step 4 (finalizing dashboard).
+    // Once wave-1 is done (phase1_complete), check if EOD has computed the visibility score
     let vsReady = false;
-    if (sent >= 6 && data.onboarding_daily_report_id) {
+    if ((s === 'phase1_complete' || s === 'succeeded') && data.onboarding_daily_report_id) {
       const { data: report } = await supabase
         .from('daily_reports')
         .select('visibility_score')
@@ -102,7 +101,7 @@ export const OnboardingProgressScreen: React.FC<OnboardingProgressScreenProps> =
     }
     setVisibilityScoreReady(vsReady);
 
-    setStatus(sent >= 6 ? 'almost' : 'working');
+    setStatus((s === 'phase1_complete' || s === 'succeeded') ? 'almost' : 'working');
   }, [brandId, onComplete]);
 
   useEffect(() => {

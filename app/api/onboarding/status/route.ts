@@ -31,8 +31,8 @@ export async function GET(_request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Count completed prompts per wave, and fetch the anchored daily report
-    const [wave1Result, wave2Result, reportResult] = await Promise.all([
+    // Count completed and total prompts per wave, and fetch the anchored daily report
+    const [wave1Complete, wave2Complete, wave1Total, wave2Total, reportResult] = await Promise.all([
       adminSupabase
         .from('brand_prompts')
         .select('id', { count: 'exact', head: true })
@@ -45,6 +45,16 @@ export async function GET(_request: NextRequest) {
         .eq('brand_id', brand.id)
         .eq('onboarding_wave', 2)
         .eq('onboarding_status', 'completed'),
+      adminSupabase
+        .from('brand_prompts')
+        .select('id', { count: 'exact', head: true })
+        .eq('brand_id', brand.id)
+        .eq('onboarding_wave', 1),
+      adminSupabase
+        .from('brand_prompts')
+        .select('id', { count: 'exact', head: true })
+        .eq('brand_id', brand.id)
+        .eq('onboarding_wave', 2),
       brand.onboarding_daily_report_id
         ? adminSupabase
             .from('daily_reports')
@@ -59,10 +69,10 @@ export async function GET(_request: NextRequest) {
       brandId: brand.id,
       brandName: brand.name,
       firstReportStatus: brand.first_report_status,
-      wave1Complete: wave1Result.count ?? 0,
-      wave1Total: 6,
-      wave2Complete: wave2Result.count ?? 0,
-      wave2Total: 24,
+      wave1Complete: wave1Complete.count ?? 0,
+      wave1Total: wave1Total.count ?? 5,
+      wave2Complete: wave2Complete.count ?? 0,
+      wave2Total: wave2Total.count ?? 45,
       isPartial: reportResult.data?.is_partial ?? false,
     })
   } catch (error) {
