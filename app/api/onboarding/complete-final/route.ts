@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json().catch(() => ({}))
-    const { timezone = 'UTC' } = body
+    const { timezone = 'UTC', competitors: bodyCompetitors } = body
 
     // ── CAPACITY CHECK ────────────────────────────────────────────────────────
     const adminSupabaseForCapacity = createAdminClient(
@@ -166,14 +166,33 @@ export async function POST(request: NextRequest) {
     console.log('🌊 [COMPLETE-FINAL API] Assigning onboarding waves to brand_prompts...')
     const { data: allPrompts } = await adminSupabaseForCapacity
       .from('brand_prompts')
-      .select('id')
+      .select('id, category')
       .eq('brand_id', updatedBrand.id)
       .in('status', ['active', 'inactive', 'improved'])
       .order('created_at', { ascending: true })
 
     if (allPrompts && allPrompts.length > 0) {
-      const wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
-      const wave2Ids = allPrompts.slice(6).map((p: any) => p.id)
+      // V2 brands: 1 prompt per topic category for wave 1 (cross-category coverage)
+      // V1 brands: first 6 sequential prompts for wave 1 (backward-compatible)
+      const isV2 = onboardingAnswers.onboardingVersion === 'v2'
+
+      let wave1Ids: string[]
+      if (isV2) {
+        // Select first prompt from each distinct category — gives 1 per topic (5 total)
+        const seenCategories = new Set<string>()
+        wave1Ids = []
+        for (const p of allPrompts as any[]) {
+          if (p.category && !seenCategories.has(p.category)) {
+            seenCategories.add(p.category)
+            wave1Ids.push(p.id)
+          }
+        }
+        // Fallback: if no categories exist, take first 5
+        if (wave1Ids.length === 0) wave1Ids = allPrompts.slice(0, 5).map((p: any) => p.id)
+      } else {
+        wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
+      }
+      const wave2Ids = allPrompts.filter((p: any) => !wave1Ids.includes(p.id)).map((p: any) => p.id)
 
       await Promise.all([
         // Wave 1 (first 6): active — these run immediately in Phase 1
@@ -223,8 +242,8 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Save competitors to brand_competitors table
-    // onboarding_answers.competitors may be {name,domain}[] objects or plain strings — normalize both
-    const rawCompetitors: any[] = onboardingAnswers.competitors || []
+    // V2: competitors come from request body. V1: from onboarding_answers. Normalize both.
+    const rawCompetitors: any[] = bodyCompetitors || onboardingAnswers.competitors || []
     const competitors = rawCompetitors
       .map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
       .filter(Boolean)
