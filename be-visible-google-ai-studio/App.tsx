@@ -381,7 +381,7 @@ function AppContent() {
       onNavigate: (tab: string) => { setAppView('AUTHENTICATED_READY'); setActiveTab(tab); },
     };
     // Feature flag: set VITE_ONBOARDING_V2=true in Vercel env to enable V2 onboarding
-    if (import.meta.env.VITE_ONBOARDING_V2 === 'true') {
+    if (import.meta.env.VITE_ONBOARDING_V2?.toLowerCase() === 'true') {
       return <OnboardingV2 {...onboardingProps} />;
     }
     return <OnboardingPage {...onboardingProps} />;
