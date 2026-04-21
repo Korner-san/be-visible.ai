@@ -4,6 +4,7 @@
   "buildCommand": "rm -rf .next && npm run build && cd be-visible-google-ai-studio && npm run build",
   "outputDirectory": "be-visible-google-ai-studio/dist",
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
