@@ -6,9 +6,10 @@ import { RightB } from './RightB'
 import { LeftC } from './LeftC'
 import { RightC } from './RightC'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
-import { supabase } from '../../lib/supabase'
+import { useAuth } from '../AuthContext'
 
 export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNavigate }) => {
+  const { session } = useAuth()
   const [state, setState] = useState<OnboardingState>('A')
   const [formData, setFormData] = useState<FormData>({ brandName: '', websiteUrl: '', language: 'English', region: 'United States' })
   const [profile, setProfile] = useState<BusinessProfile | null>(null)
@@ -31,7 +32,6 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setState('B_LOADING')
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
 
       const response = await fetch('/api/onboarding/generate-v2', {
@@ -109,7 +109,6 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setLaunchError(null)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
 
       const res = await fetch('/api/onboarding/complete-final', {
