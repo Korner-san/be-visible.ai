@@ -109,6 +109,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          brandId,
           competitors,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),

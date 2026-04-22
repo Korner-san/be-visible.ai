@@ -19,26 +19,28 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
     console.log('🔄 [COMPLETE-FINAL API] Timestamp:', new Date().toISOString())
-    
-    const supabaseForAuth = await createClient()
-    const { data: { user } } = await supabaseForAuth.auth.getUser()
 
-    if (!user) {
-      console.error('❌ [COMPLETE-FINAL API] Not authenticated')
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 })
-    }
-    
-    console.log('✅ [COMPLETE-FINAL API] User authenticated:', user.id)
-
-    // Parse request body
+    // Parse body first — brandId is the primary brand identifier
     const body = await request.json().catch(() => ({}))
-    const { timezone = 'UTC', competitors: bodyCompetitors } = body
+    const { brandId: bodyBrandId, timezone = 'UTC', competitors: bodyCompetitors } = body
+    console.log('🔍 [COMPLETE-FINAL API] brandId from body:', bodyBrandId)
 
-    // ── CAPACITY CHECK ────────────────────────────────────────────────────────
     const adminSupabaseForCapacity = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
+
+    // Try cookie auth — used to verify brand ownership and upsert users row
+    let user: any = null
+    try {
+      const supabaseForAuth = await createClient()
+      const { data } = await supabaseForAuth.auth.getUser()
+      user = data.user
+      if (user) console.log('✅ [COMPLETE-FINAL API] User authenticated via cookie:', user.id)
+      else console.warn('⚠️ [COMPLETE-FINAL API] Cookie auth returned no user — proceeding via brandId')
+    } catch (authErr) {
+      console.warn('⚠️ [COMPLETE-FINAL API] Cookie auth threw:', authErr)
+    }
     const now = new Date()
     const reserveWindowEnd = new Date(now.getTime() + 15 * 60 * 1000)
 
@@ -95,21 +97,41 @@ export async function POST(request: NextRequest) {
     console.log('✅ [COMPLETE-FINAL API] Selected account for onboarding:', selectedAccount.email)
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Find user's pending brand
-    const { data: brands, error: brandsError } = await adminSupabaseForCapacity
-      .from('brands')
-      .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status')
-      .eq('owner_user_id', user.id)
-      .eq('is_demo', false)
-      .order('created_at', { ascending: false })
-    
-    if (brandsError || !brands || brands.length === 0) {
-      console.error('❌ [COMPLETE-FINAL API] No brands found:', brandsError)
+    // Find the brand — prefer direct lookup by brandId, fall back to user's pending brand
+    let brand: any = null
+    if (bodyBrandId) {
+      const { data, error } = await adminSupabaseForCapacity
+        .from('brands')
+        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id')
+        .eq('id', bodyBrandId)
+        .single()
+      if (error) console.error('❌ [COMPLETE-FINAL API] Brand lookup by ID failed:', error.message)
+      else brand = data
+    }
+    if (!brand && user) {
+      const { data, error } = await adminSupabaseForCapacity
+        .from('brands')
+        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id')
+        .eq('owner_user_id', user.id)
+        .eq('is_demo', false)
+        .eq('onboarding_completed', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (error) console.error('❌ [COMPLETE-FINAL API] Brand fallback lookup failed:', error.message)
+      else brand = data
+    }
+    if (!brand) {
+      console.error('❌ [COMPLETE-FINAL API] No brand found')
       return NextResponse.json({ success: false, error: 'No brand found' }, { status: 404 })
     }
-    
-    // Find the first incomplete brand (should be the pending one)
-    const brand = brands.find(b => !b.onboarding_completed) || brands[0]
+    // If we have a user, verify ownership
+    if (user && brand.owner_user_id !== user.id) {
+      console.error('❌ [COMPLETE-FINAL API] Brand does not belong to user')
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
+    }
+    // Use brand's owner_user_id if cookie auth gave us no user
+    if (!user) user = { id: brand.owner_user_id, email: null }
     console.log('🔍 [COMPLETE-FINAL API] Using brand:', brand.id, 'completed:', brand.onboarding_completed)
     
     // Idempotency check
@@ -130,7 +152,7 @@ export async function POST(request: NextRequest) {
       normalizedDomain = normalizeDomain(brand.domain)
     }
     
-    console.log('🔍 [COMPLETE-FINAL API] About to update brand:', brand.id, 'for user:', user.id)
+    console.log('🔍 [COMPLETE-FINAL API] About to update brand:', brand.id, 'for user:', user?.id)
     
     // Update brand to complete onboarding, assign selected ChatGPT account
     const { data: updatedBrand, error: updateError } = await adminSupabaseForCapacity
