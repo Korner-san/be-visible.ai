@@ -84,6 +84,8 @@ Output a JSON object with this exact shape:
     "evaluativeResearcher": "integer 0–100 — users who deeply analyze before deciding"
   },
   "suggestedCompetitors": ["array of 5–8 well-known competitor brand names in this exact competitive space, ordered by market relevance — real brands only"],
+  "typicalCustomer": "string — one sentence describing who typically uses or searches for this business",
+  "customerGoals": ["array of exactly 5 strings — the 5 most common things a customer is trying to accomplish when they find this business"],
   "outputLanguage": "string — ALWAYS use the user-chosen language value exactly as provided",
   "userRegion": "string — ALWAYS use the user-chosen region value exactly as provided"
 }
@@ -211,6 +213,8 @@ ${geographicRule}
 
 10. NATURALNESS: Short prompts feel like someone typing fast on their phone. Medium prompts feel like a specific real-world need. Long prompts feel like a researcher crafting a careful, detailed query.
 
+11. GROUND IN CUSTOMER GOALS: Every prompt must reflect something the customer is actually trying to do. Use the customer goals provided in the business context as your anchor — prompts that don't connect to a real customer goal are invalid.
+
 Before outputting: (1) count that you have exactly 10 prompts, (2) verify every single prompt is in ${profile.outputLanguage} — fix any that are not.
 
 Output JSON: { "prompts": ["prompt1", "prompt2", "prompt3", "prompt4", "prompt5", "prompt6", "prompt7", "prompt8", "prompt9", "prompt10"] }`,
@@ -221,6 +225,8 @@ Topic: "${topic}"
 Business context:
 - Description: ${profile.description}
 - Industry: ${profile.industry}
+- Typical customer: ${profile.typicalCustomer || ''}
+- Customer goals: ${(profile.customerGoals || []).map((g: string, i: number) => `${i + 1}. ${g}`).join(' | ')}
 - Geographic scope: ${profile.geographicScope.type} (primary: ${profile.geographicScope.primaryRegion})
 - Brand identity: ${profile.brandIdentity.join(', ')}
 - Products/services: ${profile.productsServices.join(', ')}
