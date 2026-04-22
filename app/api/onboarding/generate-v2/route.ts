@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Find or create brand ──────────────────────────────────────────────
-        const { data: existingBrands } = await supabase
+        const { data: existingBrands } = await adminSupabase
           .from('brands').select('id, generation_attempts').eq('owner_user_id', user.id)
           .eq('is_demo', false).eq('onboarding_completed', false)
           .order('created_at', { ascending: false }).limit(1)
