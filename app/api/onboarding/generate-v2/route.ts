@@ -256,19 +256,8 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Accept Bearer token (Vite SPA) or fall back to cookie-based session (Next.js SSR)
-  let user: any = null
-  const authHeader = request.headers.get('authorization')
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
-
-  if (bearerToken) {
-    const { data } = await adminSupabase.auth.getUser(bearerToken)
-    user = data.user
-  } else {
-    const supabase = await createClient()
-    const { data } = await supabase.auth.getUser()
-    user = data.user
-  }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 })

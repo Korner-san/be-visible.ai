@@ -6,10 +6,8 @@ import { RightB } from './RightB'
 import { LeftC } from './LeftC'
 import { RightC } from './RightC'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
-import { useAuth } from '../AuthContext'
 
 export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNavigate }) => {
-  const { session } = useAuth()
   const [state, setState] = useState<OnboardingState>('A')
   const [formData, setFormData] = useState<FormData>({ brandName: '', websiteUrl: '', language: 'English', region: 'United States' })
   const [profile, setProfile] = useState<BusinessProfile | null>(null)
@@ -32,11 +30,9 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setState('B_LOADING')
 
     try {
-      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
-
       const response = await fetch('/api/onboarding/generate-v2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
 
@@ -109,11 +105,9 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setLaunchError(null)
 
     try {
-      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
-
       const res = await fetch('/api/onboarding/complete-final', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           competitors,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

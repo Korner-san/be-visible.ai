@@ -20,24 +20,8 @@ export async function POST(request: NextRequest) {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
     console.log('🔄 [COMPLETE-FINAL API] Timestamp:', new Date().toISOString())
     
-    const adminSupabaseForAuth = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
-    // Accept Bearer token (Vite SPA) or fall back to cookie-based session (Next.js SSR)
-    let user: any = null
-    const authHeader = request.headers.get('authorization')
-    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
-
-    if (bearerToken) {
-      const { data } = await adminSupabaseForAuth.auth.getUser(bearerToken)
-      user = data.user
-    } else {
-      const supabase = await createClient()
-      const { data } = await supabase.auth.getUser()
-      user = data.user
-    }
+    const supabaseForAuth = await createClient()
+    const { data: { user } } = await supabaseForAuth.auth.getUser()
 
     if (!user) {
       console.error('❌ [COMPLETE-FINAL API] Not authenticated')
