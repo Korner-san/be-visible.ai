@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { Globe, Languages, Loader2, AlertCircle } from 'lucide-react'
+import { Globe, Languages, Loader2, AlertCircle, LogOut } from 'lucide-react'
 import type { FormData } from './types'
 import { LANGUAGES, REGIONS } from './types'
+import { useAuth } from '../AuthContext'
 
 interface LeftAProps {
   onSubmit: (data: FormData) => void
@@ -10,6 +11,7 @@ interface LeftAProps {
 }
 
 export const LeftA: React.FC<LeftAProps> = ({ onSubmit, isLoading, error }) => {
+  const { signOut } = useAuth()
   const [brandName, setBrandName] = useState('')
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [language, setLanguage] = useState('English')
@@ -36,12 +38,20 @@ export const LeftA: React.FC<LeftAProps> = ({ onSubmit, isLoading, error }) => {
 
   return (
     <div className="flex flex-col h-full px-10 py-12">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 mb-12">
-        <div className="w-9 h-9 bg-brand-brown rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-          <span className="text-white font-bold text-base">B</span>
+      {/* Logo + sign out */}
+      <div className="flex items-center justify-between mb-12">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 bg-brand-brown rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+            <span className="text-white font-bold text-base">B</span>
+          </div>
+          <span className="font-semibold text-slate-900 text-base tracking-tight">be-visible.ai</span>
         </div>
-        <span className="font-semibold text-slate-900 text-base tracking-tight">be-visible.ai</span>
+        <button
+          onClick={signOut}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          <LogOut size={13} /> Sign out
+        </button>
       </div>
 
       {/* Heading */}
