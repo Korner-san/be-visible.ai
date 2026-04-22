@@ -370,28 +370,26 @@ export async function POST(request: NextRequest) {
 
         // ── Layer 3: Prompts per topic (parallel) ─────────────────────────────
         const tierCounts = computeTierCounts(profile)
-        const promptResults: { topic: string; prompts: string[] }[] = []
 
+        // Clear any prompts from previous scan attempts before streaming new ones
+        await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
+
+        let totalPrompts = 0
         await Promise.all(topics.map(async (topic) => {
           let prompts: string[]
           try { prompts = await generatePromptsForTopic(topic, profile, tierCounts) }
           catch { prompts = [] }
           send({ type: 'prompts_topic', data: { topic, prompts } })
-          promptResults.push({ topic, prompts })
+          // Save each topic's prompts to DB immediately as they arrive
+          if (prompts.length > 0) {
+            await adminSupabase.from('brand_prompts').insert(
+              prompts.map(p => ({ brand_id: brandId, raw_prompt: p, status: 'active', category: topic }))
+            )
+            totalPrompts += prompts.length
+          }
         }))
 
-        // ── Save prompts to DB (delete existing first for retry safety) ────────
-        await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
-
-        const rows: any[] = []
-        for (const { topic, prompts } of promptResults) {
-          for (const prompt of prompts) {
-            rows.push({ brand_id: brandId, raw_prompt: prompt, status: 'active', category: topic })
-          }
-        }
-        if (rows.length > 0) await adminSupabase.from('brand_prompts').insert(rows)
-
-        send({ type: 'done', data: { brandId, tierCounts, totalPrompts: rows.length } })
+        send({ type: 'done', data: { brandId, tierCounts, totalPrompts } })
         controller.close()
 
       } catch (err: any) {
