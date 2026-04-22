@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Find user's pending brand
-    const { data: brands, error: brandsError } = await supabase
+    const { data: brands, error: brandsError } = await adminSupabaseForCapacity
       .from('brands')
       .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status')
       .eq('owner_user_id', user.id)
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     console.log('🔍 [COMPLETE-FINAL API] About to update brand:', brand.id, 'for user:', user.id)
     
     // Update brand to complete onboarding, assign selected ChatGPT account
-    const { data: updatedBrand, error: updateError } = await supabase
+    const { data: updatedBrand, error: updateError } = await adminSupabaseForCapacity
       .from('brands')
       .update({
         name: onboardingAnswers.brandName || brand.name,
@@ -300,7 +300,7 @@ export async function POST(request: NextRequest) {
     await adminSupabase.from('users').update({ timezone }).eq('id', user.id)
     
     // VERIFICATION: Double-check the brand was actually updated in the database
-    const { data: verifyBrand, error: verifyError } = await supabase
+    const { data: verifyBrand, error: verifyError } = await adminSupabaseForCapacity
       .from('brands')
       .select('id, name, onboarding_completed, first_report_status, owner_user_id')
       .eq('id', updatedBrand.id)
@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
     
     // Clean up any other incomplete brands to prevent guard confusion
     console.log('🧹 [COMPLETE-FINAL API] Cleaning up other incomplete brands...')
-    const { data: otherPendingBrands } = await supabase
+    const { data: otherPendingBrands } = await adminSupabaseForCapacity
       .from('brands')
       .select('id')
       .eq('owner_user_id', user.id)
@@ -321,7 +321,7 @@ export async function POST(request: NextRequest) {
     
     if (otherPendingBrands && otherPendingBrands.length > 0) {
       console.log('🧹 [COMPLETE-FINAL API] Found', otherPendingBrands.length, 'other incomplete brands, deleting...')
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await adminSupabaseForCapacity
         .from('brands')
         .delete()
         .in('id', otherPendingBrands.map(b => b.id))
