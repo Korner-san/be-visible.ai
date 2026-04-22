@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
-export const maxDuration = 60 // Vercel Pro: up to 60s for the full pipeline
+export const maxDuration = 300 // Vercel Pro: full pipeline needs up to 5 min
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 
@@ -25,62 +25,76 @@ async function gpt(system: string, user: string): Promise<any> {
 
 // ─── HTML fetch ───────────────────────────────────────────────────────────────
 async function fetchWebsiteText(url: string): Promise<string> {
+  // Primary: Jina Reader — renders JS-heavy sites and returns clean text
   try {
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeVisibleBot/1.0)', Accept: 'text/plain' },
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(10000), // 10s max — don't burn the whole budget on Jina
     })
     if (res.ok) {
       const text = await res.text()
       if (text && text.length > 200) return text.slice(0, 8000)
     }
   } catch {}
+
+  // Fallback: direct HTML fetch + strip
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+    redirect: 'follow',
     signal: AbortSignal.timeout(15000),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`)
   const html = await res.text()
   const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ').replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim()
-  if (!text || text.length < 200) throw new Error('Could not extract content from website')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .trim()
+  if (!text || text.length < 200) throw new Error(`Could not extract content from ${url}`)
   return text.slice(0, 8000)
 }
 
 // ─── Layer 1: Business profile ────────────────────────────────────────────────
 async function generateProfile(rawText: string, region: string, language: string): Promise<any> {
   return gpt(
-    `You are a business analyst producing a structured brand profile as a seed for AI prompt generation.
+    `You are a business analyst that reads website content and produces a structured brand profile used as a seed for AI prompt generation.
 
-Output JSON with this exact shape:
+Output a JSON object with this exact shape:
 {
   "businessName": "string",
-  "description": "1–2 sentences describing what the business does and its key differentiator, neutral third-party perspective",
-  "industry": "one concise industry label",
+  "description": "string — 1–2 sentences describing what the business does and its key differentiator, written from a neutral third-party perspective",
+  "industry": "string — one concise industry label",
   "geographicScope": {
     "type": "local | national | global",
-    "primaryRegion": "string",
-    "secondaryRegions": [],
-    "isLocalNiche": false
+    "primaryRegion": "string — the main country or region the business operates in",
+    "secondaryRegions": ["array of other regions served, or empty array"],
+    "isLocalNiche": "boolean — true if the business serves a very specific local community or niche geography (e.g. Arab market in Israel, one city only)"
   },
-  "brandIdentity": ["5–6 single adjective words"],
-  "productsServices": ["5–8 specific products or services"],
+  "brandIdentity": ["array of 5–6 single adjective words describing the brand's character"],
+  "productsServices": ["array of 5–8 specific products or services the business offers"],
   "audienceDistribution": {
-    "simpleSeeker": 60,
-    "informedShopper": 30,
-    "evaluativeResearcher": 10
+    "simpleSeeker": "integer 0–100 — casual users who want a quick recommendation",
+    "informedShopper": "integer 0–100 — users who know what they want and compare options",
+    "evaluativeResearcher": "integer 0–100 — users who deeply analyze before deciding"
   },
-  "suggestedCompetitors": ["5–8 well-known competitor brand names in this exact competitive space, ordered by market relevance"],
-  "outputLanguage": "${language}",
-  "userRegion": "${region}"
+  "suggestedCompetitors": ["array of 5–8 well-known competitor brand names in this exact competitive space, ordered by market relevance — real brands only"],
+  "outputLanguage": "string — ALWAYS use the user-chosen language value exactly as provided",
+  "userRegion": "string — ALWAYS use the user-chosen region value exactly as provided"
 }
+
 Rules:
-- audienceDistribution must sum to exactly 100
-- suggestedCompetitors must be real brands that compete in this space — ordered most to least relevant
-- outputLanguage and userRegion MUST be the exact values provided — never infer from website`,
-    `Website content:\n${rawText}\n\nUser region: ${region}\nUser language: ${language}`
+- audienceDistribution values must sum to exactly 100
+- For commodity/mass-market businesses (gyms, basic e-commerce): simpleSeeker ~60, informedShopper ~30, evaluativeResearcher ~10
+- For professional services, B2B, or niche consulting: skew toward informedShopper and evaluativeResearcher
+- suggestedCompetitors must be real brands that compete directly in this space — ordered most to least relevant
+- outputLanguage and userRegion MUST come from the user inputs verbatim — never infer them from the website`,
+    `Website content:\n${rawText}\n\nUser-chosen region: ${region}\nUser-chosen language: ${language}`
   )
 }
 
@@ -89,13 +103,29 @@ async function generateTopics(profile: any): Promise<string[]> {
   const result = await gpt(
     `You are an AI search behavior analyst. Given a business profile, generate exactly 5 competitive search topics.
 
-A topic is a 2–5 word noun phrase representing a CATEGORY-LEVEL search a potential customer types into an AI assistant to discover this type of business. Not a specific product — a competitive search space.
+WHAT A TOPIC IS:
+A topic is a 2–5 word noun phrase representing a CATEGORY-LEVEL search that a potential customer types into an AI assistant to discover this type of business. Think of it as a competitive search space, not a specific product.
+
+TOPIC QUALITY TEST — ask yourself: "Would a random person type this phrase to find ANY company in this space, or just this one product?" Topics must pass this test.
+
+GOOD examples (category-level):
+- "best athletic apparel brands" — not "stylish sports bras" (too product-specific)
+- "24-hour fitness centers" — not "Anytime Fitness gyms" (brand name)
+- "eco-friendly footwear brands" — not "washable wool shoes" (too specific feature)
+- "high performance workout gear" — not "Gymshark leggings" (brand + product)
+- "residential real estate agencies" — not "RE/MAX listings" (brand)
+
+BAD examples (too narrow, too product-specific):
+- "comfortable leggings for workouts" → should be "performance activewear"
+- "stylish sports bras" → should be "athletic apparel brands"
+- "Apple Fitness+ integration" → should be "digital fitness platforms"
 
 Rules:
 - Never include the brand name
-- Written in the language specified in outputLanguage
-- Cover 5 distinct commercially important search categories across the brand's main service pillars
-- Each topic represents a landscape where multiple brands compete
+- Must be written in the language specified in outputLanguage
+- Cover 5 distinct commercially important search categories — spread across the brand's main service or product pillars
+- Each topic should represent a competitive landscape where multiple brands compete
+- Topics must be at the CATEGORY level, broad enough that a searcher could find several competitors through them
 
 Output JSON: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5"] }`,
     `Business profile:\n${JSON.stringify(profile, null, 2)}`
@@ -103,7 +133,7 @@ Output JSON: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5"] }`,
   return result.topics
 }
 
-// ─── Tier counts ──────────────────────────────────────────────────────────────
+// ─── Tier count calculation ────────────────────────────────────────────────────
 function computeTierCounts(profile: any) {
   const { simpleSeeker, informedShopper, evaluativeResearcher } = profile.audienceDistribution
   let t3 = Math.max(2, Math.round((evaluativeResearcher / 100) * 10))
@@ -121,32 +151,81 @@ async function generatePromptsForTopic(topic: string, profile: any, tierCounts: 
     ? 'US, European markets, Asia Pacific, Latin America, North America'
     : `${profile.geographicScope.primaryRegion} and surrounding regions`
 
-  const geoRule = isLocal
-    ? `ALL prompts must reference "${profile.userRegion}". Vary HOW you express the locality across the 10 prompts — never use the same phrasing twice (expertise framing, cultural fit, credential framing, direct question, etc.).`
-    : `Tier 1: no geography OR "near me" (max once across all 10). Tier 2: include "${profile.userRegion}" specifically. Tier 3: reference at least 2 regions from [${globalRegions}] with cross-region comparison.`
+  const geographicRule = isLocal
+    ? `ALL prompts must reference the specific locality "${profile.userRegion}". Critically: vary HOW the locality is expressed — use different framings across the 10 prompts:
+  - As expertise: "agencies specializing in [X] in ${profile.userRegion}"
+  - As cultural fit: "who understand [local community] in ${profile.userRegion}"
+  - As a direct question with urgency: "Is there someone who can handle [X] in ${profile.userRegion} within [timeframe]?"
+  - As credential framing: "with proven experience in the ${profile.userRegion} market"
+  - As community language: use local phrasing, not just translating "in ${profile.userRegion}"
+  Never use the same locality phrasing twice across the 10 prompts.`
+    : `Tier 1 prompts: no geography OR use "near me" / "in my area" — but "near me" may appear AT MOST ONCE across all 10 prompts
+Tier 2 prompts: include the user's region "${profile.userRegion}" specifically (not just "my area")
+Tier 3 prompts: reference at least 2 specific regions from [${globalRegions}], draw a cross-region comparison`
+
+  const tier1Examples = `"Best gym membership options." / "Top rated fitness centers." / "Affordable workout gear brands." / "Commercial property brokers." / "Eco-friendly shoe brands." / "Group fitness classes nearby."`
+  const tier2Examples = `"I need a gym in the United States that offers affordable personal training packages for beginners." / "Find a brokerage offering homebuyer resources for a first-time buyer with a budget under $500k." / "Looking for breathable activewear under $100 that ships quickly to the US."`
+  const tier3Examples = `"Compare the accessibility and equipment density of major 24-hour fitness chains operating across global markets to determine which provides the most consistent member experience." / "Evaluate the residential real estate brokerage landscape in the United States, specifically focusing on agent network depth and educational resources for first-time sellers." / "Analyze the market for sustainable footwear brands in the US, comparing material sustainability credentials and pricing across East Coast and West Coast retailers."`
 
   const result = await gpt(
     `You are generating realistic AI search prompts for brand visibility research.
 
-Generate EXACTLY 10 prompts for the given search topic. Count before responding. Exactly 10 — not 9, not 11.
+Generate EXACTLY 10 prompts for the given search topic. These simulate what real people type into AI assistants (ChatGPT, Perplexity) when searching the competitive space this topic represents.
 
-⚠️ LANGUAGE OVERRIDE: Every single prompt MUST be in ${profile.outputLanguage}. No exceptions. Verify each prompt before outputting.
+YOU MUST OUTPUT EXACTLY 10 PROMPTS — count them before responding. Not 9, not 11. Exactly 10.
 
-STRICT RULES:
-1. BRAND EXCLUSION: Never mention the brand name or domain.
-2. SEARCHER PERSPECTIVE: Written as typed by a real customer searching for this type of business.
-3. LANGUAGE: ${profile.outputLanguage} only — absolutely no mixing.
-4. OPENING VERB DIVERSITY: Each prompt starts with a DIFFERENT opener. Use each at most once: List, Show me, Find me, Compare, Help me find, Recommend, Search for, Suggest, Where can I, I need, Identify, Locate, Evaluate, Analyze, Can you
-5. LENGTH TIERS — generate EXACTLY:
-   - ${t1} SHORT (2–7 words): Fragment/keyword style. No geography, no constraints.
-   - ${t2} MEDIUM (10–25 words): Conversational, includes at least 1 real constraint (budget/timeframe/quality requirement). Budget calibrated for "${profile.industry}".
-   - ${t3} LONG (35–70 words): Analytical/comparative. Structure: [Analyze/Compare/Evaluate] + [aspect] + [entity category] + [geographic anchor] + [focusing on] + [dimension A] + [and dimension B].
-6. GEOGRAPHIC INJECTION: ${geoRule}
-7. INTENT COVERAGE: Cover discovery, comparison, evaluation, recommendation, local search, direct need with constraint, deep analysis, and list request.
-8. NO STRUCTURAL REPETITION: Vary sentence structures — if one Tier 2 starts "I need a [noun] in the US that...", the next Tier 2 must use a different structure.
+⚠️ LANGUAGE OVERRIDE — THIS IS THE MOST IMPORTANT RULE:
+The user has explicitly chosen "${profile.outputLanguage}" as their language BEFORE any website analysis happened. This is a non-negotiable user decision. Every single one of the 10 prompts MUST be written in ${profile.outputLanguage} — regardless of what language the website is in, regardless of what language the topic name is in, regardless of anything else. If you write even one prompt in a different language, the entire output is invalid. Check every prompt before outputting.
 
-Output JSON: { "prompts": ["prompt1", ..., "prompt10"] }`,
-    `REQUIRED LANGUAGE: ${profile.outputLanguage}\n\nTopic: "${topic}"\n\nBusiness context:\n- Description: ${profile.description}\n- Industry: ${profile.industry}\n- Scope: ${profile.geographicScope.type} (primary: ${profile.geographicScope.primaryRegion})\n- Products/services: ${profile.productsServices.join(', ')}\n- User region: ${profile.userRegion}\n- Tier counts: ${t1} short / ${t2} medium / ${t3} long`
+STRICT RULES — all must be followed:
+
+1. BRAND EXCLUSION: Never mention the brand name or domain in any prompt.
+
+2. SEARCHER PERSPECTIVE: Every prompt is written as if typed by a customer searching for this type of business — not by the brand itself.
+
+3. LANGUAGE: ${profile.outputLanguage} only. See the language override above. No exceptions, no mixing, no partial translations.
+
+4. OPENING VERB DIVERSITY: Each of the 10 prompts must start with a DIFFERENT opener. Never repeat an opener within the same set of 10. Choose from: List, Show me, Find me, Compare, Help me find, Recommend, Search for, Suggest, Where can I, I need, Identify, Locate, Evaluate, Analyze, Can you — use each at most once.
+
+5. LENGTH TIERS — generate EXACTLY this distribution:
+   - ${t1} Tier 1 prompts → SHORT (2–7 words): Fragment or keyword-cluster style. No geography unless "near me" (used max once total). No constraints. Must feel like a quick casual search.
+     Good examples: ${tier1Examples}
+     Bad: "Gyms near me that are open 24/7" (too long), "The best gym for me" (too vague)
+
+   - ${t2} Tier 2 prompts → MEDIUM (10–25 words): Conversational, specific need, includes at least ONE real constraint (realistic budget for this industry, a timeframe, or a quality requirement).
+     Good examples: ${tier2Examples}
+     Bad: "Help me find a gym" (no constraint), "I need good shoes" (too vague)
+
+   - ${t3} Tier 3 prompts → LONG (35–70 words): Analytical/comparative, cross-geographic, examines specific competitive dimensions. Must follow the structure: [Analyze/Compare/Evaluate] + [aspect/landscape/model] + [entity category] + [geographic anchor] + [specifically comparing/focusing on] + [dimension A] + [and dimension B].
+     Good examples: ${tier3Examples}
+     Bad: Long but not analytical, or analytical but missing geographic comparison
+
+6. GEOGRAPHIC INJECTION:
+${geographicRule}
+
+7. INTENT COVERAGE: Across the 10 prompts, cover ALL of these intent types (at least once each): discovery, comparison, evaluation, recommendation, local/near-me search, direct need with constraint, deep analytical research, list request.
+
+8. CONSTRAINT CALIBRATION: Budget and price constraints in Tier 2 must be realistic for "${profile.industry}". A gym membership, a commercial property, and a sneaker brand have very different realistic price ranges — calibrate accordingly.
+
+9. NO STRUCTURAL REPETITION: Avoid repeating sentence structures across prompts. If one prompt starts "I need a [noun] in the US that...", the next Tier 2 prompt should use a different structure. Variety in structure is as important as variety in wording.
+
+10. NATURALNESS: Short prompts feel like someone typing fast on their phone. Medium prompts feel like a specific real-world need. Long prompts feel like a researcher crafting a careful, detailed query.
+
+Before outputting: (1) count that you have exactly 10 prompts, (2) verify every single prompt is in ${profile.outputLanguage} — fix any that are not.
+
+Output JSON: { "prompts": ["prompt1", "prompt2", "prompt3", "prompt4", "prompt5", "prompt6", "prompt7", "prompt8", "prompt9", "prompt10"] }`,
+    `REQUIRED OUTPUT LANGUAGE: ${profile.outputLanguage} — every prompt must be in this language, no exceptions.
+
+Topic: "${topic}"
+
+Business context:
+- Description: ${profile.description}
+- Industry: ${profile.industry}
+- Geographic scope: ${profile.geographicScope.type} (primary: ${profile.geographicScope.primaryRegion})
+- Brand identity: ${profile.brandIdentity.join(', ')}
+- Products/services: ${profile.productsServices.join(', ')}
+- User region: ${profile.userRegion}
+- Required tier counts: ${t1} short / ${t2} medium / ${t3} long (total = 10)`
   )
 
   const prompts = result.prompts
@@ -192,7 +271,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // ── Rate limit: user account (25 total scans) ─────────────────────
+        // ── Rate limit: user account (25 total scans) ─────────────────────────
         const { data: userRow } = await adminSupabase
           .from('users').select('onboarding_generation_count').eq('id', user.id).single()
         const userCount = userRow?.onboarding_generation_count ?? 0
@@ -201,7 +280,7 @@ export async function POST(request: NextRequest) {
           controller.close(); return
         }
 
-        // ── Find or create brand ──────────────────────────────────────────
+        // ── Find or create brand ──────────────────────────────────────────────
         const { data: existingBrands } = await supabase
           .from('brands').select('id, generation_attempts').eq('owner_user_id', user.id)
           .eq('is_demo', false).eq('onboarding_completed', false)
@@ -235,19 +314,19 @@ export async function POST(request: NextRequest) {
               onboarding_answers: { brandName, websiteUrl, onboardingVersion: 'v2' },
             }).select('id').single()
           if (createError || !newBrand) {
-            send({ type: 'error', data: { message: 'Failed to create brand record.' } })
+            send({ type: 'error', data: { message: `Failed to create brand record: ${createError?.message}` } })
             controller.close(); return
           }
           brandId = newBrand.id
         }
 
-        // Increment user generation count (upsert handles new users)
+        // Increment user generation count
         await adminSupabase.from('users').upsert(
           { id: user.id, email: user.email, onboarding_generation_count: userCount + 1 },
           { onConflict: 'id' }
         )
 
-        // ── Fetch website ────────────────────────────────────────────────
+        // ── Fetch website ─────────────────────────────────────────────────────
         let rawText: string
         try {
           rawText = await fetchWebsiteText(websiteUrl)
@@ -256,28 +335,28 @@ export async function POST(request: NextRequest) {
           controller.close(); return
         }
 
-        // ── Layer 1: Profile ─────────────────────────────────────────────
+        // ── Layer 1: Profile ──────────────────────────────────────────────────
         let profile: any
         try {
           profile = await generateProfile(rawText, region, language)
-        } catch {
-          send({ type: 'error', data: { message: 'Failed to analyze business profile.' } })
+        } catch (e: any) {
+          send({ type: 'error', data: { message: `Failed to analyze business profile: ${e.message}` } })
           controller.close(); return
         }
         send({ type: 'profile', data: profile })
 
-        // ── Layer 2: Topics ──────────────────────────────────────────────
+        // ── Layer 2: Topics ───────────────────────────────────────────────────
         let topics: string[]
         try {
           topics = await generateTopics(profile)
           if (!Array.isArray(topics) || topics.length < 3) throw new Error('Not enough topics generated')
-        } catch {
-          send({ type: 'error', data: { message: 'Failed to generate search topics.' } })
+        } catch (e: any) {
+          send({ type: 'error', data: { message: `Failed to generate search topics: ${e.message}` } })
           controller.close(); return
         }
         send({ type: 'topics', data: topics })
 
-        // ── Layer 3: Prompts per topic (parallel) ────────────────────────
+        // ── Layer 3: Prompts per topic (parallel) ─────────────────────────────
         const tierCounts = computeTierCounts(profile)
         const promptResults: { topic: string; prompts: string[] }[] = []
 
@@ -289,7 +368,7 @@ export async function POST(request: NextRequest) {
           promptResults.push({ topic, prompts })
         }))
 
-        // ── Save prompts to DB (delete existing first for retry safety) ──
+        // ── Save prompts to DB (delete existing first for retry safety) ────────
         await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
 
         const rows: any[] = []
