@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 // Normalize domain function
@@ -30,17 +29,7 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Try cookie auth — used to verify brand ownership and upsert users row
     let user: any = null
-    try {
-      const supabaseForAuth = await createClient()
-      const { data } = await supabaseForAuth.auth.getUser()
-      user = data.user
-      if (user) console.log('✅ [COMPLETE-FINAL API] User authenticated via cookie:', user.id)
-      else console.warn('⚠️ [COMPLETE-FINAL API] Cookie auth returned no user — proceeding via brandId')
-    } catch (authErr) {
-      console.warn('⚠️ [COMPLETE-FINAL API] Cookie auth threw:', authErr)
-    }
     const now = new Date()
     const reserveWindowEnd = new Date(now.getTime() + 15 * 60 * 1000)
 
