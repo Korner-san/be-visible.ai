@@ -6,6 +6,7 @@ import { RightB } from './RightB'
 import { LeftC } from './LeftC'
 import { RightC } from './RightC'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
+import { supabase } from '../../lib/supabase'
 
 export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNavigate }) => {
   const [state, setState] = useState<OnboardingState>('A')
@@ -30,9 +31,12 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setState('B_LOADING')
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+
       const response = await fetch('/api/onboarding/generate-v2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify(data),
       })
 
@@ -105,9 +109,12 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setLaunchError(null)
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+
       const res = await fetch('/api/onboarding/complete-final', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({
           competitors,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
