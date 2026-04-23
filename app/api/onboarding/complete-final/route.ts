@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         : 15
 
       console.log('⏳ [COMPLETE-FINAL API] System at capacity, estimated wait:', estimatedWaitMinutes, 'min')
-      return NextResponse.json({ success: false, busy: true, waitMinutes: estimatedWaitMinutes }, { status: 409 })
+      return NextResponse.json({ _r: 'app-router', success: false, busy: true, waitMinutes: estimatedWaitMinutes }, { status: 409 })
     }
 
     // Select best free account (least recently used)
@@ -112,12 +112,12 @@ export async function POST(request: NextRequest) {
     }
     if (!brand) {
       console.error('❌ [COMPLETE-FINAL API] No brand found')
-      return NextResponse.json({ success: false, error: 'No brand found' }, { status: 404 })
+      return NextResponse.json({ _r: 'app-router', success: false, error: 'No brand found' }, { status: 404 })
     }
     // If we have a user, verify ownership
     if (user && brand.owner_user_id !== user.id) {
       console.error('❌ [COMPLETE-FINAL API] Brand does not belong to user')
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ _r: 'app-router', success: false, error: 'Unauthorized' }, { status: 403 })
     }
     // Use brand's owner_user_id if cookie auth gave us no user
     if (!user) user = { id: brand.owner_user_id, email: null }
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     // Idempotency check
     if (brand.onboarding_completed) {
       console.log('⚡ [COMPLETE-FINAL API] IDEMPOTENT: Brand already completed')
-      return NextResponse.json({ success: true, message: 'Already completed' })
+      return NextResponse.json({ _r: 'app-router', success: true, message: 'Already completed' })
     }
     
     // Parse onboarding answers
@@ -348,18 +348,20 @@ export async function POST(request: NextRequest) {
     }
     
     console.log('✅ [COMPLETE-FINAL API] COMPLETION SUCCESS - Brand ready for finishing page')
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      _r: 'app-router',
+      success: true,
       brandId: updatedBrand.id,
-      brandName: updatedBrand.name 
+      brandName: updatedBrand.name
     })
-    
+
   } catch (error) {
     console.error('❌ [COMPLETE-FINAL API] Unexpected error:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    return NextResponse.json({
+      _r: 'app-router',
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
