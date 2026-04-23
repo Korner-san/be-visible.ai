@@ -35,7 +35,7 @@ export function FinishingClient({ brandName }: FinishingClientProps) {
       const data = await res.json()
       if (!data.success) return
 
-      const { firstReportStatus, wave1Complete: w1 } = data
+      const { firstReportStatus, wave1Complete: w1, wave1Total: w1Total } = data
 
       if (!redirectedRef.current && (firstReportStatus === 'phase1_complete' || firstReportStatus === 'succeeded')) {
         redirectedRef.current = true
@@ -45,8 +45,8 @@ export function FinishingClient({ brandName }: FinishingClientProps) {
         return
       }
 
-      // Wave 1 queries done, EOD calculating score
-      setStatus((w1 ?? 0) >= 6 ? 'almost' : 'working')
+      // Wave 1 queries done, EOD calculating score (use actual wave1Total — V2=5, V1=6)
+      setStatus((w1 ?? 0) >= (w1Total ?? 5) ? 'almost' : 'working')
     } catch {
       // Keep current status on transient errors
     }

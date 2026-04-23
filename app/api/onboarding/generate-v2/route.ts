@@ -363,31 +363,45 @@ export async function POST(request: NextRequest) {
         }
         send({ type: 'topics', data: topics })
 
-        // ── Layer 3: Prompts per topic (parallel) ─────────────────────────────
+        // ── Layer 3: Prompts per topic (parallel GPT, sequential DB write) ───────
         const tierCounts = computeTierCounts(profile)
 
         // Clear any prompts from previous scan attempts before streaming new ones
         await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
 
+        // Run all GPT calls in parallel for speed, collect results
+        const topicResults: { topic: string; prompts: string[] }[] = await Promise.all(
+          topics.map(async (topic) => {
+            let prompts: string[]
+            try { prompts = await generatePromptsForTopic(topic, profile, tierCounts) }
+            catch { prompts = [] }
+            send({ type: 'prompts_topic', data: { topic, prompts } })
+            return { topic, prompts }
+          })
+        )
+
+        // Write to DB sequentially to avoid UNIQUE(brand_id, raw_prompt) race collisions
+        // Set improved_prompt = raw_prompt so dashboard reads correctly (V1 parity)
         let totalPrompts = 0
-        await Promise.all(topics.map(async (topic) => {
-          let prompts: string[]
-          try { prompts = await generatePromptsForTopic(topic, profile, tierCounts) }
-          catch { prompts = [] }
-          send({ type: 'prompts_topic', data: { topic, prompts } })
-          // Save each topic's prompts to DB immediately as they arrive
-          if (prompts.length > 0) {
-            const { error: insertError } = await adminSupabase.from('brand_prompts').insert(
-              prompts.map(p => ({ brand_id: brandId, raw_prompt: p, status: 'active', category: topic }))
-            )
-            if (insertError) {
-              console.error(`[generate-v2] brand_prompts insert failed for topic "${topic}":`, insertError.message, insertError.code)
-              send({ type: 'error', data: { message: `Failed to save prompts for topic "${topic}": ${insertError.message}` } })
-              controller.close(); return
-            }
-            totalPrompts += prompts.length
+        for (const { topic, prompts } of topicResults) {
+          if (prompts.length === 0) continue
+          const { error: insertError } = await adminSupabase.from('brand_prompts').upsert(
+            prompts.map(p => ({
+              brand_id: brandId,
+              raw_prompt: p,
+              improved_prompt: p,
+              status: 'inactive',
+              category: topic,
+            })),
+            { onConflict: 'brand_id,raw_prompt', ignoreDuplicates: true }
+          )
+          if (insertError) {
+            console.error(`[generate-v2] brand_prompts upsert failed for topic "${topic}":`, insertError.message, insertError.code)
+            send({ type: 'error', data: { message: `Failed to save prompts for "${topic}": ${insertError.message}` } })
+            controller.close(); return
           }
-        }))
+          totalPrompts += prompts.length
+        }
 
         send({ type: 'done', data: { brandId, tierCounts, totalPrompts } })
         controller.close()
