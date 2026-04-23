@@ -377,9 +377,14 @@ export async function POST(request: NextRequest) {
           send({ type: 'prompts_topic', data: { topic, prompts } })
           // Save each topic's prompts to DB immediately as they arrive
           if (prompts.length > 0) {
-            await adminSupabase.from('brand_prompts').insert(
+            const { error: insertError } = await adminSupabase.from('brand_prompts').insert(
               prompts.map(p => ({ brand_id: brandId, raw_prompt: p, status: 'active', category: topic }))
             )
+            if (insertError) {
+              console.error(`[generate-v2] brand_prompts insert failed for topic "${topic}":`, insertError.message, insertError.code)
+              send({ type: 'error', data: { message: `Failed to save prompts for topic "${topic}": ${insertError.message}` } })
+              controller.close(); return
+            }
             totalPrompts += prompts.length
           }
         }))
