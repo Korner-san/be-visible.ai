@@ -798,18 +798,37 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     </div>
                   );
                 }} />
-                {trendLineKeys.map((key, idx) => (
-                  <Line
-                    key={key}
-                    type="monotone"
-                    dataKey={key}
-                    stroke={COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length]}
-                    strokeWidth={idx === 0 ? 3 : 2}
-                    dot={false}
-                    activeDot={{ r: 5 }}
-                    strokeDasharray={idx === 0 ? undefined : '5 5'}
-                  />
-                ))}
+                {trendLineKeys.map((key, idx) => {
+                  const domain = key === brandName
+                    ? brandDomain
+                    : competitors.find(c => c.name === key)?.website;
+                  const color = COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length];
+                  const faviconHref = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+                  const renderDot = (props: any) => {
+                    const { cx, cy } = props;
+                    if (cx == null || cy == null) return <g />;
+                    if (!faviconHref) return <circle cx={cx} cy={cy} r={5} fill={color} stroke="white" strokeWidth={1.5} />;
+                    const s = 16;
+                    return (
+                      <g key={`dot-${cx}-${cy}`}>
+                        <circle cx={cx} cy={cy} r={s / 2 + 2} fill="white" stroke="#e2e8f0" strokeWidth={1} />
+                        <image href={faviconHref} x={cx - s / 2} y={cy - s / 2} width={s} height={s} />
+                      </g>
+                    );
+                  };
+                  return (
+                    <Line
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      stroke={color}
+                      strokeWidth={idx === 0 ? 3 : 2}
+                      dot={renderDot}
+                      activeDot={faviconHref ? renderDot : { r: 5 }}
+                      strokeDasharray={idx === 0 ? undefined : '5 5'}
+                    />
+                  );
+                })}
               </LineChart>
             </ResponsiveContainer>
             )}
