@@ -300,7 +300,7 @@ export async function GET(request: NextRequest) {
           prompt_ids,
           brand_id,
           batch_type,
-          chatgpt_accounts!inner(
+          chatgpt_accounts(
             email,
             proxy_host,
             proxy_port,
