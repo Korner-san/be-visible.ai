@@ -83,7 +83,7 @@ Output a JSON object with this exact shape:
     "informedShopper": "integer 0–100 — users who know what they want and compare options",
     "evaluativeResearcher": "integer 0–100 — users who deeply analyze before deciding"
   },
-  "suggestedCompetitors": ["array of 5–8 well-known competitor brand names in this exact competitive space, ordered by market relevance — real brands only"],
+  "suggestedCompetitors": [{"name": "CompetitorName", "domain": "competitor.com"}, ...],
   "typicalCustomer": "string — one sentence describing who typically uses or searches for this business",
   "customerGoals": ["array of exactly 5 strings — the 5 most common things a customer is trying to accomplish when they find this business"],
   "outputLanguage": "string — ALWAYS use the user-chosen language value exactly as provided",
@@ -94,7 +94,7 @@ Rules:
 - audienceDistribution values must sum to exactly 100
 - For commodity/mass-market businesses (gyms, basic e-commerce): simpleSeeker ~60, informedShopper ~30, evaluativeResearcher ~10
 - For professional services, B2B, or niche consulting: skew toward informedShopper and evaluativeResearcher
-- suggestedCompetitors must be real brands that compete directly in this space — ordered most to least relevant
+- suggestedCompetitors must be real brands that compete directly in this space — ordered most to least relevant. Each entry must include the official domain (e.g. "algolia.com", not a full URL)
 - outputLanguage and userRegion MUST come from the user inputs verbatim — never infer them from the website`,
     `Website content:\n${rawText}\n\nUser-chosen region: ${region}\nUser-chosen language: ${language}`
   )

@@ -15,7 +15,7 @@ export interface BusinessProfile {
     informedShopper: number
     evaluativeResearcher: number
   }
-  suggestedCompetitors: string[]
+  suggestedCompetitors: Array<{ name: string; domain: string }>
   outputLanguage: string
   userRegion: string
 }

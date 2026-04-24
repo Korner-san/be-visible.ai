@@ -251,18 +251,23 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Save competitors to brand_competitors table
-    // V2: competitors come from request body. V1: from onboarding_answers. Normalize both.
+    // V2: competitors come from request body as [{name, domain}]. V1: from onboarding_answers. Normalize both.
     // Use bodyCompetitors only when non-empty — empty array is falsy-equivalent here so we fall through to onboarding_answers
     const rawCompetitors: any[] = (bodyCompetitors?.length > 0 ? bodyCompetitors : null) ?? onboardingAnswers.competitors ?? []
-    const competitors = rawCompetitors
-      .map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
-      .filter(Boolean)
+    const competitorEntries = rawCompetitors
+      .map((c: any) => ({
+        name: (typeof c === 'string' ? c : (c?.name || '')).trim(),
+        domain: (typeof c === 'string' ? '' : (c?.domain || '')).trim(),
+      }))
+      .filter(e => e.name)
+    const competitors = competitorEntries.map(e => e.name)
     if (competitors.length > 0) {
       // Delete existing first (idempotent — safe if called twice)
       await adminSupabaseForCapacity.from('brand_competitors').delete().eq('brand_id', updatedBrand.id)
-      const competitorRows = competitors.map((name: string, idx: number) => ({
+      const competitorRows = competitorEntries.map((entry, idx) => ({
         brand_id: updatedBrand.id,
-        competitor_name: name,
+        competitor_name: entry.name,
+        website: entry.domain || null,
         is_active: true,
         display_order: idx + 1,
       }))

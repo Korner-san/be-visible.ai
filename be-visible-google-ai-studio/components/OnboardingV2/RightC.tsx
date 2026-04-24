@@ -8,12 +8,13 @@ interface RightCProps {
 }
 
 export const RightC: React.FC<RightCProps> = ({ brandName, profile }) => {
-  const competitors = profile?.suggestedCompetitors?.slice(0, 4) || ['Competitor A', 'Competitor B', 'Competitor C']
+  const rawCompetitors = profile?.suggestedCompetitors?.slice(0, 4) || [{ name: 'Competitor A', domain: '' }, { name: 'Competitor B', domain: '' }, { name: 'Competitor C', domain: '' }]
+  const competitors = rawCompetitors.map((c: any) => typeof c === 'string' ? c : c.name)
 
   // Mock SOV bars — brand will be highlighted
   const rows = [
     { name: brandName || 'Your Brand', pct: 38, isYou: true },
-    ...competitors.slice(0, 3).map((c, i) => ({ name: c, pct: [28, 21, 13][i] ?? 10, isYou: false })),
+    ...competitors.slice(0, 3).map((c: string, i: number) => ({ name: c, pct: [28, 21, 13][i] ?? 10, isYou: false })),
   ]
 
   return (

@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { Plus, X, Loader2, AlertCircle, Users } from 'lucide-react'
 
+export interface CompetitorEntry { name: string; domain: string }
+
 interface LeftCProps {
-  suggestedCompetitors: string[]
-  onLaunch: (competitors: string[]) => void
+  suggestedCompetitors: CompetitorEntry[]
+  onLaunch: (competitors: CompetitorEntry[]) => void
   isLaunching: boolean
   launchError: string | null
 }
@@ -11,21 +13,21 @@ interface LeftCProps {
 export const LeftC: React.FC<LeftCProps> = ({
   suggestedCompetitors, onLaunch, isLaunching, launchError,
 }) => {
-  const [added, setAdded] = useState<string[]>([])
+  const [added, setAdded] = useState<CompetitorEntry[]>([])
   const [inputValue, setInputValue] = useState('')
 
-  const addCompetitor = (name: string) => {
-    const trimmed = name.trim()
-    if (!trimmed || added.includes(trimmed) || added.length >= 8) return
-    setAdded(prev => [...prev, trimmed])
+  const addCompetitor = (entry: CompetitorEntry) => {
+    const trimmed = entry.name.trim()
+    if (!trimmed || added.some(a => a.name === trimmed) || added.length >= 8) return
+    setAdded(prev => [...prev, { name: trimmed, domain: entry.domain }])
     setInputValue('')
   }
 
   const removeCompetitor = (name: string) => {
-    setAdded(prev => prev.filter(c => c !== name))
+    setAdded(prev => prev.filter(c => c.name !== name))
   }
 
-  const availableSuggestions = suggestedCompetitors.filter(s => !added.includes(s))
+  const availableSuggestions = suggestedCompetitors.filter(s => !added.some(a => a.name === s.name))
 
   return (
     <div className="flex flex-col h-full px-10 py-12">
@@ -59,12 +61,12 @@ export const LeftC: React.FC<LeftCProps> = ({
             <div className="flex flex-wrap gap-2">
               {availableSuggestions.map(s => (
                 <button
-                  key={s}
+                  key={s.name}
                   onClick={() => addCompetitor(s)}
                   disabled={isLaunching || added.length >= 8}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 transition-colors disabled:opacity-40"
                 >
-                  <Plus size={11} /> {s}
+                  <Plus size={11} /> {s.name}
                 </button>
               ))}
             </div>
@@ -80,12 +82,12 @@ export const LeftC: React.FC<LeftCProps> = ({
               placeholder="Competitor name…"
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addCompetitor(inputValue) }}
+              onKeyDown={e => { if (e.key === 'Enter') addCompetitor({ name: inputValue, domain: '' }) }}
               disabled={isLaunching || added.length >= 8}
               className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-brown/20 focus:border-brand-brown transition-all disabled:opacity-50"
             />
             <button
-              onClick={() => addCompetitor(inputValue)}
+              onClick={() => addCompetitor({ name: inputValue, domain: '' })}
               disabled={!inputValue.trim() || isLaunching || added.length >= 8}
               className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 transition-colors disabled:opacity-40"
             >
@@ -103,12 +105,12 @@ export const LeftC: React.FC<LeftCProps> = ({
             <div className="flex flex-wrap gap-2">
               {added.map(c => (
                 <span
-                  key={c}
+                  key={c.name}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-brown/8 border border-brand-brown/20 rounded-lg text-xs font-medium text-brand-brown"
                 >
-                  {c}
+                  {c.name}
                   <button
-                    onClick={() => removeCompetitor(c)}
+                    onClick={() => removeCompetitor(c.name)}
                     disabled={isLaunching}
                     className="text-brand-brown/60 hover:text-brand-brown transition-colors"
                   >
@@ -131,7 +133,7 @@ export const LeftC: React.FC<LeftCProps> = ({
         )}
 
         <button
-          onClick={() => onLaunch(added)}
+          onClick={() => onLaunch(added.length > 0 ? added : [])}
           disabled={isLaunching}
           className="w-full py-3 px-6 bg-brand-brown text-white rounded-xl font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
         >

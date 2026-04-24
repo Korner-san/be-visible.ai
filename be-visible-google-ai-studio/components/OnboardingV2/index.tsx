@@ -3,7 +3,7 @@ import { LeftA } from './LeftA'
 import { RightA } from './RightA'
 import { LeftB } from './LeftB'
 import { RightB } from './RightB'
-import { LeftC } from './LeftC'
+import { LeftC, type CompetitorEntry } from './LeftC'
 import { RightC } from './RightC'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
 
@@ -99,7 +99,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setState('C')
   }, [])
 
-  const handleLaunch = useCallback(async (competitors: string[]) => {
+  const handleLaunch = useCallback(async (competitors: CompetitorEntry[]) => {
     if (!brandId) return
     setState('LAUNCHING')
     setLaunchError(null)

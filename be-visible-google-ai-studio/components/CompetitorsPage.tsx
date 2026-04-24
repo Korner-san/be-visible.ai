@@ -119,6 +119,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   const [sovBrandPct, setSovBrandPct] = useState<number>(45);
   const [sovEntityTrends, setSovEntityTrends] = useState<Record<string, number | null>>({});
   const [isLoadingSov, setIsLoadingSov] = useState(false);
+  const [brandDomain, setBrandDomain] = useState<string>('');
   const [hasRealSov, setHasRealSov] = useState(false);
 
   // Competitor metrics state
@@ -475,9 +476,10 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         const compNames = (firstCm?.competitors || []).map((c: any) => c.name);
         setCompetitorNames(compNames);
 
-        const { data: brandData } = await supabase.from('brands').select('name').eq('id', brandId).single();
+        const { data: brandData } = await supabase.from('brands').select('name, domain').eq('id', brandId).single();
         const bName = brandData?.name || 'Brand';
         setBrandName(bName);
+        setBrandDomain(brandData?.domain || '');
 
         // Build trend line data using SOV-derived visibility index (same as Detected Entities)
         const trend: any[] = dedupedReports.map(r => {
@@ -622,7 +624,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     trendLineKeys.map(key => (point as any)[key] as number).filter(v => v !== undefined)
   );
   const minTrend = allTrendValues.length > 0 ? Math.max(0, Math.floor(Math.min(...allTrendValues) / 10) * 10 - 10) : 0;
-  const maxTrend = allTrendValues.length > 0 ? Math.min(100, Math.ceil(Math.max(...allTrendValues) / 10) * 10 + 10) : 100;
+  const maxTrend = allTrendValues.length > 0 ? Math.min(115, Math.ceil(Math.max(...allTrendValues) / 10) * 10 + 10) : 110;
 
   // Custom bar label with trend
   const renderMentionLabel = (mentionRows: CompetitorRow[]) => (props: any) => {
@@ -752,7 +754,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => `${v}%`}
+                  tickFormatter={(v) => `${v}`}
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', padding: '8px 12px' }}
@@ -765,14 +767,37 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
                             <span style={{ fontWeight: 700, color: '#475569' }}>{entry.dataKey}:</span>
-                            <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}%</span>
+                            <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}</span>
                           </div>
                         ))}
                       </div>
                     );
                   }}
                 />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '8px', fontSize: '9px', fontWeight: 700 }} />
+                <Legend content={(props: any) => {
+                  const { payload } = props;
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', paddingTop: '10px' }}>
+                      {(payload || []).map((entry: any) => {
+                        const domain = entry.dataKey === brandName
+                          ? brandDomain
+                          : competitors.find(c => c.name === entry.dataKey)?.website;
+                        const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+                        return (
+                          <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 700, color: '#475569' }}>
+                            {faviconUrl ? (
+                              <img src={faviconUrl} style={{ width: 13, height: 13, objectFit: 'contain', borderRadius: 2 }} alt={entry.dataKey}
+                                onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createElement('span'), { style: `width:8px;height:8px;border-radius:50%;background:${entry.color};display:inline-block` })); }} />
+                            ) : (
+                              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, flexShrink: 0 }} />
+                            )}
+                            <span>{entry.dataKey}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }} />
                 {trendLineKeys.map((key, idx) => (
                   <Line
                     key={key}
