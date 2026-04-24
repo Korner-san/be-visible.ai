@@ -357,11 +357,30 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     // Fetch competitor metrics (visibility trend, mention rate, citation share) + previous period trends
     const fetchCompetitorMetrics = async () => {
       setIsLoadingMetrics(true);
+
+      // Compute percentile-based visibility index from SOV data — same formula as Detected Entities
+      const computeEntityIndexFromSov = (sov: any, entityName: string): number => {
+        if (!sov?.entities?.length || !sov.total_responses) return 0;
+        const totalResp = sov.total_responses as number;
+        const rawScores: Record<string, number> = {};
+        for (const e of sov.entities as any[]) {
+          rawScores[e.name.toLowerCase()] =
+            0.5 * ((e.mentions || 0) / totalResp) +
+            0.5 * ((e.position_score_sum || 0) / totalResp);
+        }
+        const N = Object.keys(rawScores).length;
+        if (N === 0) return 0;
+        const key = entityName.toLowerCase();
+        const raw = rawScores[key] ?? 0;
+        const lowerCount = Object.values(rawScores).filter(r => r < raw).length;
+        return N > 1 ? Math.round((lowerCount / (N - 1)) * 100) : (raw > 0 ? 100 : 0);
+      };
+
       try {
         const [{ data: reports, error }, { data: prevReports }] = await Promise.all([
           supabase
             .from('daily_reports')
-            .select('report_date, competitor_metrics')
+            .select('report_date, competitor_metrics, share_of_voice_data')
             .eq('brand_id', brandId)
             .eq('status', 'completed')
             .not('competitor_metrics', 'is', null)
@@ -460,14 +479,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         const bName = brandData?.name || 'Brand';
         setBrandName(bName);
 
-        // Build trend line data
+        // Build trend line data using SOV-derived visibility index (same as Detected Entities)
         const trend: any[] = dedupedReports.map(r => {
+          const sov = (r as any).share_of_voice_data;
           const slice = getMetricsSlice(r.competitor_metrics as any);
           const dateLabel = new Date(r.report_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           const point: any = { date: dateLabel };
-          point[bName] = slice?.brand_visibility_score || 0;
+          point[bName] = computeEntityIndexFromSov(sov, bName);
           for (const comp of (slice?.competitors || [])) {
-            point[comp.name] = comp.visibility_score || 0;
+            point[comp.name] = computeEntityIndexFromSov(sov, comp.name);
           }
           return point;
         });
