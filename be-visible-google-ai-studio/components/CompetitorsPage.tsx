@@ -693,7 +693,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     <div className="space-y-6 animate-fadeIn pb-12">
       <div className="grid grid-cols-12 gap-6 items-stretch">
         {/* Visibility Trend vs Competitors */}
-        <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[340px]">
+        <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[420px]">
           <div className="flex items-start justify-between mb-4">
             <div className="space-y-1">
               <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
