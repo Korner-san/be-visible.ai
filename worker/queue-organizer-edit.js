@@ -150,21 +150,10 @@ async function runQueueOrganizer() {
     const { count } = await pendingQuery;
 
     if (count > 0) {
-      // Wave-2 time-gate: only dispatch when the next scheduled slot is due.
-      // scheduleWave2Dispatch stored a slot list in onboarding_answers.wave2Schedule
-      // when phase 1 completed. batchIndex tracks how many batches have been dispatched.
       if (currentWave === 2) {
-        const schedule = (brand.onboarding_answers || {}).wave2Schedule;
-        if (schedule && Array.isArray(schedule.dispatchTimes) && schedule.dispatchTimes.length > 0) {
-          const batchIdx = schedule.batchIndex || 0;
-          const nextSlot = schedule.dispatchTimes[batchIdx];
-          if (nextSlot && new Date(nextSlot).getTime() > Date.now()) {
-            const minsUntil = Math.round((new Date(nextSlot).getTime() - Date.now()) / 60000);
-            console.log('[QUEUE-ORG] Brand', brand.id.substring(0, 8),
-              `wave-2 batch ${batchIdx + 1}/${schedule.dispatchTimes.length} scheduled in ${minsUntil} min — waiting`);
-            continue; // not time yet — skip this run, cron will check again in 5 min
-          }
-        }
+        // Wave-2 batches are dispatched by daily_schedules cron (execute-onboarding-batch.js).
+        // The organizer skips wave-2 dispatch entirely; finalization is handled in the else branch.
+        continue;
       }
       brandsWithWork.push({ ...brand, currentWave, pendingCount: count });
     } else {
@@ -262,28 +251,6 @@ async function runQueueOrganizer() {
         .update({ first_report_status: 'running' })
         .eq('id', targetBrand.id)
         .eq('first_report_status', 'queued');
-    }
-
-    // Wave-2: advance batchIndex so the next cron run waits for the next scheduled slot.
-    // Do this immediately after claiming so a concurrent organizer run won't double-dispatch.
-    if (targetBrand.currentWave === 2) {
-      const currentAnswers = targetBrand.onboarding_answers || {};
-      const schedule = currentAnswers.wave2Schedule;
-      if (schedule && Array.isArray(schedule.dispatchTimes)) {
-        const nextIdx = (schedule.batchIndex || 0) + 1;
-        await supabase
-          .from('brands')
-          .update({
-            onboarding_answers: {
-              ...currentAnswers,
-              wave2Schedule: { ...schedule, batchIndex: nextIdx },
-            },
-          })
-          .eq('id', targetBrand.id);
-        console.log('[QUEUE-ORG] Wave-2 batchIndex advanced to', nextIdx, '/', schedule.dispatchTimes.length);
-        // Propagate to in-memory object so subsequent accounts in this loop see the update
-        targetBrand.onboarding_answers = { ...currentAnswers, wave2Schedule: { ...schedule, batchIndex: nextIdx } };
-      }
     }
 
     // Get or create daily report (using anchored ID if available)
@@ -488,7 +455,7 @@ async function finalizePhase(brand, completedWave) {
     // Schedule wave-2 batches spread over the next 4 hours.
     // Uses existing daily_schedules slots on the brand's ChatGPT account as reference points
     // to find gaps ≥10 min. The queue-organizer cron will dispatch each batch at its slot time.
-    await scheduleWave2Dispatch(brand);
+    await injectWave2IntoSchedule(brand);
 
   } else if (completedWave === 2) {
     if (currentBrand?.first_report_status === 'succeeded') {
@@ -533,6 +500,22 @@ async function finalizePhase(brand, completedWave) {
 
     await ensureUserInTable(brand.owner_user_id);
 
+    // Flip all wave-2 prompts from inactive → active so they join the daily scheduling pool.
+    // Wave-2 prompts stayed inactive throughout onboarding to avoid the plan trigger during dispatch.
+    // Now that onboarding is complete and the trigger allows 50 for starter plan, we activate them.
+    const { data: activated, error: activateErr } = await supabase
+      .from('brand_prompts')
+      .update({ status: 'active', is_active: true })
+      .eq('brand_id', brandId)
+      .eq('onboarding_wave', 2)
+      .eq('status', 'inactive')
+      .select('id');
+    if (activateErr) {
+      console.error('[QUEUE-ORG] Wave-2 final activation error:', activateErr.message);
+    } else {
+      console.log('[QUEUE-ORG] Activated', activated?.length || 0, 'wave-2 prompts for daily scheduling');
+    }
+
     // Inject brand into tomorrow's daily schedule so daily reports start the very next day.
     // The nightly scheduler already ran (at noon) so we add this brand's batches directly.
     await injectBrandIntoTomorrowSchedule(brand);
@@ -541,42 +524,28 @@ async function finalizePhase(brand, completedWave) {
   }
 }
 
-// ── Schedule wave-2 onboarding batches over the next 4 hours ─────────────────
-// Called from finalizePhase(1) instead of immediately spawning a fresh organizer.
-//
-// Algorithm:
-//   1. Group all wave-2 active prompts into batches of SESSION_MAX_PROMPTS (5).
-//   2. Look at the brand's ChatGPT account's existing daily_schedules in the next 4 hours.
-//   3. Build "blocked zones": each occupied batch blocks ±10 min around it.
-//   4. Find free intervals inside the 4-hour window (the gaps between blocked zones).
-//   5. Distribute batches evenly across the free intervals.
-//   6. Fallback (no free intervals / schedule dense): evenly space over full 4 hours — the
-//      existing account-reservation logic in getAccountStates() will skip an occupied slot
-//      and the cron will retry 5 minutes later.
-//
-// Stores the result in brands.onboarding_answers.wave2Schedule = { dispatchTimes, batchIndex }.
-// The queue-organizer main loop reads this to time-gate each wave-2 dispatch.
-async function scheduleWave2Dispatch(brand) {
-  const WINDOW_MS        = 4 * 60 * 60 * 1000;                               // 4-hour spread window
-  const MIN_SPACING_MS   = 10 * 60 * 1000;                                    // ≥10 min gap around existing daily batches
-  const BATCH_DURATION_MS = SESSION_MAX_PROMPTS * MINUTES_PER_PROMPT * 60 * 1000; // ~12.5 min per chunk
-  const CLEARANCE_MS     = BATCH_DURATION_MS + MIN_SPACING_MS;                // total clearance zone: ~22.5 min
+// ── Inject wave-2 onboarding batches into daily_schedules ────────────────────
+// Called from finalizePhase(1). Creates daily_schedules rows with batch_type='onboarding'
+// spread over the next 4 hours in free slots on the brand's ChatGPT account.
+// load-daily-schedule.js routes these rows to execute-onboarding-batch.js instead of execute-batch.js.
+async function injectWave2IntoSchedule(brand) {
+  const WINDOW_MS        = 4 * 60 * 60 * 1000;
+  const MIN_SPACING_MS   = 10 * 60 * 1000;
+  const BATCH_DURATION_MS = SESSION_MAX_PROMPTS * MINUTES_PER_PROMPT * 60 * 1000;
+  const CLEARANCE_MS     = BATCH_DURATION_MS + MIN_SPACING_MS;
 
   const now       = Date.now();
   const windowEnd = now + WINDOW_MS;
 
-  // Fetch fresh brand data — we need chatgpt_account_id and onboarding_answers
   const { data: fullBrand } = await supabase
     .from('brands')
-    .select('chatgpt_account_id, onboarding_answers')
+    .select('chatgpt_account_id, owner_user_id')
     .eq('id', brand.id)
     .single();
 
   const chatgptAccountId = fullBrand?.chatgpt_account_id || brand.chatgpt_account_id;
-  const currentAnswers   = fullBrand?.onboarding_answers || brand.onboarding_answers || {};
+  const ownerUserId      = fullBrand?.owner_user_id || brand.owner_user_id;
 
-  // Count ALL wave-2 prompts (active or inactive) to know how many batches we need.
-  // We count all rather than just active because the flip to active may still be in flight.
   const { count: wave2Count } = await supabase
     .from('brand_prompts')
     .select('id', { count: 'exact', head: true })
@@ -591,7 +560,7 @@ async function scheduleWave2Dispatch(brand) {
   const numBatches = Math.ceil(wave2Count / SESSION_MAX_PROMPTS);
   console.log('[WAVE2-SCHED] Planning', numBatches, 'batches for', wave2Count, 'wave-2 prompts over next 4h');
 
-  // ── Step 1: Get occupied slots on this account in the next 4 hours ──────────
+  // Get occupied slots on this account in the next 4 hours
   const occupiedSlots = [];
   if (chatgptAccountId) {
     const { data: existingBatches } = await supabase
@@ -610,13 +579,11 @@ async function scheduleWave2Dispatch(brand) {
     }
   }
 
-  // ── Step 2: Build blocked zones (±clearance around each occupied batch) ─────
+  // Build blocked zones and find free intervals
   const blocked = occupiedSlots.map(o => ({
     from: Math.max(now, o.start - MIN_SPACING_MS),
     to:   o.end + MIN_SPACING_MS,
   }));
-
-  // Merge overlapping blocked zones
   blocked.sort((a, b) => a.from - b.from);
   const merged = [];
   for (const b of blocked) {
@@ -627,79 +594,90 @@ async function scheduleWave2Dispatch(brand) {
     }
   }
 
-  // ── Step 3: Find free intervals (window minus blocked zones) ─────────────────
   const freeIntervals = [];
-  let cursor = now + 60 * 1000; // 1 min buffer before first batch
+  let cursor = now + 60 * 1000;
   for (const block of merged) {
-    if (cursor < block.from - CLEARANCE_MS) {
-      freeIntervals.push({ start: cursor, end: block.from });
-    }
+    if (cursor < block.from - CLEARANCE_MS) freeIntervals.push({ start: cursor, end: block.from });
     cursor = Math.max(cursor, block.to);
   }
-  if (cursor < windowEnd) {
-    freeIntervals.push({ start: cursor, end: windowEnd });
-  }
+  if (cursor < windowEnd) freeIntervals.push({ start: cursor, end: windowEnd });
 
   const totalFreeMs = freeIntervals.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
-  console.log('[WAVE2-SCHED] Occupied slots:', occupiedSlots.length, '→ free intervals:', freeIntervals.length, '(', Math.round(totalFreeMs / 60000), 'min free)');
+  console.log('[WAVE2-SCHED] Occupied:', occupiedSlots.length, '→ free intervals:', freeIntervals.length, '(', Math.round(totalFreeMs / 60000), 'min free)');
 
-  // ── Step 4: Assign dispatch times ────────────────────────────────────────────
+  // Assign dispatch times
   const dispatchTimes = [];
-
   if (freeIntervals.length === 0 || totalFreeMs < CLEARANCE_MS * numBatches) {
-    // Fallback: no clear free time — evenly space over full 4 hours.
-    // Account-reservation logic in getAccountStates() will naturally defer any
-    // conflicting batches to the next cron run.
-    console.log('[WAVE2-SCHED] Dense schedule or no free intervals — falling back to even spacing over 4h');
+    console.log('[WAVE2-SCHED] Dense schedule — falling back to even spacing over 4h');
     const interval = WINDOW_MS / (numBatches + 1);
-    for (let i = 0; i < numBatches; i++) {
-      dispatchTimes.push(now + interval * (i + 1));
-    }
+    for (let i = 0; i < numBatches; i++) dispatchTimes.push(now + interval * (i + 1));
   } else {
-    // Distribute batches proportionally across free intervals by their length
     for (const iv of freeIntervals) {
       if (dispatchTimes.length >= numBatches) break;
       const ivMs = iv.end - iv.start;
-      // How many batches to place in this interval (proportional to its share of free time)
       const batchesHere = Math.max(1, Math.round((ivMs / totalFreeMs) * numBatches));
       const spacing = ivMs / (batchesHere + 1);
       for (let i = 0; i < batchesHere && dispatchTimes.length < numBatches; i++) {
         dispatchTimes.push(iv.start + spacing * (i + 1));
       }
     }
-
-    // Safety: fill any remaining slots caused by rounding
     while (dispatchTimes.length < numBatches) {
       const last = dispatchTimes[dispatchTimes.length - 1] || now;
       const remaining = numBatches - dispatchTimes.length;
       const interval = Math.max(MIN_SPACING_MS, (windowEnd - last) / (remaining + 1));
-      for (let i = 0; i < remaining; i++) {
-        dispatchTimes.push(last + interval * (i + 1));
-      }
+      for (let i = 0; i < remaining; i++) dispatchTimes.push(last + interval * (i + 1));
     }
-
     dispatchTimes.sort((a, b) => a - b);
   }
 
-  // ── Step 5: Store schedule on brand ─────────────────────────────────────────
-  await supabase
-    .from('brands')
-    .update({
-      onboarding_answers: {
-        ...currentAnswers,
-        wave2Schedule: {
-          dispatchTimes: dispatchTimes.slice(0, numBatches).map(t => new Date(Math.round(t)).toISOString()),
-          batchIndex: 0,
-        },
-      },
-    })
-    .eq('id', brand.id);
+  // Get current max batch_number to avoid collisions
+  const today = new Date().toISOString().split('T')[0];
+  const { data: maxBatchRow } = await supabase
+    .from('daily_schedules')
+    .select('batch_number')
+    .eq('schedule_date', today)
+    .order('batch_number', { ascending: false })
+    .limit(1)
+    .single();
+  const maxBatchNum = maxBatchRow?.batch_number || 0;
 
-  console.log('[WAVE2-SCHED] Scheduled', numBatches, 'wave-2 batches for brand', brand.id.substring(0, 8), ':');
+  // Create daily_schedules rows with batch_type='onboarding'
+  const records = dispatchTimes.slice(0, numBatches).map((t, i) => ({
+    schedule_date:       today,
+    user_id:             ownerUserId,
+    brand_id:            brand.id,
+    chatgpt_account_id:  chatgptAccountId,
+    batch_number:        maxBatchNum + i + 1,
+    execution_time:      new Date(Math.round(t)).toISOString(),
+    prompt_ids:          [],
+    batch_size:          SESSION_MAX_PROMPTS,
+    status:              'pending',
+    batch_type:          'onboarding',
+  }));
+
+  const { error } = await supabase.from('daily_schedules').insert(records);
+  if (error) {
+    console.error('[WAVE2-SCHED] Failed to insert wave-2 schedule rows:', error.message);
+    return;
+  }
+
+  console.log('[WAVE2-SCHED] Inserted', numBatches, 'onboarding schedule rows for brand', brand.id.substring(0, 8), ':');
   dispatchTimes.slice(0, numBatches).forEach((t, i) => {
     const minFrom = Math.round((t - now) / 60000);
     console.log(`  [WAVE2-SCHED]   Batch ${i + 1}/${numBatches}: T+${minFrom}min = ${new Date(Math.round(t)).toISOString()}`);
   });
+
+  // Reload crontab so these batches get cron entries
+  console.log('[WAVE2-SCHED] Reloading crontab...');
+  const loadResult = spawnSync('node', [path.join(__dirname, 'load-daily-schedule.js')], {
+    stdio: 'inherit',
+    cwd: __dirname,
+  });
+  if (loadResult.status !== 0) {
+    console.error('[WAVE2-SCHED] load-daily-schedule exited with status', loadResult.status);
+  } else {
+    console.log('[WAVE2-SCHED] Crontab reloaded — wave-2 batches will fire at scheduled times.');
+  }
 }
 
 // ── Inject a newly onboarded brand into tomorrow's daily schedule ─────────────
@@ -731,9 +709,11 @@ async function injectBrandIntoTomorrowSchedule(brand) {
       .limit(1);
     const nightlyAlreadyRan = todaySchedules && todaySchedules.length > 0;
 
-    // Build list of dates to inject, skipping any where brand is already scheduled
-    const datesToInject = nightlyAlreadyRan ? [utcToday, utcTomorrow] : [utcTomorrow];
-    console.log('[INJECT] Nightly already ran today:', nightlyAlreadyRan, '→ injecting for:', datesToInject.join(', '));
+    // Always inject only for tomorrow — wave-2 onboarding already covers today's report.
+    // (The old logic injected for today when the nightly had already run, but that causes
+    // duplicate ChatGPT execution on onboarding day since wave-2 batches cover the same prompts.)
+    const datesToInject = [utcTomorrow];
+    console.log('[INJECT] Nightly already ran today:', nightlyAlreadyRan, '→ injecting for tomorrow only:', utcTomorrow);
 
     // Get brand's active prompts
     const { data: prompts } = await supabase
