@@ -110,6 +110,25 @@ const TrendBadge = ({ trend, size = 'sm' }: { trend: number | null | undefined; 
   );
 };
 
+const FaviconImg: React.FC<{ domain?: string; name: string; size?: number; bgColor?: string }> = ({ domain, name, size = 28, bgColor }) => {
+  const [err, setErr] = React.useState(false);
+  if (!domain || err) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.3), backgroundColor: bgColor || '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.38), fontWeight: 900, color: bgColor ? 'white' : '#94a3b8', flexShrink: 0 }}>
+        {name.charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+      alt={name}
+      style={{ width: size, height: size, objectFit: 'contain', borderRadius: Math.round(size * 0.25), flexShrink: 0 }}
+      onError={() => setErr(true)}
+    />
+  );
+};
+
 export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   brandId, timeRange = TimeRange.THIRTY_DAYS, competitors = [], onAddCompetitor,
   selectedModels = ALL_MODELS, customDateRange,
@@ -699,6 +718,26 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     ...Array.from(addedEntities),
   ]);
 
+  const getEntityDomain = (name: string): string | undefined => {
+    if (name.toLowerCase() === brandName.toLowerCase()) return brandDomain || undefined;
+    return competitors.find(c => c.name.toLowerCase() === name.toLowerCase())?.website || undefined;
+  };
+
+  const FaviconTick = (props: any) => {
+    const { x, y, payload } = props;
+    const name: string = payload?.value || '';
+    const domain = getEntityDomain(name);
+    const shortName = name.length > 9 ? name.slice(0, 8) + '…' : name;
+    return (
+      <g transform={`translate(${x},${y + 2})`}>
+        {domain ? (
+          <image href={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} x={-8} y={0} width={16} height={16} />
+        ) : null}
+        <text x={0} y={domain ? 24 : 10} textAnchor="middle" fill="#475569" fontSize={8} fontWeight={800} fontFamily="inherit">{shortName}</text>
+      </g>
+    );
+  };
+
   const ComputingPlaceholder = () => (
     <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
       <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
@@ -763,13 +802,20 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     return (
                       <div style={{ background: 'white', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '8px 12px', fontSize: '11px', border: '1px solid #f1f5f9' }}>
                         <p style={{ color: '#94a3b8', fontWeight: 600, fontSize: '10px', marginBottom: '6px' }}>{label}</p>
-                        {payload.map((entry: any) => (
-                          <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
-                            <span style={{ fontWeight: 700, color: '#475569' }}>{entry.dataKey}:</span>
-                            <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}</span>
-                          </div>
-                        ))}
+                        {payload.map((entry: any) => {
+                          const ttDomain = getEntityDomain(entry.dataKey);
+                          return (
+                            <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                              {ttDomain ? (
+                                <img src={`https://www.google.com/s2/favicons?domain=${ttDomain}&sz=32`} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
+                              ) : (
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
+                              )}
+                              <span style={{ fontWeight: 700, color: '#475569' }}>{entry.dataKey}:</span>
+                              <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   }}
@@ -876,10 +922,11 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           <div className="mt-3 space-y-1.5 overflow-y-auto custom-scrollbar max-h-[108px] shrink-0">
             {allPieData.map(c => {
               const trend = sovEntityTrends[c.name];
+              const domain = c.name === 'Other' ? undefined : getEntityDomain(c.name);
               return (
                 <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c.color }}></div>
+                    <FaviconImg domain={domain} name={c.name} size={14} bgColor={c.color} />
                     <span className="truncate max-w-[90px]">{c.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -914,15 +961,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={activeMention}
-                margin={{ top: 30, right: 15, left: -20, bottom: 5 }}
+                margin={{ top: 30, right: 15, left: -20, bottom: 10 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize: 9, fill: '#475569', fontWeight: 800 }}
+                  tick={<FaviconTick />}
                   axisLine={false}
                   tickLine={false}
-                  tickMargin={12}
+                  height={40}
                 />
                 <YAxis
                   domain={[0, 100]}
@@ -986,9 +1033,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             ) : activeCitation.map((c: any, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 rounded-xl border border-gray-100 hover:border-slate-200 transition-all">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0" style={{ backgroundColor: c.color }}>
-                    {c.name.charAt(0)}
-                  </div>
+                  <FaviconImg domain={getEntityDomain(c.name)} name={c.name} size={32} bgColor={c.color} />
                   <div>
                     <div className="text-xs font-black text-slate-800">{c.name}</div>
                     {c.website && <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.website}</div>}
@@ -1066,9 +1111,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     {brandInEntities && brandInEntities.insertIndex === idx && (
                       <div className="grid grid-cols-12 gap-4 px-5 py-2.5 items-center bg-brand-brown/5 border-y border-brand-brown/10">
                         <div className="col-span-5 flex items-center gap-3">
-                          <div className="w-7 h-7 rounded-lg bg-brand-brown/20 flex items-center justify-center text-[10px] font-black text-brand-brown shrink-0">
-                            {brandInEntities.name.charAt(0).toUpperCase()}
-                          </div>
+                          <FaviconImg domain={brandDomain || undefined} name={brandInEntities.name} size={28} bgColor="#C8956B" />
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-xs font-bold text-brand-brown truncate">{brandInEntities.name}</span>
                             <span className="text-[8px] font-black text-brand-brown bg-brand-brown/10 px-1.5 py-0.5 rounded shrink-0">YOUR BRAND</span>
@@ -1088,9 +1131,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     )}
                     <div className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
                     <div className="col-span-5 flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
-                        {entity.name.charAt(0).toUpperCase()}
-                      </div>
+                      <FaviconImg domain={getEntityDomain(entity.name)} name={entity.name} size={28} />
                       <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
                     </div>
                     <div className="col-span-3 flex flex-col items-center gap-1.5">
@@ -1129,9 +1170,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
               {brandInEntities && brandInEntities.insertIndex >= detectedEntities.length && (
                 <div className="grid grid-cols-12 gap-4 px-5 py-2.5 items-center bg-brand-brown/5 border-t border-brand-brown/10">
                   <div className="col-span-5 flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-brand-brown/20 flex items-center justify-center text-[10px] font-black text-brand-brown shrink-0">
-                      {brandInEntities.name.charAt(0).toUpperCase()}
-                    </div>
+                    <FaviconImg domain={brandDomain || undefined} name={brandInEntities.name} size={28} bgColor="#C8956B" />
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-xs font-bold text-brand-brown truncate">{brandInEntities.name}</span>
                       <span className="text-[8px] font-black text-brand-brown bg-brand-brown/10 px-1.5 py-0.5 rounded shrink-0">YOUR BRAND</span>
