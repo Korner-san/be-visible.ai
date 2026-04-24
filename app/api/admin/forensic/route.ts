@@ -298,6 +298,8 @@ export async function GET(request: NextRequest) {
           status,
           batch_size,
           prompt_ids,
+          brand_id,
+          batch_type,
           chatgpt_accounts!inner(
             email,
             proxy_host,
@@ -424,6 +426,18 @@ export async function GET(request: NextRequest) {
             claude_status: promptStatusMap[p.id]?.claude ?? 'not_run',
           }))
 
+          // For onboarding batches, fetch brand/user directly (prompt_ids is empty)
+          let onboardingBrandName: string | null = null
+          let onboardingUserEmail: string | null = null
+          if (schedule.batch_type === 'onboarding' && schedule.brand_id) {
+            const { data: brd } = await supabase.from('brands').select('name, owner_user_id').eq('id', schedule.brand_id).single()
+            onboardingBrandName = brd?.name || null
+            if (brd?.owner_user_id) {
+              const { data: u } = await supabase.from('users').select('email').eq('id', brd.owner_user_id).single()
+              onboardingUserEmail = u?.email || null
+            }
+          }
+
           // Only fetch actual execution visual state for batches that have run.
           // Pending/running batches have no real login result yet — show nothing.
           let batchVisualState: string | null = null
@@ -457,6 +471,9 @@ export async function GET(request: NextRequest) {
             status: schedule.status,
             batch_size: schedule.batch_size,
             prompt_ids: schedule.prompt_ids,
+            batch_type: schedule.batch_type || 'regular',
+            onboarding_brand_name: onboardingBrandName,
+            onboarding_user_email: onboardingUserEmail,
             account_assigned: schedule.chatgpt_accounts?.email,
             proxy_assigned: `${schedule.chatgpt_accounts?.proxy_host}:${schedule.chatgpt_accounts?.proxy_port}`,
             account_last_visual_state: batchVisualState,

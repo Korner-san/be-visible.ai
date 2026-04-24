@@ -57,6 +57,9 @@ interface ScheduleItem {
   execution_time: string;
   status: string;
   batch_size: number;
+  batch_type?: string;
+  onboarding_brand_name?: string | null;
+  onboarding_user_email?: string | null;
   account_assigned: string | null;
   proxy_assigned: string | null;
   account_last_visual_state: string | null;
@@ -614,6 +617,7 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     <tr><td colSpan={11} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
                   ) : data.schedulingQueue.map((schedule, idx) => {
                     const isExpanded = expandedBatches.has(schedule.id);
+                    const isOnboarding = schedule.batch_type === 'onboarding';
                     const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
                     const isDone = schedule.status === 'completed' || schedule.status === 'failed';
                     const todayDate = new Date().toISOString().split('T')[0];
@@ -635,13 +639,21 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                           </tr>
                         )}
                         <tr
-                          className={`border-b border-gray-50 cursor-pointer transition-colors ${isDone ? 'opacity-50 bg-slate-50/80' : 'hover:bg-gray-50/50'}`}
+                          className={`border-b cursor-pointer transition-colors ${
+                            isOnboarding
+                              ? isDone
+                                ? 'border-purple-100 bg-purple-50/30 opacity-60'
+                                : 'border-purple-100 bg-purple-50/40 hover:bg-purple-50/70'
+                              : isDone
+                              ? 'border-gray-50 opacity-50 bg-slate-50/80'
+                              : 'border-gray-50 hover:bg-gray-50/50'
+                          }`}
                           onClick={() => toggleBatch(schedule.id)}
                         >
                           <td className="px-3 py-3">
                             {isExpanded
-                              ? <ChevronDown size={14} className="text-slate-400" />
-                              : <ChevronRight size={14} className="text-slate-400" />}
+                              ? <ChevronDown size={14} className={isOnboarding ? 'text-purple-400' : 'text-slate-400'} />
+                              : <ChevronRight size={14} className={isOnboarding ? 'text-purple-400' : 'text-slate-400'} />}
                           </td>
                           <td className="px-4 py-3 text-center">
                             {schedule.status === 'completed'
@@ -652,16 +664,24 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{fmt(schedule.execution_time)}</td>
                           <td className="px-4 py-3">
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">
-                              Batch #{schedule.batch_number}
-                            </span>
+                            {isOnboarding ? (
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                ⚡ Onboarding W2
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">
+                                Batch #{schedule.batch_number}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 w-fit">
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold w-fit ${isOnboarding ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                                 {schedule.batch_size} {schedule.batch_size === 1 ? 'prompt' : 'prompts'}
                               </span>
-                              <span className="text-[11px] text-slate-400">{uniqueBrands.size} {uniqueBrands.size === 1 ? 'brand' : 'brands'}</span>
+                              {isOnboarding
+                                ? <span className="text-[11px] text-purple-500 font-semibold">{schedule.onboarding_brand_name || 'Wave 2'}</span>
+                                : <span className="text-[11px] text-slate-400">{uniqueBrands.size} {uniqueBrands.size === 1 ? 'brand' : 'brands'}</span>}
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -676,40 +696,67 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                           <td className="px-4 py-3 text-xs text-slate-500">{schedule.account_assigned || 'N/A'}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-400">{schedule.proxy_assigned || 'N/A'}</td>
                           <td className="px-4 py-3">
-                            <ModelExecBadge exec={schedule.modelExecutions?.chatgpt ?? null} />
+                            {isOnboarding
+                              ? <ModelExecBadge exec={schedule.modelExecutions?.chatgpt ?? null} />
+                              : <ModelExecBadge exec={schedule.modelExecutions?.chatgpt ?? null} />}
                           </td>
                           <td className="px-4 py-3">
-                            <ModelExecBadge exec={schedule.modelExecutions?.google_ai_overview ?? null} />
+                            {isOnboarding
+                              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-300 border border-purple-100">N/A</span>
+                              : <ModelExecBadge exec={schedule.modelExecutions?.google_ai_overview ?? null} />}
                           </td>
                           <td className="px-4 py-3">
-                            <ModelExecBadge exec={schedule.modelExecutions?.claude ?? null} />
+                            {isOnboarding
+                              ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-300 border border-purple-100">N/A</span>
+                              : <ModelExecBadge exec={schedule.modelExecutions?.claude ?? null} />}
                           </td>
                         </tr>
-                        {isExpanded && schedule.prompts.map((prompt, idx) => (
-                          <tr key={`${schedule.id}-${prompt.id}`} className="bg-slate-50/70 border-b border-slate-100">
-                            <td className="px-3 py-2"></td>
-                            <td className="px-4 py-2 pl-8" colSpan={2}>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] text-slate-400">#{idx + 1}</span>
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">{prompt.brand_name}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2" colSpan={3}>
-                              <div className="text-xs text-slate-600 max-w-xl">
-                                {prompt.prompt_text.length > 120 ? prompt.prompt_text.substring(0, 120) + '…' : prompt.prompt_text}
-                              </div>
-                            </td>
-                            <td className="px-4 py-2">
-                              <ApiModelBadge status={prompt.aio_status} />
-                            </td>
-                            <td className="px-4 py-2">
-                              <ApiModelBadge status={prompt.claude_status} />
-                            </td>
-                            <td className="px-4 py-2">
-                              <span className="text-[11px] text-slate-400">{prompt.user_email}</span>
-                            </td>
-                          </tr>
-                        ))}
+                        {isExpanded && (
+                          isOnboarding ? (
+                            <tr className="bg-purple-50/50 border-b border-purple-100">
+                              <td className="px-3 py-3"></td>
+                              <td colSpan={10} className="px-4 py-3">
+                                <div className="flex items-center gap-4">
+                                  <span className="text-[11px] font-bold text-purple-600">Brand:</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                    {schedule.onboarding_brand_name || 'Unknown'}
+                                  </span>
+                                  {schedule.onboarding_user_email && (
+                                    <>
+                                      <span className="text-[11px] font-bold text-purple-600">User:</span>
+                                      <span className="text-[11px] text-purple-500">{schedule.onboarding_user_email}</span>
+                                    </>
+                                  )}
+                                  <span className="text-[11px] text-purple-400">· ChatGPT only · Google AIO &amp; Claude run after onboarding completes</span>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : schedule.prompts.map((prompt, idx) => (
+                            <tr key={`${schedule.id}-${prompt.id}`} className="bg-slate-50/70 border-b border-slate-100">
+                              <td className="px-3 py-2"></td>
+                              <td className="px-4 py-2 pl-8" colSpan={2}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-slate-400">#{idx + 1}</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">{prompt.brand_name}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2" colSpan={3}>
+                                <div className="text-xs text-slate-600 max-w-xl">
+                                  {prompt.prompt_text.length > 120 ? prompt.prompt_text.substring(0, 120) + '…' : prompt.prompt_text}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2">
+                                <ApiModelBadge status={prompt.aio_status} />
+                              </td>
+                              <td className="px-4 py-2">
+                                <ApiModelBadge status={prompt.claude_status} />
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className="text-[11px] text-slate-400">{prompt.user_email}</span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </Fragment>
                     );
                   })}
