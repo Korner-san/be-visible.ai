@@ -242,7 +242,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         if (brand) slices.push({ name: brand.name, voice: parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         for (const comp of trackedComps) {
           const pct = parseFloat(((comp.mentions / totalMentions) * 100).toFixed(2));
-          if (pct > 0) slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
+          // Always include registered competitors so they appear in the legend, even at 0%
+          slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         }
         if (otherMentions > 0) {
           const pct = parseFloat(((otherMentions / totalMentions) * 100).toFixed(2));
@@ -584,7 +585,9 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
   const showSample = !brandId;
 
-  const pieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
+  const allPieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
+  // Pie chart only renders visible slices; 0% entries appear in the legend only
+  const pieData = allPieData.filter(d => d.voice > 0);
   const centerPct = hasRealSov ? sovBrandPct : (showSample ? 45 : 0);
 
   const activeTrend = hasRealMetrics ? trendData : (showSample ? MOCK_TREND : []);
@@ -807,7 +810,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           </div>
           {/* Legend with trend badges */}
           <div className="mt-3 space-y-1.5 overflow-y-auto custom-scrollbar">
-            {pieData.slice(0, 6).map(c => {
+            {allPieData.slice(0, 6).map(c => {
               const trend = sovEntityTrends[c.name];
               return (
                 <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">

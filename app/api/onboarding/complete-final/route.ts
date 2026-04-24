@@ -252,7 +252,8 @@ export async function POST(request: NextRequest) {
 
     // Save competitors to brand_competitors table
     // V2: competitors come from request body. V1: from onboarding_answers. Normalize both.
-    const rawCompetitors: any[] = bodyCompetitors || onboardingAnswers.competitors || []
+    // Use bodyCompetitors only when non-empty — empty array is falsy-equivalent here so we fall through to onboarding_answers
+    const rawCompetitors: any[] = (bodyCompetitors?.length > 0 ? bodyCompetitors : null) ?? onboardingAnswers.competitors ?? []
     const competitors = rawCompetitors
       .map((c: any) => typeof c === 'string' ? c.trim() : (c?.name || '').trim())
       .filter(Boolean)
