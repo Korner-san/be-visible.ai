@@ -772,7 +772,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         </div>
 
         {/* Share of Voice Donut */}
-        <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[340px]">
+        <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[420px]">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Share of voice</h3>
