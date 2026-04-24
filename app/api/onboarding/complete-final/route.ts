@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
     const { error: upsertUserError } = await adminSupabase
       .from('users')
       .upsert(
-        { id: user.id, email: user.email, subscription_plan: 'free_trial', reports_enabled: true, timezone },
+        { id: user.id, email: user.email, subscription_plan: 'starter', reports_enabled: true, timezone },
         { onConflict: 'id', ignoreDuplicates: true }
       )
     if (upsertUserError) {
