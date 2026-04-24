@@ -810,7 +810,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           </div>
           {/* Legend with trend badges */}
           <div className="mt-3 space-y-1.5 overflow-y-auto custom-scrollbar">
-            {allPieData.slice(0, 6).map(c => {
+            {allPieData.map(c => {
               const trend = sovEntityTrends[c.name];
               return (
                 <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
