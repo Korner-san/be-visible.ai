@@ -204,12 +204,13 @@ export async function POST(request: NextRequest) {
       const wave2Ids = allPrompts.filter((p: any) => !wave1Ids.includes(p.id)).map((p: any) => p.id)
 
       await Promise.all([
-        // Wave 1 (first 6): active — these run immediately in Phase 1
+        // Wave 1 (first 5): active — run immediately in Phase 1 for fast dashboard access
         wave1Ids.length > 0 && adminSupabaseForCapacity
           .from('brand_prompts')
           .update({ onboarding_wave: 1, onboarding_status: 'pending', status: 'active', is_active: true })
           .in('id', wave1Ids),
-        // Wave 2 (remaining 24): inactive — queue-organizer activates these when Phase 2 begins
+        // Wave 2 (remaining 45): inactive during onboarding so daily scheduler ignores them.
+        // end-of-day-processor.js activates ALL wave-2 prompts after Phase 2 finalization.
         wave2Ids.length > 0 && adminSupabaseForCapacity
           .from('brand_prompts')
           .update({ onboarding_wave: 2, onboarding_status: 'pending', status: 'inactive', is_active: false })
@@ -218,7 +219,7 @@ export async function POST(request: NextRequest) {
       console.log('✅ [COMPLETE-FINAL API] Waves assigned: wave1=' + wave1Ids.length + ' (active), wave2=' + wave2Ids.length + ' (inactive)')
     }
 
-    const totalPromptCount = allPrompts ? allPrompts.length : 30
+    const totalPromptCount = allPrompts ? allPrompts.length : 50
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── PRE-CREATE DAILY REPORT ───────────────────────────────────────────────
