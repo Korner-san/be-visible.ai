@@ -40,7 +40,7 @@ async function getSystemCapacity(db: ReturnType<typeof createClient>) {
       return { id: account.id, email: account.email, state: 'BUSY:daily', estimatedFreeAt: estimatedFreeAt.toISOString() }
     }
     if (onboarding) {
-      const remaining = Math.max(1, 30 - (onboarding.onboarding_prompts_sent || 0))
+      const remaining = Math.max(1, 50 - (onboarding.onboarding_prompts_sent || 0))
       const estimatedFreeAt = new Date(now.getTime() + remaining * MINUTES_PER_PROMPT * 60 * 1000)
       return { id: account.id, email: account.email, state: 'BUSY:onboarding', estimatedFreeAt: estimatedFreeAt.toISOString() }
     }

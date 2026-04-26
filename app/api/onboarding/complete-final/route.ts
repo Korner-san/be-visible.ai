@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
           return new Date(dailyBatch.execution_time).getTime() + (dailyBatch.batch_size || 3) * 2.5 * 60 * 1000
         }
         if (onboarding) {
-          return now.getTime() + Math.max(1, 30 - (onboarding.onboarding_prompts_sent || 0)) * 2.5 * 60 * 1000
+          return now.getTime() + Math.max(1, 50 - (onboarding.onboarding_prompts_sent || 0)) * 2.5 * 60 * 1000
         }
         if (reserved) {
           return new Date(reserved.execution_time).getTime() + (reserved.batch_size || 3) * 2.5 * 60 * 1000
