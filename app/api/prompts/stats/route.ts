@@ -126,7 +126,6 @@ export async function GET(request: NextRequest) {
       .from('brand_prompts')
       .select('id, raw_prompt, improved_prompt, category, status')
       .eq('brand_id', brandId)
-      .eq('status', 'active')
     if (promptId) bpQuery = bpQuery.eq('id', promptId)
     const { data: brandPrompts } = await bpQuery
 

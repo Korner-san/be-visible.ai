@@ -681,37 +681,55 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                     </tr>
 
                     {/* Prompt Rows */}
-                    {isExpanded && group.prompts.map((prompt, pIdx) => (
-                      <tr
-                        key={prompt.id}
-                        className={`group hover:bg-slate-50 transition-all cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-brown ${pIdx === group.prompts.length - 1 ? 'border-b border-gray-200' : 'border-b border-gray-100'}`}
-                        onClick={() => handleSelectPrompt(prompt)}
-                      >
-                        <td className="pl-16 pr-8 py-4 text-sm font-semibold text-slate-500 truncate">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-brand-brown transition-colors"></div>
-                            <span className="truncate flex-1">{prompt.text}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}</span>
-                            {prompt.visibilityTrend !== 0 && (
-                              <PromptTrendBadge trend={prompt.visibilityTrend} />
+                    {isExpanded && group.prompts.map((prompt, pIdx) => {
+                      const isQueued = prompt.lastRun === null;
+                      return (
+                        <tr
+                          key={prompt.id}
+                          className={`group hover:bg-slate-50 transition-all cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-brown ${pIdx === group.prompts.length - 1 ? 'border-b border-gray-200' : 'border-b border-gray-100'}`}
+                          onClick={() => handleSelectPrompt(prompt)}
+                        >
+                          <td className="pl-16 pr-8 py-4 text-sm font-semibold text-slate-500 truncate">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${isQueued ? 'bg-amber-300' : 'bg-slate-300 group-hover:bg-brand-brown'}`}></div>
+                              <span className="truncate flex-1">{prompt.text}</span>
+                              {isQueued && (
+                                <span className="shrink-0 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-full border" style={{ color: '#92400e', backgroundColor: '#fffbeb', borderColor: '#fcd34d' }}>
+                                  QUEUED
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {isQueued ? (
+                              <span className="text-[13px] font-bold text-slate-300">—</span>
+                            ) : (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}</span>
+                                {prompt.visibilityTrend !== 0 && (
+                                  <PromptTrendBadge trend={prompt.visibilityTrend} />
+                                )}
+                              </div>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.avgPosition}</span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.mentionRate}%</span>
-                        </td>
-                        <td className="px-8 py-4 text-center">
-                          <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.citationShare}%</span>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`font-bold transition-colors text-[13px] tabular-nums ${isQueued ? 'text-slate-300' : 'text-slate-400 group-hover:text-slate-900'}`}>
+                              {isQueued ? '—' : prompt.avgPosition}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`font-bold transition-colors text-[13px] tabular-nums ${isQueued ? 'text-slate-300' : 'text-slate-400 group-hover:text-slate-900'}`}>
+                              {isQueued ? '—' : `${prompt.mentionRate}%`}
+                            </span>
+                          </td>
+                          <td className="px-8 py-4 text-center">
+                            <span className={`font-bold transition-colors text-[13px] tabular-nums ${isQueued ? 'text-slate-300' : 'text-slate-400 group-hover:text-slate-900'}`}>
+                              {isQueued ? '—' : `${prompt.citationShare}%`}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}
@@ -793,6 +811,22 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             <div className="flex-1 overflow-y-auto px-12 space-y-8 scroll-smooth pb-24 pt-8">
                {selectedRun ? (
                  renderRunDetail(selectedRun)
+               ) : selectedEntity.type === 'prompt' && selectedEntity.data.lastRun === null && !popupLoading ? (
+                 <div className="flex flex-col items-center justify-center py-24 gap-5 text-center">
+                   <div className="w-14 h-14 rounded-2xl bg-amber-50 border-2 border-amber-200 flex items-center justify-center">
+                     <Clock size={24} className="text-amber-500" />
+                   </div>
+                   <div>
+                     <p className="text-base font-black text-slate-800 mb-2">Queued for processing</p>
+                     <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
+                       This prompt is scheduled in Wave 2 and will run within 4 hours of your initial onboarding. Data will appear here automatically once complete.
+                     </p>
+                   </div>
+                   <div className="flex items-center gap-2 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full">
+                     <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                     Wave 2 processing in progress
+                   </div>
+                 </div>
                ) : (
                  <>
                    <div className="grid grid-cols-12 gap-6 items-stretch">
