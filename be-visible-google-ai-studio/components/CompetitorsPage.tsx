@@ -105,7 +105,7 @@ const TrendBadge = ({ trend, size = 'sm' }: { trend: number | null | undefined; 
       className="font-black rounded-full inline-flex items-center border whitespace-nowrap"
       style={{ ...style, fontSize, padding: `1px ${px}` }}
     >
-      {trend > 0 ? '↑+' : trend < 0 ? '↓' : '→'}{Math.abs(trend)}%
+      {trend > 0 ? '↑+' : trend < 0 ? '↓' : '→'}{parseFloat(Math.abs(trend).toFixed(2))}%
     </span>
   );
 };
@@ -149,6 +149,9 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   const [brandName, setBrandName] = useState<string>('Brand');
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
   const [hasRealMetrics, setHasRealMetrics] = useState(false);
+
+  // Resolved domains for competitors that have empty website in DB
+  const [resolvedDomains, setResolvedDomains] = useState<Record<string, string>>({});
 
   // Detected entities state
   const [detectedEntities, setDetectedEntities] = useState<DetectedEntity[]>([]);
@@ -624,6 +627,28 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     fetchCompetitorMetrics();
   }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
+  // Auto-resolve domains for competitors that have no website set
+  useEffect(() => {
+    if (!brandId || !competitors.length) return;
+    const missing = competitors.filter(c => !c.website);
+    if (!missing.length) return;
+    missing.forEach(async (comp) => {
+      try {
+        const res = await fetch('/api/resolve-competitor-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brandId, entityName: comp.name }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.url) {
+            setResolvedDomains(prev => ({ ...prev, [comp.name.toLowerCase()]: json.url }));
+          }
+        }
+      } catch {}
+    });
+  }, [brandId, competitors.map(c => c.name).join(',')]);
+
   const showSample = !brandId;
 
   const allPieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
@@ -665,7 +690,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             textAnchor="middle"
             fontFamily="inherit"
           >
-            {trend! > 0 ? '↑+' : trend! < 0 ? '↓' : '→'}{Math.abs(trend!)}%
+            {trend! > 0 ? '↑+' : trend! < 0 ? '↓' : '→'}{parseFloat(Math.abs(trend!).toFixed(2))}%
           </text>
         )}
       </g>
@@ -720,7 +745,8 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
   const getEntityDomain = (name: string): string | undefined => {
     if (name.toLowerCase() === brandName.toLowerCase()) return brandDomain || undefined;
-    return competitors.find(c => c.name.toLowerCase() === name.toLowerCase())?.website || undefined;
+    const fromProp = competitors.find(c => c.name.toLowerCase() === name.toLowerCase())?.website;
+    return fromProp || resolvedDomains[name.toLowerCase()] || undefined;
   };
 
   const FaviconTick = (props: any) => {
