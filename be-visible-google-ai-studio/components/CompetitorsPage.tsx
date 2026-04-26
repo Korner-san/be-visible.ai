@@ -851,9 +851,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   return (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', paddingTop: '10px' }}>
                       {(payload || []).map((entry: any) => {
-                        const domain = entry.dataKey === brandName
-                          ? brandDomain
-                          : competitors.find(c => c.name === entry.dataKey)?.website;
+                        const domain = getEntityDomain(entry.dataKey);
                         const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
                         return (
                           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 700, color: '#475569' }}>
@@ -871,9 +869,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   );
                 }} />
                 {trendLineKeys.map((key, idx) => {
-                  const domain = key === brandName
-                    ? brandDomain
-                    : competitors.find(c => c.name === key)?.website;
+                  const domain = getEntityDomain(key);
                   const color = COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length];
                   const faviconHref = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
                   const renderDot = (props: any) => {
@@ -1017,7 +1013,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                         <p style={{ color: entry.color, fontWeight: 800 }}>Mention Rate: {entry.value}%</p>
                         {row?.trend != null && (
                           <p style={{ fontSize: '10px', marginTop: '3px', color: row.trend > 0 ? '#16a34a' : row.trend < 0 ? '#7B3218' : '#94a3b8', fontWeight: 700 }}>
-                            {row.trend > 0 ? '↑' : row.trend < 0 ? '↓' : '→'} {row.trend > 0 ? '+' : ''}{row.trend}% vs prev period
+                            {row.trend > 0 ? '↑' : row.trend < 0 ? '↓' : '→'} {row.trend > 0 ? '+' : ''}{parseFloat(row.trend.toFixed(2))}% vs prev period
                           </p>
                         )}
                       </div>
