@@ -651,14 +651,25 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
   const showSample = !brandId;
 
+  // When logged in but no completed report yet, show registered competitors as favicons with — metrics
+  const isPlaceholderMetrics = !hasRealMetrics && !showSample && competitors.length > 0;
+  const placeholderCompetitors: CompetitorRow[] = competitors.map(c => ({
+    name: c.name,
+    website: c.website || '',
+    mentionRate: 0,
+    citation: 0,
+    color: c.color,
+    trend: null,
+  }));
+
   const allPieData = hasRealSov ? sovSlices : (showSample ? MOCK_COMPETITORS.map(c => ({ name: c.name, voice: c.voice, color: c.color })) : []);
   // Pie chart only renders visible slices; 0% entries appear in the legend only
   const pieData = allPieData.filter(d => d.voice > 0);
   const centerPct = hasRealSov ? sovBrandPct : (showSample ? 45 : 0);
 
   const activeTrend = hasRealMetrics ? trendData : (showSample ? MOCK_TREND : []);
-  const activeMention = hasRealMetrics ? mentionData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
-  const activeCitation = hasRealMetrics ? citationData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : []);
+  const activeMention = hasRealMetrics ? mentionData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : (isPlaceholderMetrics ? placeholderCompetitors : []));
+  const activeCitation = hasRealMetrics ? citationData : (showSample ? MOCK_COMPETITORS.map((c, i) => ({ ...c, color: COMPETITOR_COLORS[i % COMPETITOR_COLORS.length] })) : (isPlaceholderMetrics ? placeholderCompetitors : []));
 
   const trendLineKeys = hasRealMetrics
     ? [brandName, ...competitorNames]
@@ -678,7 +689,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     return (
       <g>
         <text x={x + width / 2} y={y - (hasTrend ? 20 : 12)} fill="#475569" fontSize="9" fontWeight="800" textAnchor="middle" fontFamily="inherit">
-          {value}%
+          {isPlaceholderMetrics ? '—' : `${value}%`}
         </text>
         {hasTrend && (
           <text
@@ -979,7 +990,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             )}
           </div>
           <div className="flex-1 min-h-0">
-            {!isLoadingMetrics && !hasRealMetrics && !showSample ? <ComputingPlaceholder /> : (
+            {!isLoadingMetrics && !hasRealMetrics && !showSample && !isPlaceholderMetrics ? <ComputingPlaceholder /> : (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={activeMention}
@@ -1010,7 +1021,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     return (
                       <div style={{ background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '8px 12px', fontSize: '11px', border: '1px solid #f1f5f9' }}>
                         <p style={{ fontWeight: 800, color: '#475569', marginBottom: '3px' }}>{entry.payload?.name}</p>
-                        <p style={{ color: entry.color, fontWeight: 800 }}>Mention Rate: {entry.value}%</p>
+                        <p style={{ color: entry.color, fontWeight: 800 }}>Mention Rate: {isPlaceholderMetrics ? '—' : `${entry.value}%`}</p>
                         {row?.trend != null && (
                           <p style={{ fontSize: '10px', marginTop: '3px', color: row.trend > 0 ? '#16a34a' : row.trend < 0 ? '#7B3218' : '#94a3b8', fontWeight: 700 }}>
                             {row.trend > 0 ? '↑' : row.trend < 0 ? '↓' : '→'} {row.trend > 0 ? '+' : ''}{parseFloat(row.trend.toFixed(2))}% vs prev period
@@ -1050,7 +1061,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             )}
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar">
-            {!isLoadingMetrics && !hasRealMetrics && !showSample ? (
+            {!isLoadingMetrics && !hasRealMetrics && !showSample && !isPlaceholderMetrics ? (
               <ComputingPlaceholder />
             ) : activeCitation.map((c: any, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 rounded-xl border border-gray-100 hover:border-slate-200 transition-all">
@@ -1064,7 +1075,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 <div className="flex items-center gap-2">
                   <TrendBadge trend={c.trend} />
                   <div className="text-right">
-                    <div className="text-sm font-black text-slate-900">{c.citation}%</div>
+                    <div className="text-sm font-black text-slate-900">{isPlaceholderMetrics ? '—' : `${c.citation}%`}</div>
                     <div className="text-[8px] font-bold text-slate-400 uppercase">Share</div>
                   </div>
                 </div>
