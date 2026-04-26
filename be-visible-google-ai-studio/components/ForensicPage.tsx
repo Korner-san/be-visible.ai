@@ -616,15 +616,16 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                 <tbody>
                   {data.schedulingQueue.length === 0 ? (
                     <tr><td colSpan={11} className="text-center px-4 py-8 text-sm text-slate-400">No upcoming batches scheduled</td></tr>
-                  ) : data.schedulingQueue.map((schedule, idx) => {
+                  ) : (() => {
+                    const todayDate = new Date().toISOString().split('T')[0];
+                    const firstTodayIdx = data.schedulingQueue.findIndex((s: any) => s.schedule_date === todayDate);
+                    return data.schedulingQueue.map((schedule: any, idx: number) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const isOnboarding = schedule.batch_type === 'onboarding';
                     const isRetry = schedule.is_retry === true;
-                    const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
+                    const uniqueBrands = new Set(schedule.prompts.map((p: any) => p.brand_name));
                     const isDone = schedule.status === 'completed' || schedule.status === 'failed';
-                    const todayDate = new Date().toISOString().split('T')[0];
-                    const prevDate = idx > 0 ? data.schedulingQueue[idx - 1].schedule_date : null;
-                    const showDateSeparator = prevDate !== null && prevDate !== schedule.schedule_date && schedule.schedule_date === todayDate;
+                    const showDateSeparator = idx === firstTodayIdx && firstTodayIdx > 0;
                     return (
                       <Fragment key={schedule.id}>
                         {showDateSeparator && (
@@ -768,7 +769,8 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         )}
                       </Fragment>
                     );
-                  })}
+                  });
+                  })()}
                 </tbody>
               </table>
             </div>
