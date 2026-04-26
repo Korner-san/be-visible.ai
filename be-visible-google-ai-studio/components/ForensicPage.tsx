@@ -58,6 +58,7 @@ interface ScheduleItem {
   status: string;
   batch_size: number;
   batch_type?: string;
+  is_retry?: boolean;
   onboarding_brand_name?: string | null;
   onboarding_user_email?: string | null;
   account_assigned: string | null;
@@ -618,6 +619,7 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                   ) : data.schedulingQueue.map((schedule, idx) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const isOnboarding = schedule.batch_type === 'onboarding';
+                    const isRetry = schedule.is_retry === true;
                     const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name));
                     const isDone = schedule.status === 'completed' || schedule.status === 'failed';
                     const todayDate = new Date().toISOString().split('T')[0];
@@ -664,15 +666,22 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{fmt(schedule.execution_time)}</td>
                           <td className="px-4 py-3">
-                            {isOnboarding ? (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                                ⚡ Onboarding W2
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">
-                                Batch #{schedule.batch_number}
-                              </span>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {isOnboarding ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                  ⚡ Onboarding W2
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">
+                                  Batch #{schedule.batch_number}
+                                </span>
+                              )}
+                              {isRetry && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700 border border-orange-200 w-fit">
+                                  🔁 Retry
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">

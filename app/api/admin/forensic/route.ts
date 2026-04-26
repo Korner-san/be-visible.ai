@@ -300,6 +300,7 @@ export async function GET(request: NextRequest) {
           prompt_ids,
           brand_id,
           batch_type,
+          is_retry,
           chatgpt_accounts(
             email,
             proxy_host,
@@ -472,6 +473,7 @@ export async function GET(request: NextRequest) {
             batch_size: schedule.batch_size,
             prompt_ids: schedule.prompt_ids,
             batch_type: schedule.batch_type || 'regular',
+            is_retry: schedule.is_retry ?? false,
             onboarding_brand_name: onboardingBrandName,
             onboarding_user_email: onboardingUserEmail,
             account_assigned: schedule.chatgpt_accounts?.email,
