@@ -9,7 +9,9 @@
     "dispatch:dry": "node onboarding-dispatcher.js",
     "watchdog:dry": "node recovery-watchdog.js",
     "retry:dry": "node retry-scheduler.js",
+    "validate:shadow": "node validate-shadow-plan.js",
+    "clear:shadow": "node clear-shadow-plan.js",
     "check:admin": "tsc --noEmit --pretty false --project tsconfig.admin-check.json",
-    "check": "node --check daily-scheduler.js && node --check onboarding-dispatcher.js && node --check execute-onboarding-batch.js && node --check recovery-watchdog.js && node --check retry-scheduler.js"
+    "check": "node --check daily-scheduler.js && node --check execute-onboarding-batch.js && node --check onboarding-dispatcher.js && node --check recovery-watchdog.js && node --check retry-scheduler.js && node --check validate-shadow-plan.js && node --check clear-shadow-plan.js"
   }
 }
