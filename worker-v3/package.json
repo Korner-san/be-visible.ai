@@ -1,0 +1,13 @@
+{
+  "name": "be-visible-worker-v3",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Worker V3 prototype. Not wired to production.",
+  "scripts": {
+    "daily:dry": "node daily-scheduler.js",
+    "dispatch:dry": "node onboarding-dispatcher.js",
+    "watchdog:dry": "node recovery-watchdog.js",
+    "retry:dry": "node retry-scheduler.js",
+    "check": "node --check daily-scheduler.js && node --check onboarding-dispatcher.js && node --check execute-onboarding-batch.js && node --check recovery-watchdog.js && node --check retry-scheduler.js"
+  }
+}
