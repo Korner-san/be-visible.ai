@@ -8,6 +8,7 @@ export function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
+    pathname.startsWith('/reports/worker-v3') ||
     pathname === '/index.html' ||
     /\.[^/]+$/.test(pathname) // has a file extension (images, fonts, JS, CSS, etc.)
   ) {
