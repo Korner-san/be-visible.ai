@@ -138,6 +138,41 @@ function spawnExtraModel(script, envKey, label, brandId, batchNumber, dailyRepor
   console.log(`[BATCH] Spawned ${label} for ${promptIds.length} prompts → log: ${logPath}`);
 }
 
+/**
+ * Spawn session reinitializer for a ChatGPT account after a batch failure.
+ * Runs as a detached background process so it survives after this process exits.
+ * Awaiting this is safe — the DB lookup is fast (~100ms) and spawn is instant.
+ */
+async function spawnSessionReinit(accountId) {
+  if (!accountId) return;
+  try {
+    const { data: acct } = await supabase
+      .from('chatgpt_accounts')
+      .select('email')
+      .eq('id', accountId)
+      .single();
+    if (!acct?.email) {
+      console.warn('[REINIT] Could not find email for account', accountId);
+      return;
+    }
+    const script = path.join(__dirname, 'initialize-persistent-session-db-driven.js');
+    const logPath = `/tmp/reinit-${acct.email.split('@')[0]}-${Date.now()}.log`;
+    let logFd;
+    try { logFd = fs.openSync(logPath, 'w'); } catch (e) { logFd = null; }
+    const child = spawn('node', [script], {
+      stdio: ['ignore', logFd || 'ignore', logFd || 'ignore'],
+      cwd: __dirname,
+      detached: true,
+      env: { ...process.env, CHATGPT_EMAIL: acct.email },
+    });
+    try { if (logFd !== null) fs.closeSync(logFd); } catch (e) {}
+    child.unref();
+    console.log(`[REINIT] Session reinit spawned for ${acct.email} → log: ${logPath}`);
+  } catch (err) {
+    console.warn('[REINIT] Failed to spawn session reinit:', err.message);
+  }
+}
+
 async function executeBatch() {
   const startTime = new Date();
 
@@ -386,6 +421,9 @@ async function executeBatch() {
         prompts_failed: schedule.batch_size,
         error_message: result.error,
       });
+
+      // Reinitialize the Browserless session in background so subsequent batches aren't blocked by a dead session
+      await spawnSessionReinit(schedule.chatgpt_account_id);
     }
 
     // 7. Spawn Google AIO and Claude — always, regardless of ChatGPT result.
@@ -445,6 +483,13 @@ async function executeBatch() {
         completed_at: new Date().toISOString(),
         error_message: error.message,
       });
+      // Fetch account ID for reinit (schedule may not be in scope if error was early)
+      const { data: scheduleForReinit } = await supabase
+        .from('daily_schedules')
+        .select('chatgpt_account_id')
+        .eq('id', scheduleId)
+        .single();
+      await spawnSessionReinit(scheduleForReinit?.chatgpt_account_id);
     } catch (updateErr) {
       console.error('Failed to update error status:', updateErr);
     }
