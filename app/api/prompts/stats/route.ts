@@ -194,6 +194,64 @@ export async function GET(request: NextRequest) {
     ;(results || []).forEach(r => byPrompt.get(r.brand_prompt_id)?.push(r))
     ;(prevResults || []).forEach(r => byPromptPrev.get(r.brand_prompt_id)?.push(r))
 
+    // Batch-compute content type breakdowns from url_citations → url_content_facts
+    const byPromptBreakdown = new Map<string, any[]>()
+    for (const id of promptIds) byPromptBreakdown.set(id, [])
+
+    const allResultIds = (results || []).map((r: any) => r.id)
+    if (allResultIds.length > 0) {
+      const { data: urlCitations } = await supabase
+        .from('url_citations')
+        .select('url_id, prompt_result_id')
+        .in('prompt_result_id', allResultIds)
+
+      if (urlCitations && urlCitations.length > 0) {
+        const allUrlIds = [...new Set(urlCitations.map((uc: any) => uc.url_id as string))]
+
+        const { data: contentFacts } = await supabase
+          .from('url_content_facts')
+          .select('url_id, content_structure_category')
+          .in('url_id', allUrlIds)
+          .not('content_structure_category', 'is', null)
+
+        const urlCategoryMap = new Map<string, string>()
+        ;(contentFacts || []).forEach((f: any) => {
+          if (f.content_structure_category) urlCategoryMap.set(f.url_id, f.content_structure_category)
+        })
+
+        // result_id → brand_prompt_id lookup
+        const resultPromptMap = new Map<string, string>()
+        ;(results || []).forEach((r: any) => resultPromptMap.set(r.id, r.brand_prompt_id))
+
+        // Collect unique url_ids per brand_prompt_id
+        const promptUrlIds = new Map<string, Set<string>>()
+        for (const id of promptIds) promptUrlIds.set(id, new Set())
+        urlCitations.forEach((uc: any) => {
+          const pId = resultPromptMap.get(uc.prompt_result_id)
+          if (pId) promptUrlIds.get(pId)?.add(uc.url_id)
+        })
+
+        // Aggregate content categories per prompt
+        for (const [pId, urlIds] of promptUrlIds) {
+          const typeCounts: Record<string, number> = {}
+          for (const urlId of urlIds) {
+            const cat = urlCategoryMap.get(urlId)
+            if (cat) typeCounts[cat] = (typeCounts[cat] || 0) + 1
+          }
+          const total = Object.values(typeCounts).reduce((s, v) => s + v, 0)
+          if (total > 0) {
+            byPromptBreakdown.set(pId, Object.entries(typeCounts)
+              .sort(([, a], [, b]) => b - a)
+              .map(([category, count]) => ({
+                category,
+                urls: count,
+                percentage: Math.round((count / total) * 100),
+              })))
+          }
+        }
+      }
+    }
+
     const stats: Record<string, any> = {}
 
     for (const prompt of brandPrompts) {
@@ -270,7 +328,7 @@ export async function GET(request: NextRequest) {
         history,
         recentResults,
         citationDomains,
-        contentTypeBreakdown: [],
+        contentTypeBreakdown: byPromptBreakdown.get(prompt.id) || [],
       }
     }
 
