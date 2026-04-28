@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 function getProviderCitations(result: any): string[] {
   const p = result.provider
@@ -200,7 +201,8 @@ export async function GET(request: NextRequest) {
 
     const allResultIds = (results || []).map((r: any) => r.id)
     if (allResultIds.length > 0) {
-      const { data: urlCitations } = await supabase
+      const serviceClient = createServiceClient()
+      const { data: urlCitations } = await serviceClient
         .from('url_citations')
         .select('url_id, prompt_result_id')
         .in('prompt_result_id', allResultIds)
@@ -208,7 +210,7 @@ export async function GET(request: NextRequest) {
       if (urlCitations && urlCitations.length > 0) {
         const allUrlIds = [...new Set(urlCitations.map((uc: any) => uc.url_id as string))]
 
-        const { data: contentFacts } = await supabase
+        const { data: contentFacts } = await serviceClient
           .from('url_content_facts')
           .select('url_id, content_structure_category')
           .in('url_id', allUrlIds)
