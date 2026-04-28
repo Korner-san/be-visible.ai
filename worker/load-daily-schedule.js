@@ -43,6 +43,7 @@ async function loadDailySchedule() {
       .select('*')
       .eq('schedule_date', today)
       .eq('status', 'pending')
+      .neq('batch_type', 'onboarding')  // onboarding batches dispatched by queue-organizer, not crontab
       .order('execution_time', { ascending: true });
     
     if (error) {
@@ -96,17 +97,19 @@ async function loadDailySchedule() {
     
     for (const schedule of schedules) {
       const execTime = new Date(schedule.execution_time);
-      const hour = execTime.getHours();
-      const minute = execTime.getMinutes();
+      const hour = execTime.getUTCHours();
+      const minute = execTime.getUTCMinutes();
       
       // Cron format: minute hour day month weekday command
       const cronTime = `${minute} ${hour} * * *`;
-      const command = `cd ${WORKER_DIR} && node execute-batch.js ${schedule.id} >> ${LOG_DIR}/batch-${schedule.id}.log 2>&1`;
-      const entry = `${cronTime} ${command} # AUTO - ${today} - Batch ${schedule.batch_number}`;
-      
+      const batchScript = schedule.batch_type === 'onboarding' ? 'execute-onboarding-batch.js' : 'execute-batch.js';
+      const command = `cd ${WORKER_DIR} && node ${batchScript} ${schedule.id} >> ${LOG_DIR}/batch-${schedule.id}.log 2>&1`;
+      const batchLabel = schedule.batch_type === 'onboarding' ? 'Onboarding' : 'Batch';
+      const entry = `${cronTime} ${command} # AUTO - ${today} - ${batchLabel} ${schedule.batch_number}`;
+
       cronEntries.push(entry);
-      
-      console.log(`   ✅ ${hour}:${String(minute).padStart(2, '0')} - Batch ${schedule.batch_number} (${schedule.batch_size} prompts)`);
+
+      console.log(`   ✅ ${hour}:${String(minute).padStart(2, '0')} - ${batchLabel} ${schedule.batch_number} (${schedule.batch_size} prompts)${schedule.batch_type === 'onboarding' ? ' [onboarding]' : ''}`);
     }
     
     // 5. Append new entries to crontab

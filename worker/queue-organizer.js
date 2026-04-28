@@ -92,7 +92,12 @@ async function runQueueOrganizer() {
     console.log('[QUEUE-ORG] Marked', overdueMarked.length, 'overdue pending batch(es) as failed:', overdueMarked.map(b => `#${b.batch_number}`).join(', '));
   }
 
-  // 0b. Safety sweep: catch brands stuck in phase1_complete where all wave-2 prompts completed
+  // 0b. Dispatch due wave-2 onboarding batches (replaces crontab-based dispatch).
+  //     Runs on every tick so there is no dead window. Sequential per brand — never
+  //     dispatches a second batch for a brand that already has one running.
+  await dispatchDueWave2Batches();
+
+  // 0c. Safety sweep: catch brands stuck in phase1_complete where all wave-2 prompts completed
   //     but Phase 2 EOD was never triggered (last chunk's webhook failed, organizer crashed, etc.)
   //     Also catches: report already is_partial=false but brand status was not updated.
   {
@@ -170,8 +175,19 @@ async function runQueueOrganizer() {
 
     if (count > 0) {
       if (currentWave === 2) {
-        // Wave-2 batches are dispatched by daily_schedules cron (execute-onboarding-batch.js).
-        // The organizer skips wave-2 dispatch entirely; finalization is handled in the else branch.
+        // Dispatch is handled by dispatchDueWave2Batches() above.
+        // Self-healing: if pending prompts exist but no batches are scheduled or running,
+        // re-inject so the next dispatchDueWave2Batches() call picks them up.
+        const { count: scheduledCount } = await supabase
+          .from('daily_schedules')
+          .select('id', { count: 'exact', head: true })
+          .eq('brand_id', brand.id)
+          .eq('batch_type', 'onboarding')
+          .in('status', ['pending', 'running']);
+        if ((scheduledCount || 0) === 0) {
+          console.log('[QUEUE-ORG] Brand', brand.id.substring(0, 8), '— wave-2 has', count, 'pending/failed prompts but no scheduled batches — re-injecting');
+          await injectWave2IntoSchedule(brand);
+        }
         continue;
       }
       brandsWithWork.push({ ...brand, currentWave, pendingCount: count });
@@ -471,9 +487,9 @@ async function finalizePhase(brand, completedWave) {
 
     await ensureUserInTable(brand.owner_user_id);
 
-    // Schedule wave-2 batches spread over the next 4 hours.
-    // Uses existing daily_schedules slots on the brand's ChatGPT account as reference points
-    // to find gaps ≥10 min. The queue-organizer cron will dispatch each batch at its slot time.
+    // Create wave-2 batch schedule rows in daily_schedules.
+    // queue-organizer dispatches them on every 5-min tick via dispatchDueWave2Batches()
+    // (no crontab — avoids dead windows and enforces sequential per-brand execution).
     await injectWave2IntoSchedule(brand);
 
   } else if (completedWave === 2) {
@@ -543,10 +559,66 @@ async function finalizePhase(brand, completedWave) {
   }
 }
 
+// ── Dispatch due wave-2 onboarding batches ────────────────────────────────────
+// Runs on every queue-organizer tick. Replaces crontab-based dispatch entirely.
+// Sequential per brand: never fires a second batch for a brand already running one.
+// Fire-and-forget: detached child, organizer does not wait for completion.
+async function dispatchDueWave2Batches() {
+  const now = new Date().toISOString();
+
+  // Brands that already have a running onboarding batch — skip them this tick
+  const { data: runningBatches } = await supabase
+    .from('daily_schedules')
+    .select('brand_id')
+    .eq('batch_type', 'onboarding')
+    .eq('status', 'running');
+
+  const runningBrandIds = new Set((runningBatches || []).map(b => b.brand_id));
+
+  // All due pending onboarding batches (execution_time has passed), oldest first
+  const { data: dueBatches } = await supabase
+    .from('daily_schedules')
+    .select('id, brand_id, batch_number, execution_time')
+    .eq('batch_type', 'onboarding')
+    .eq('status', 'pending')
+    .lte('execution_time', now)
+    .order('execution_time', { ascending: true });
+
+  if (!dueBatches || dueBatches.length === 0) return;
+
+  const dispatchedBrands = new Set();
+  for (const batch of dueBatches) {
+    if (runningBrandIds.has(batch.brand_id)) {
+      console.log('[WAVE2-DISPATCH] Brand', batch.brand_id.substring(0, 8), '— batch already running, skipping #' + batch.batch_number);
+      continue;
+    }
+    if (dispatchedBrands.has(batch.brand_id)) continue; // one dispatch per brand per tick
+
+    console.log('[WAVE2-DISPATCH] Dispatching onboarding batch #' + batch.batch_number, 'for brand', batch.brand_id.substring(0, 8));
+    const logPath = `/tmp/onboarding-dispatch-${batch.brand_id.substring(0, 8)}-${Date.now()}.log`;
+    const logFd = fs.openSync(logPath, 'w');
+    const child = spawn('node', [path.join(__dirname, 'execute-onboarding-batch.js'), batch.id], {
+      stdio: ['ignore', logFd, logFd],
+      cwd: __dirname,
+      detached: true,
+    });
+    try { fs.closeSync(logFd); } catch (e) {}
+    child.unref();
+
+    dispatchedBrands.add(batch.brand_id);
+    console.log('[WAVE2-DISPATCH] Spawned execute-onboarding-batch.js for schedule', batch.id.substring(0, 8), '→ log:', logPath);
+  }
+
+  if (dispatchedBrands.size > 0) {
+    console.log('[WAVE2-DISPATCH] Dispatched', dispatchedBrands.size, 'onboarding batch(es) this tick');
+  }
+}
+
 // ── Inject wave-2 onboarding batches into daily_schedules ────────────────────
-// Called from finalizePhase(1). Distributes batches across ALL eligible accounts
-// using greedy earliest-free-slot assignment. Guard prevents duplicate insertions.
-// load-daily-schedule.js routes these rows to execute-onboarding-batch.js instead of execute-batch.js.
+// Called from finalizePhase(1) and from the self-healing check in the main loop.
+// Distributes batches across ALL eligible accounts using greedy earliest-free-slot
+// assignment. Guard prevents duplicate insertions.
+// Rows are dispatched by dispatchDueWave2Batches() — NOT loaded into crontab.
 async function injectWave2IntoSchedule(brand) {
   const WINDOW_MS         = 4 * 60 * 60 * 1000;
   const MIN_SPACING_MS    = 10 * 60 * 1000;
@@ -683,17 +755,7 @@ async function injectWave2IntoSchedule(brand) {
     console.log(`  [WAVE2-SCHED]   Batch ${i + 1}/${numBatches}: ${acct?.email} T+${minFrom}min = ${r.execution_time}`);
   });
 
-  // Reload crontab so these batches get cron entries
-  console.log('[WAVE2-SCHED] Reloading crontab...');
-  const loadResult = spawnSync('node', [path.join(__dirname, 'load-daily-schedule.js')], {
-    stdio: 'inherit',
-    cwd: __dirname,
-  });
-  if (loadResult.status !== 0) {
-    console.error('[WAVE2-SCHED] load-daily-schedule exited with status', loadResult.status);
-  } else {
-    console.log('[WAVE2-SCHED] Crontab reloaded — wave-2 batches will fire at scheduled times.');
-  }
+  console.log('[WAVE2-SCHED] Wave-2 batches inserted — queue-organizer will dispatch on next tick (no crontab).');
 }
 
 // ── Inject a newly onboarded brand into tomorrow's daily schedule ─────────────
