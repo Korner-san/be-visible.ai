@@ -92,12 +92,61 @@ async function runQueueOrganizer() {
     console.log('[QUEUE-ORG] Marked', overdueMarked.length, 'overdue pending batch(es) as failed:', overdueMarked.map(b => `#${b.batch_number}`).join(', '));
   }
 
-  // 0b. Dispatch due wave-2 onboarding batches (replaces crontab-based dispatch).
+  // 0b. Kill zombie running batches — any batch stuck in 'running' beyond its max possible
+  //     duration (batch_size × 2.5 min + 40 min buffer). These are processes that hung
+  //     (Playwright hang, Browserless WebSocket timeout, etc.) without updating DB status.
+  //     A zombie holds the Browserless session open, blocking subsequent batches on the same account.
+  {
+    const { data: runningBatches } = await supabase
+      .from('daily_schedules')
+      .select('id, batch_number, batch_size, started_at')
+      .eq('status', 'running');
+
+    const { execSync } = require('child_process');
+    for (const batch of (runningBatches || [])) {
+      const maxDurationMs = (batch.batch_size || 5) * MINUTES_PER_PROMPT * 60 * 1000 + 40 * 60 * 1000;
+      const startedAt = new Date(batch.started_at).getTime();
+      const runningForMin = Math.round((Date.now() - startedAt) / 60000);
+      if (Date.now() - startedAt < maxDurationMs) continue;
+
+      console.log('[QUEUE-ORG] Zombie batch #' + batch.batch_number, '— running for', runningForMin + 'min, killing');
+
+      try {
+        const psOut = execSync(`ps aux | grep "${batch.id}" | grep -v grep`, { encoding: 'utf8' });
+        const pids = psOut.trim().split('\n')
+          .map(line => parseInt(line.trim().split(/\s+/)[1]))
+          .filter(pid => !isNaN(pid) && pid !== process.pid);
+        if (pids.length > 0) {
+          console.log('[QUEUE-ORG] Killing zombie PIDs:', pids.join(', '));
+          for (const pid of pids) {
+            try { process.kill(pid, 'SIGKILL'); } catch (e) { /* already dead */ }
+          }
+        } else {
+          console.log('[QUEUE-ORG] No live process for zombie batch #' + batch.batch_number + ' (already dead)');
+        }
+      } catch (e) {
+        console.log('[QUEUE-ORG] No live process for zombie batch #' + batch.batch_number);
+      }
+
+      await supabase
+        .from('daily_schedules')
+        .update({
+          status: 'failed',
+          error_message: `Zombie: still running after ${runningForMin}min — killed by queue-organizer`,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', batch.id);
+
+      console.log('[QUEUE-ORG] Zombie batch #' + batch.batch_number, 'marked failed');
+    }
+  }
+
+  // 0c. Dispatch due wave-2 onboarding batches (replaces crontab-based dispatch).
   //     Runs on every tick so there is no dead window. Sequential per brand — never
   //     dispatches a second batch for a brand that already has one running.
   await dispatchDueWave2Batches();
 
-  // 0c. Safety sweep: catch brands stuck in phase1_complete where all wave-2 prompts completed
+  // 0d. Safety sweep: catch brands stuck in phase1_complete where all wave-2 prompts completed
   //     but Phase 2 EOD was never triggered (last chunk's webhook failed, organizer crashed, etc.)
   //     Also catches: report already is_partial=false but brand status was not updated.
   {
