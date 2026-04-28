@@ -274,7 +274,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         }
 
         setSovSlices(slices);
-        setSovBrandPct(slices[0]?.voice ?? 0);
+        setSovBrandPct(brand ? parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)) : 0);
         setHasRealSov(true);
 
         // ── Previous period SOV for trends ──
