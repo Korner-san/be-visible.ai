@@ -68,6 +68,27 @@ async function triggerEODIfAllBatchesDone(brandId, scheduleDate, dailyReportId) 
       return;
     }
 
+    // Before 20:00 UTC: defer EOD if there are failed non-retry batches (retry window not yet open)
+    const nowUtcHour = new Date().getUTCHours();
+    if (nowUtcHour < 20) {
+      try {
+        const { data: failedNonRetry } = await supabase
+          .from('daily_schedules')
+          .select('id')
+          .eq('brand_id', brandId)
+          .eq('schedule_date', scheduleDate)
+          .eq('status', 'failed')
+          .eq('is_retry', false);
+
+        if (failedNonRetry && failedNonRetry.length > 0) {
+          console.log(`[EOD] ${failedNonRetry.length} failed batch(es) queued for 20:00 UTC retry — EOD deferred`);
+          return;
+        }
+      } catch (e) {
+        // is_retry column may not exist yet — proceed with EOD
+      }
+    }
+
     // Lockfile prevents multiple finishing batches from each spawning EOD
     const lockFile = `/tmp/eod-trigger-${dailyReportId}.lock`;
     if (fs.existsSync(lockFile)) {
@@ -138,6 +159,41 @@ function spawnExtraModel(script, envKey, label, brandId, batchNumber, dailyRepor
   console.log(`[BATCH] Spawned ${label} for ${promptIds.length} prompts → log: ${logPath}`);
 }
 
+/**
+ * Spawn session reinitializer for a ChatGPT account after a batch failure.
+ * Runs as a detached background process so it survives after this process exits.
+ * Awaiting this is safe — the DB lookup is fast (~100ms) and spawn is instant.
+ */
+async function spawnSessionReinit(accountId) {
+  if (!accountId) return;
+  try {
+    const { data: acct } = await supabase
+      .from('chatgpt_accounts')
+      .select('email')
+      .eq('id', accountId)
+      .single();
+    if (!acct?.email) {
+      console.warn('[REINIT] Could not find email for account', accountId);
+      return;
+    }
+    const script = path.join(__dirname, 'initialize-persistent-session-db-driven.js');
+    const logPath = `/tmp/reinit-${acct.email.split('@')[0]}-${Date.now()}.log`;
+    let logFd;
+    try { logFd = fs.openSync(logPath, 'w'); } catch (e) { logFd = null; }
+    const child = spawn('node', [script], {
+      stdio: ['ignore', logFd || 'ignore', logFd || 'ignore'],
+      cwd: __dirname,
+      detached: true,
+      env: { ...process.env, CHATGPT_EMAIL: acct.email },
+    });
+    try { if (logFd !== null) fs.closeSync(logFd); } catch (e) {}
+    child.unref();
+    console.log(`[REINIT] Session reinit spawned for ${acct.email} → log: ${logPath}`);
+  } catch (err) {
+    console.warn('[REINIT] Failed to spawn session reinit:', err.message);
+  }
+}
+
 async function executeBatch() {
   const startTime = new Date();
 
@@ -184,6 +240,68 @@ async function executeBatch() {
     // If another daily batch for this account is already running, kill it and take over —
     // overlapping batches mean something overran or was double-triggered by mistake.
     // 30-min zombie cutoff: ignore stale 'running' rows with no live process behind them.
+    //
+    // FUTURE ENHANCEMENT — Direct Browserless session liveness check (layer above the 30-min guard):
+    // Instead of relying on DB timestamps to guess whether a session is occupied, query Browserless
+    // directly. The Sessions API returns all currently-connected sessions in real time, so we can
+    // check by session ID rather than by age. Activate this block and place it BEFORE the 30-min
+    // guard below to short-circuit when Browserless itself says the session is free.
+    //
+    // Prerequisite: chatgpt_accounts.browserless_session_id must be up-to-date in the DB
+    // (written by the run-N-prompts-persistent.js scripts when they connect).
+    //
+    // After killing the conflicting process, a 3–5 second wait is sufficient — processKeepAlive
+    // keeps the browser alive for reconnection but does NOT block a new WebSocket connection once
+    // the old one drops at the TCP level (which happens immediately on SIGKILL).
+    //
+    // if (schedule.chatgpt_account_id) {
+    //   try {
+    //     const { data: accountRow } = await supabase
+    //       .from('chatgpt_accounts')
+    //       .select('browserless_session_id')
+    //       .eq('id', schedule.chatgpt_account_id)
+    //       .single();
+    //
+    //     const sessionId = accountRow?.browserless_session_id;
+    //     if (sessionId && process.env.BROWSERLESS_TOKEN) {
+    //       const res = await fetch(
+    //         `https://production-sfo.browserless.io/sessions?token=${process.env.BROWSERLESS_TOKEN}`
+    //       );
+    //       if (res.ok) {
+    //         const activeSessions = await res.json();
+    //         const isSessionBusy = activeSessions.some(s => s.id === sessionId);
+    //
+    //         if (isSessionBusy) {
+    //           console.log(`⚠️  [SESSION CHECK] Session ${sessionId.substring(0, 12)} is live in Browserless — killing holding process`);
+    //           // Kill any OS process holding this session (same mechanism as the 30-min guard below)
+    //           try {
+    //             const { execSync } = require('child_process');
+    //             const psOut = execSync(`ps aux | grep "${schedule.chatgpt_account_id}" | grep -v grep`, { encoding: 'utf8' });
+    //             const pids = psOut.trim().split('\n')
+    //               .map(line => parseInt(line.trim().split(/\s+/)[1]))
+    //               .filter(pid => !isNaN(pid) && pid !== process.pid);
+    //             if (pids.length > 0) {
+    //               console.log(`   Killing PIDs: ${pids.join(', ')}`);
+    //               for (const pid of pids) {
+    //                 try { process.kill(pid, 'SIGKILL'); } catch (e) { /* already dead */ }
+    //               }
+    //             }
+    //           } catch (e) {
+    //             console.log('   No live process found for session (WebSocket may have already dropped)');
+    //           }
+    //           await new Promise(resolve => setTimeout(resolve, 4000)); // Wait for TCP close to propagate
+    //           console.log('   Session should be free — proceeding');
+    //         } else {
+    //           console.log(`✅ [SESSION CHECK] Session ${sessionId.substring(0, 12)} is free — no conflict`);
+    //         }
+    //       }
+    //     }
+    //   } catch (sessionCheckErr) {
+    //     console.warn('[SESSION CHECK] Could not query Browserless Sessions API — falling back to 30-min DB guard:', sessionCheckErr.message);
+    //   }
+    // }
+    // END FUTURE ENHANCEMENT
+
     if (schedule.chatgpt_account_id) {
       const zombieCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const { data: concurrentBatches } = await supabase
@@ -238,38 +356,47 @@ async function executeBatch() {
     }
 
     // 2.6. Guard against onboarding-vs-daily conflict on the same Browserless session.
+    // Zombie cutoff: claims older than 30 min have no live process — reset DB only, no kill needed.
     if (schedule.chatgpt_account_id) {
+      const onboardingZombieCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const { data: activeOnboarding } = await supabase
         .from('brand_prompts')
-        .select('id, brand_id')
+        .select('id, brand_id, onboarding_claimed_at')
         .eq('onboarding_claimed_account_id', schedule.chatgpt_account_id)
         .eq('onboarding_status', 'claimed');
 
       if (activeOnboarding && activeOnboarding.length > 0) {
-        console.log(`⚠️  Onboarding chunk is using this account (${activeOnboarding.length} claimed prompt(s))`);
-        console.log('   Killing onboarding process to free the Browserless session...');
+        // Fresh claims (claimed within 30 min) likely have a live process — kill it
+        const freshClaims = activeOnboarding.filter(p => p.onboarding_claimed_at && p.onboarding_claimed_at > onboardingZombieCutoff);
+        const staleClaims = activeOnboarding.filter(p => !p.onboarding_claimed_at || p.onboarding_claimed_at <= onboardingZombieCutoff);
 
-        try {
-          const { execSync } = require('child_process');
-          const accountId = schedule.chatgpt_account_id;
-          const procFiles = execSync(
-            `grep -rl "CHATGPT_ACCOUNT_ID=${accountId}" /proc/*/environ 2>/dev/null || true`,
-            { encoding: 'utf8' }
-          );
-          const pids = procFiles.trim().split('\n')
-            .map(f => parseInt((f.match(/\/proc\/(\d+)\//) || [])[1]))
-            .filter(pid => !isNaN(pid) && pid !== process.pid);
+        if (freshClaims.length > 0) {
+          console.log(`⚠️  Live onboarding using this account (${freshClaims.length} fresh + ${staleClaims.length} stale claimed)`);
+          console.log('   Killing live onboarding process to free the Browserless session...');
+          try {
+            const { execSync } = require('child_process');
+            const accountId = schedule.chatgpt_account_id;
+            const procFiles = execSync(
+              `grep -rl "CHATGPT_ACCOUNT_ID=${accountId}" /proc/*/environ 2>/dev/null || true`,
+              { encoding: 'utf8' }
+            );
+            const pids = procFiles.trim().split('\n')
+              .map(f => parseInt((f.match(/\/proc\/(\d+)\//) || [])[1]))
+              .filter(pid => !isNaN(pid) && pid !== process.pid);
 
-          if (pids.length > 0) {
-            console.log(`   Killing onboarding PIDs: ${pids.join(', ')}`);
-            for (const pid of pids) {
-              try { process.kill(pid, 'SIGKILL'); } catch (e) { /* already dead */ }
+            if (pids.length > 0) {
+              console.log(`   Killing onboarding PIDs: ${pids.join(', ')}`);
+              for (const pid of pids) {
+                try { process.kill(pid, 'SIGKILL'); } catch (e) { /* already dead */ }
+              }
+            } else {
+              console.log('   No live onboarding process found (may have already exited)');
             }
-          } else {
-            console.log('   No live onboarding process found (already exited)');
+          } catch (e) {
+            console.log('   Could not search for onboarding process:', e.message);
           }
-        } catch (e) {
-          console.log('   Could not search for onboarding process:', e.message);
+        } else {
+          console.log(`⚠️  ${staleClaims.length} stale onboarding claim(s) (zombie >30 min) — DB cleanup only, no process to kill`);
         }
 
         const promptIds = activeOnboarding.map(p => p.id);
@@ -284,7 +411,9 @@ async function executeBatch() {
 
         console.log(`   Reset ${promptIds.length} prompt(s) to 'failed' — organizer will retry after batch completes`);
 
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        if (freshClaims.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
         console.log('   Proceeding with daily batch...');
       }
     }
@@ -386,6 +515,9 @@ async function executeBatch() {
         prompts_failed: schedule.batch_size,
         error_message: result.error,
       });
+
+      // Reinitialize the Browserless session in background so subsequent batches aren't blocked by a dead session
+      await spawnSessionReinit(schedule.chatgpt_account_id);
     }
 
     // 7. Spawn Google AIO and Claude — always, regardless of ChatGPT result.
@@ -445,6 +577,13 @@ async function executeBatch() {
         completed_at: new Date().toISOString(),
         error_message: error.message,
       });
+      // Fetch account ID for reinit (schedule may not be in scope if error was early)
+      const { data: scheduleForReinit } = await supabase
+        .from('daily_schedules')
+        .select('chatgpt_account_id')
+        .eq('id', scheduleId)
+        .single();
+      await spawnSessionReinit(scheduleForReinit?.chatgpt_account_id);
     } catch (updateErr) {
       console.error('Failed to update error status:', updateErr);
     }
