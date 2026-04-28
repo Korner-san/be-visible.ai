@@ -5,6 +5,7 @@
   "description": "Isolated Worker V3 prototype. Not wired to production.",
   "scripts": {
     "daily:dry": "node daily-scheduler.js",
+    "daily:shadow": "node daily-scheduler.js --shadow-write",
     "dispatch:dry": "node onboarding-dispatcher.js",
     "watchdog:dry": "node recovery-watchdog.js",
     "retry:dry": "node retry-scheduler.js",

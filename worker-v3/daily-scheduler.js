@@ -4,6 +4,16 @@ const { createServiceClient } = require('./lib/supabase');
 const { CONFIG, isExecuteMode, modeLabel } = require('./lib/config');
 const { utcDateString, atUtc } = require('./lib/time-windows');
 
+function isShadowWriteMode(argv = process.argv, env = process.env) {
+  return argv.includes('--shadow-write') || env.WORKER_V3_SHADOW_WRITE === 'true';
+}
+
+function schedulerModeLabel({ execute, shadowWrite }) {
+  if (execute) return modeLabel(true);
+  if (shadowWrite) return 'SHADOW-WRITE';
+  return modeLabel(false);
+}
+
 function parseTargetDate(argv = process.argv) {
   const arg = argv.find((item) => item.startsWith('--date='));
   if (!arg) return utcDateString(new Date(Date.now() + 24 * 60 * 60 * 1000));
@@ -131,12 +141,91 @@ function existingPromptSet(existing) {
   return ids;
 }
 
+async function writeShadowPlan(supabase, plannedBatches) {
+  if (plannedBatches.length === 0) {
+    return { batches: 0, items: 0, modelExecutions: 0 };
+  }
+
+  const batchRows = plannedBatches.map((planned) => planned.batch);
+  const { data: insertedBatches, error: batchError } = await supabase
+    .from('worker_v3_batches')
+    .insert(batchRows)
+    .select('id, batch_number');
+
+  if (batchError) {
+    throw new Error(`Failed to insert worker_v3_batches: ${batchError.message}`);
+  }
+
+  const batchIdByNumber = new Map((insertedBatches || []).map((row) => [row.batch_number, row.id]));
+  const itemRows = [];
+  const modelRows = [];
+
+  for (const planned of plannedBatches) {
+    const batchId = batchIdByNumber.get(planned.batch.batch_number);
+    if (!batchId) {
+      throw new Error(`Inserted batch id missing for batch_number ${planned.batch.batch_number}`);
+    }
+
+    for (const item of planned.items) {
+      itemRows.push({
+        batch_id: batchId,
+        item_index: item.item_index,
+        item_kind: item.item_kind,
+        schedule_date: item.schedule_date,
+        user_id: item.user_id,
+        brand_id: item.brand_id,
+        prompt_id: item.prompt_id,
+        daily_report_id: null,
+        onboarding_wave: null,
+        is_retry: item.is_retry,
+        status: item.status,
+        chatgpt_status: 'pending',
+        google_ai_overview_status: 'pending',
+        claude_status: 'pending',
+      });
+    }
+
+    for (const provider of CONFIG.providers) {
+      modelRows.push({
+        batch_id: batchId,
+        item_id: null,
+        provider,
+        status: 'pending',
+        prompts_attempted: planned.items.length,
+      });
+    }
+  }
+
+  const { error: itemError } = await supabase
+    .from('worker_v3_batch_items')
+    .insert(itemRows);
+
+  if (itemError) {
+    throw new Error(`Failed to insert worker_v3_batch_items: ${itemError.message}`);
+  }
+
+  const { error: modelError } = await supabase
+    .from('worker_v3_model_executions')
+    .insert(modelRows);
+
+  if (modelError) {
+    throw new Error(`Failed to insert worker_v3_model_executions: ${modelError.message}`);
+  }
+
+  return {
+    batches: insertedBatches?.length || 0,
+    items: itemRows.length,
+    modelExecutions: modelRows.length,
+  };
+}
+
 async function main() {
   const execute = isExecuteMode();
+  const shadowWrite = isShadowWriteMode();
   const targetDate = parseTargetDate();
   const supabase = createServiceClient();
 
-  console.log(`Worker V3 daily scheduler (${modeLabel(execute)})`);
+  console.log(`Worker V3 daily scheduler (${schedulerModeLabel({ execute, shadowWrite })})`);
   console.log(`Target UTC schedule_date: ${targetDate}`);
   console.log(`Primary execution window: ${atUtc(targetDate, CONFIG.primaryWindowStartHourUtc).toISOString()} to ${atUtc(targetDate, CONFIG.primaryWindowEndHourUtc).toISOString()}`);
 
@@ -217,7 +306,14 @@ async function main() {
   }
 
   if (!execute) {
-    console.log('\nDry-run only. No worker_v3_batches, worker_v3_batch_items, model rows, or cron entries were created.');
+    if (!shadowWrite) {
+      console.log('\nDry-run only. No worker_v3_batches, worker_v3_batch_items, model rows, or cron entries were created.');
+      return;
+    }
+
+    const result = await writeShadowPlan(supabase, plannedBatches);
+    console.log('\nShadow write complete. No worker execution, cron entries, or legacy daily_schedules rows were created.');
+    console.log(`Inserted: ${result.batches} batches, ${result.items} items, ${result.modelExecutions} model execution rows.`);
     return;
   }
 
