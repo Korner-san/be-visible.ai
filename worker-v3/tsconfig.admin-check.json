@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "../app/admin/worker-v3/page.tsx",
+    "../app/api/admin/worker-v3/route.ts",
+    "../components/ui/alert.tsx",
+    "../components/ui/badge.tsx",
+    "../components/ui/button.tsx",
+    "../components/ui/card.tsx",
+    "../components/ui/input.tsx",
+    "../components/ui/table.tsx",
+    "../lib/utils.ts"
+  ],
+  "exclude": [
+    "../node_modules"
+  ]
+}
