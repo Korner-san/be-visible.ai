@@ -694,7 +694,18 @@ export async function GET(request: NextRequest) {
         .maybeSingle()
       nightlySchedulerRanAt = (minRow as any)?.created_at || null
 
-      const cycleStats = { batchesTotal, batchesDone, promptsSucceeded, promptsFailed, totalActivePrompts, nightlySchedulerRanAt }
+      let retrySchedulerRanAt: string | null = null
+      const { data: retryMinRow } = await supabase
+        .from('daily_schedules')
+        .select('created_at')
+        .eq('schedule_date', todayStr)
+        .eq('is_retry', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      retrySchedulerRanAt = (retryMinRow as any)?.created_at || null
+
+      const cycleStats = { batchesTotal, batchesDone, promptsSucceeded, promptsFailed, totalActivePrompts, nightlySchedulerRanAt, retrySchedulerRanAt }
 
       return NextResponse.json({
         success: true,

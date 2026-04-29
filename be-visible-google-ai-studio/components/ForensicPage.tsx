@@ -94,6 +94,7 @@ interface CycleStats {
   promptsFailed: number;
   totalActivePrompts: number;
   nightlySchedulerRanAt: string | null;
+  retrySchedulerRanAt: string | null;
 }
 
 interface ForensicData {
@@ -665,7 +666,9 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     const todayDate = new Date().toISOString().split('T')[0];
                     const firstTodayIdx = data.schedulingQueue.findIndex((s: any) => s.schedule_date === todayDate);
                     const nightlyTime = data.cycleStats?.nightlySchedulerRanAt ? new Date(data.cycleStats.nightlySchedulerRanAt).getTime() : null;
+                    const retryTime   = data.cycleStats?.retrySchedulerRanAt   ? new Date(data.cycleStats.retrySchedulerRanAt).getTime()   : null;
                     let nightlySeparatorShown = false;
+                    let retrySeparatorShown   = false;
                     return data.schedulingQueue.map((schedule: any, idx: number) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const isOnboarding = schedule.batch_type === 'onboarding';
@@ -680,6 +683,12 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         showNightlySeparator = true;
                         nightlySeparatorShown = true;
                       }
+                    }
+                    // Show retry scheduler separator before the first retry batch
+                    let showRetrySeparator = false;
+                    if (retryTime && !retrySeparatorShown && schedule.is_retry && schedule.execution_time) {
+                      showRetrySeparator = true;
+                      retrySeparatorShown = true;
                     }
                     return (
                       <Fragment key={schedule.id}>
@@ -707,6 +716,21 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                                   {' '}— batches below were generated in this run
                                 </span>
                                 <div className="flex-1 h-px bg-amber-200" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {showRetrySeparator && (
+                          <tr>
+                            <td colSpan={11} className="px-4 py-2 bg-orange-50/60 border-y border-orange-200">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-px bg-orange-300" />
+                                <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">
+                                  🔄 Retry scheduler ran at{' '}
+                                  {new Date(data.cycleStats!.retrySchedulerRanAt!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC
+                                  {' '}— retry batches below
+                                </span>
+                                <div className="flex-1 h-px bg-orange-300" />
                               </div>
                             </td>
                           </tr>
