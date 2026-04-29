@@ -629,12 +629,12 @@ export async function GET(request: NextRequest) {
       // Re-compute BME and forcibly patch modelExecutions onto schedule items.
       // This runs in the 'all' block which is confirmed to execute latest code.
       const freshScheduleIds = (enrichedQueue || []).map((s: any) => s.id).filter(Boolean)
+      const bmeFresh: Record<string, Record<string, any>> = {}
       if (freshScheduleIds.length > 0) {
         const { data: bmeRowsFresh } = await supabase
           .from('batch_model_executions')
           .select('schedule_id, model, status, prompts_attempted, prompts_ok, prompts_no_result, prompts_failed, started_at, completed_at, error_message')
           .in('schedule_id', freshScheduleIds)
-        const bmeFresh: Record<string, Record<string, any>> = {}
         for (const row of (bmeRowsFresh || []) as any[]) {
           if (!bmeFresh[row.schedule_id]) bmeFresh[row.schedule_id] = {}
           bmeFresh[row.schedule_id][row.model] = row
