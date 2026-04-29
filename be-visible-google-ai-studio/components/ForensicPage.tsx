@@ -667,10 +667,18 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     const firstTodayIdx = data.schedulingQueue.findIndex((s: any) => s.schedule_date === todayDate);
                     const nightlyTime = data.cycleStats?.nightlySchedulerRanAt ? new Date(data.cycleStats.nightlySchedulerRanAt).getTime() : null;
                     const retryRanAt  = data.cycleStats?.retrySchedulerRanAt ?? null;
-                    // Retry window always opens at 20:00 UTC — use as the timeline boundary
                     const retryWindowStart = new Date(todayDate + 'T20:00:00Z').getTime();
+                    // Pre-calculate where to inject the retry separator:
+                    // - before the first today-batch at/after 20:00, OR
+                    // - after the last today-batch if all finish before 20:00
+                    const todayIdxs = data.schedulingQueue
+                      .map((s: any, i: number) => ({ i, s }))
+                      .filter(({ s }: any) => s.schedule_date === todayDate);
+                    const firstAt20Idx = todayIdxs.find(({ s }: any) => new Date(s.execution_time).getTime() >= retryWindowStart)?.i ?? -1;
+                    const lastTodayIdx = todayIdxs.length > 0 ? todayIdxs[todayIdxs.length - 1].i : -1;
+                    // retryInsertBeforeIdx: show separator BEFORE this row index; -2 means after lastTodayIdx
+                    const retryInsertBeforeIdx = firstAt20Idx >= 0 ? firstAt20Idx : -2;
                     let nightlySeparatorShown = false;
-                    let retrySeparatorShown   = false;
                     return data.schedulingQueue.map((schedule: any, idx: number) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const isOnboarding = schedule.batch_type === 'onboarding';
@@ -686,14 +694,9 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         nightlySeparatorShown = true;
                       }
                     }
-                    // Show retry window separator before the first batch at or after 20:00 UTC
-                    let showRetrySeparator = false;
-                    if (!retrySeparatorShown && schedule.execution_time && schedule.schedule_date === todayDate) {
-                      if (new Date(schedule.execution_time).getTime() >= retryWindowStart) {
-                        showRetrySeparator = true;
-                        retrySeparatorShown = true;
-                      }
-                    }
+                    // Show retry separator before the first 20:00+ batch, or after the last today batch
+                    const showRetrySeparatorBefore = retryInsertBeforeIdx >= 0 && idx === retryInsertBeforeIdx;
+                    const showRetrySeparatorAfter  = retryInsertBeforeIdx === -2 && idx === lastTodayIdx;
                     return (
                       <Fragment key={schedule.id}>
                         {showDateSeparator && (
@@ -724,7 +727,7 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                             </td>
                           </tr>
                         )}
-                        {showRetrySeparator && (
+                        {showRetrySeparatorBefore && (
                           <tr>
                             <td colSpan={11} className={`px-4 py-2 border-y ${retryRanAt ? 'bg-orange-50/60 border-orange-200' : 'bg-slate-50/60 border-slate-200'}`}>
                               <div className="flex items-center gap-3">
@@ -864,6 +867,21 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                               </td>
                             </tr>
                           ))
+                        )}
+                        {showRetrySeparatorAfter && (
+                          <tr>
+                            <td colSpan={11} className={`px-4 py-2 border-y ${retryRanAt ? 'bg-orange-50/60 border-orange-200' : 'bg-slate-50/60 border-slate-200'}`}>
+                              <div className="flex items-center gap-3">
+                                <div className={`flex-1 h-px ${retryRanAt ? 'bg-orange-300' : 'bg-slate-300'}`} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${retryRanAt ? 'text-orange-600' : 'text-slate-400'}`}>
+                                  {retryRanAt
+                                    ? `🔄 Retry scheduler ran at ${new Date(retryRanAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC — retry batches below`
+                                    : '🔄 Retry window — 20:00 UTC — failed batches will be rescheduled here'}
+                                </span>
+                                <div className={`flex-1 h-px ${retryRanAt ? 'bg-orange-300' : 'bg-slate-300'}`} />
+                              </div>
+                            </td>
+                          </tr>
                         )}
                       </Fragment>
                     );
