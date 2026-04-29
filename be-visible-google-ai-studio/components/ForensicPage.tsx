@@ -573,12 +573,6 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                   <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
                   <p className="text-xs text-slate-400 mt-1">Today's batches — click a row to expand and see all prompts</p>
                 </div>
-                {data.cycleStats?.nightlySchedulerRanAt && (
-                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full whitespace-nowrap">
-                    🌙 Nightly scheduler ran at{' '}
-                    {new Date(data.cycleStats.nightlySchedulerRanAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC
-                  </span>
-                )}
               </div>
             </div>
 
@@ -594,34 +588,40 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
               return (
                 <div className="flex items-center gap-6 px-8 py-4 bg-slate-50 border-b border-gray-100 flex-wrap">
                   {/* Prompts executed */}
-                  <div className="flex flex-col min-w-[110px]">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Prompts</span>
-                    <span className="text-2xl font-black text-slate-800">
+                  <div className="flex flex-col min-w-[130px]">
+                    <span
+                      className="text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-help"
+                      title="Prompts attempted this cycle (succeeded + failed) out of total active prompts across all brands in today's schedule"
+                    >Prompts</span>
+                    <span className="text-2xl font-black text-slate-800" title={`${promptsAttempted} prompts attempted so far today`}>
                       {promptsAttempted}
-                      {totalActive > 0 && <span className="text-base font-bold text-slate-400">/{totalActive}</span>}
+                      {totalActive > 0 && <span className="text-base font-bold text-slate-400" title={`${totalActive} total active prompts across all brands scheduled today`}>/{totalActive}</span>}
                     </span>
-                    <span className="text-[10px] text-slate-400">
-                      {cs ? `${cs.batchesDone}/${cs.batchesTotal} batches` : `${q.filter(s => s.status === 'completed' || s.status === 'failed').length}/${q.length} batches`}
+                    <span
+                      className="text-[10px] text-slate-400 cursor-help"
+                      title="Batches that have finished (completed or failed) out of total batches scheduled today"
+                    >
+                      {cs ? `${cs.batchesDone}/${cs.batchesTotal} batches done` : `${q.filter(s => s.status === 'completed' || s.status === 'failed').length}/${q.length} batches done`}
                     </span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
                   {/* Users */}
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Users</span>
+                  <div className="flex flex-col" title="Distinct users whose brands appear in today's scheduled batches">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-help">Users</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueUsers.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueUsers.size === 1 ? 'user' : 'users'} in batches</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
                   {/* Accounts */}
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ChatGPT Accounts</span>
+                  <div className="flex flex-col" title="Distinct ChatGPT accounts assigned to today's batches (each account runs prompts via a real browser session)">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-help">ChatGPT Accounts</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueAccounts.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueAccounts.size === 1 ? 'account' : 'accounts'} assigned</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
                   {/* Proxies */}
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Proxies</span>
+                  <div className="flex flex-col" title="Distinct residential proxy sessions in use across today's batches">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-help">Proxies</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueProxies.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueProxies.size === 1 ? 'proxy' : 'proxies'} in use</span>
                   </div>
@@ -629,14 +629,14 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     <>
                       <div className="w-px h-12 bg-gray-200" />
                       {/* Succeeded / Failed */}
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">This Cycle</span>
+                      <div className="flex flex-col" title="Individual prompts that succeeded (got a ChatGPT response) vs failed (timeout, error, or no result) across all completed batches today">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-help">This Cycle</span>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-base font-black text-emerald-600">✅ {cs.promptsSucceeded}</span>
                           <span className="text-slate-300">/</span>
                           <span className="text-base font-black text-red-500">❌ {cs.promptsFailed}</span>
                         </div>
-                        <span className="text-[10px] text-slate-400">succeeded / failed</span>
+                        <span className="text-[10px] text-slate-400">prompts succeeded / failed</span>
                       </div>
                     </>
                   )}
@@ -663,6 +663,8 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                   ) : (() => {
                     const todayDate = new Date().toISOString().split('T')[0];
                     const firstTodayIdx = data.schedulingQueue.findIndex((s: any) => s.schedule_date === todayDate);
+                    const nightlyTime = data.cycleStats?.nightlySchedulerRanAt ? new Date(data.cycleStats.nightlySchedulerRanAt).getTime() : null;
+                    let nightlySeparatorShown = false;
                     return data.schedulingQueue.map((schedule: any, idx: number) => {
                     const isExpanded = expandedBatches.has(schedule.id);
                     const isOnboarding = schedule.batch_type === 'onboarding';
@@ -670,6 +672,14 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     const uniqueBrands = new Set(schedule.prompts.map((p: any) => p.brand_name));
                     const isDone = schedule.status === 'completed' || schedule.status === 'failed';
                     const showDateSeparator = idx === firstTodayIdx && firstTodayIdx > 0;
+                    // Show nightly separator before the first batch whose execution_time >= nightlySchedulerRanAt
+                    let showNightlySeparator = false;
+                    if (nightlyTime && !nightlySeparatorShown && schedule.execution_time) {
+                      if (new Date(schedule.execution_time).getTime() >= nightlyTime) {
+                        showNightlySeparator = true;
+                        nightlySeparatorShown = true;
+                      }
+                    }
                     return (
                       <Fragment key={schedule.id}>
                         {showDateSeparator && (
@@ -681,6 +691,21 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                                   Today's Report &mdash; {new Date(todayDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                                 </span>
                                 <div className="flex-1 h-px bg-blue-200" />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {showNightlySeparator && (
+                          <tr>
+                            <td colSpan={11} className="px-4 py-2 bg-amber-50/60 border-y border-amber-100">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-px bg-amber-200" />
+                                <span className="text-[10px] font-black uppercase tracking-widest text-amber-600">
+                                  🌙 Nightly scheduler ran at{' '}
+                                  {new Date(data.cycleStats!.nightlySchedulerRanAt!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC
+                                  {' '}— batches below were generated in this run
+                                </span>
+                                <div className="flex-1 h-px bg-amber-200" />
                               </div>
                             </td>
                           </tr>
