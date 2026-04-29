@@ -675,16 +675,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const brandIdsToday = [...new Set(todayBatches.map((s: any) => s.brand_id).filter(Boolean))] as string[]
-      let totalActivePrompts = 0
-      if (brandIdsToday.length > 0) {
-        const { count } = await supabase
-          .from('brand_prompts')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'active')
-          .in('brand_id', brandIdsToday)
-        totalActivePrompts = count || 0
-      }
+      const { count: totalActivePromptsCount } = await supabase
+        .from('brand_prompts')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'active')
+      const totalActivePrompts = totalActivePromptsCount || 0
 
       // Nightly scheduler ran at = earliest created_at of today's non-retry batches
       let nightlySchedulerRanAt: string | null = null
