@@ -59,6 +59,7 @@ interface ScheduleItem {
   batch_size: number;
   batch_type?: string;
   is_retry?: boolean;
+  retry_of_id?: string | null;
   onboarding_brand_name?: string | null;
   onboarding_user_email?: string | null;
   account_assigned: string | null;
@@ -844,6 +845,95 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
               </table>
             </div>
           </div>
+
+          {/* ── Table E: Retry Queue ── */}
+          {(() => {
+            const retries = data.schedulingQueue.filter((s: any) => s.is_retry === true);
+            if (retries.length === 0) return (
+              <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-8 py-6">
+                  <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table E: Retry Queue</h2>
+                  <p className="text-xs text-slate-400 mt-1">No retry batches scheduled today — all batches ran successfully or retry window hasn't fired yet (20:00 UTC)</p>
+                </div>
+              </div>
+            );
+            const byId = Object.fromEntries(data.schedulingQueue.map((s: any) => [s.id, s]));
+            const succeeded = retries.filter((r: any) => r.status === 'completed').length;
+            const failed    = retries.filter((r: any) => r.status === 'failed').length;
+            const pending   = retries.filter((r: any) => r.status === 'pending').length;
+            return (
+              <div className="bg-white rounded-[32px] border border-orange-200 shadow-sm overflow-hidden">
+                <div className="px-8 py-6 border-b border-orange-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table E: Retry Queue</h2>
+                      <p className="text-xs text-slate-400 mt-1">Failed batches rescheduled in the 20:00–24:00 UTC window</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-bold bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full">{retries.length} retries</span>
+                      {succeeded > 0 && <span className="text-[11px] font-bold bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full">✅ {succeeded} recovered</span>}
+                      {failed > 0    && <span className="text-[11px] font-bold bg-red-100 text-red-700 px-3 py-1.5 rounded-full">❌ {failed} still failed</span>}
+                      {pending > 0   && <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full">⏳ {pending} pending</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-orange-50/40">
+                        {['Retry Time', 'Status', 'Brand', 'Account', 'Prompts OK / Failed', 'Original Batch', 'Original Time', 'Original Status'].map(h => (
+                          <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {retries.map((retry: any) => {
+                        const original = retry.retry_of_id ? byId[retry.retry_of_id] : null;
+                        const bme = retry.modelExecutions?.chatgpt;
+                        const promptsOk     = bme?.prompts_ok ?? '-';
+                        const promptsFailed = bme ? (bme.prompts_failed || 0) + (bme.prompts_no_result || 0) : '-';
+                        const retryTime = new Date(retry.execution_time);
+                        const origTime  = original ? new Date(original.execution_time) : null;
+                        const brandNames = [...new Set(retry.prompts.map((p: any) => p.brand_name))].join(', ') || '—';
+                        return (
+                          <tr key={retry.id} className="border-b border-orange-50 hover:bg-orange-50/30">
+                            <td className="px-4 py-3 font-mono text-xs text-slate-700">
+                              {String(retryTime.getUTCHours()).padStart(2,'0')}:{String(retryTime.getUTCMinutes()).padStart(2,'0')} UTC
+                            </td>
+                            <td className="px-4 py-3">
+                              <StatusBadge status={retry.status} />
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-700 max-w-[160px] truncate" title={brandNames}>
+                              {brandNames}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">{retry.account_assigned || '—'}</td>
+                            <td className="px-4 py-3 text-xs">
+                              {bme ? (
+                                <span>
+                                  <span className="text-emerald-600 font-bold">{promptsOk}</span>
+                                  <span className="text-slate-300 mx-1">/</span>
+                                  <span className="text-red-500 font-bold">{promptsFailed}</span>
+                                </span>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500">
+                              {original ? `Batch #${original.batch_number}` : <span className="text-slate-300 font-mono text-[10px]">{retry.retry_of_id?.substring(0, 8) ?? '—'}</span>}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                              {origTime ? `${String(origTime.getUTCHours()).padStart(2,'0')}:${String(origTime.getUTCMinutes()).padStart(2,'0')} UTC` : '—'}
+                            </td>
+                            <td className="px-4 py-3">
+                              {original ? <StatusBadge status={original.status} /> : <span className="text-slate-300">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
     </div>

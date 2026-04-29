@@ -301,6 +301,7 @@ export async function GET(request: NextRequest) {
           brand_id,
           batch_type,
           is_retry,
+          retry_of_id,
           chatgpt_accounts(
             email,
             proxy_host,
