@@ -656,6 +656,50 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // ── Cycle stats for Table D summary bar ──────────────────────────────────
+      const todayStr = new Date().toISOString().split('T')[0]
+      const todayBatches = (enrichedQueue || []).filter((s: any) => s.schedule_date === todayStr && !s.is_retry)
+      const batchesTotal = todayBatches.length
+      const batchesDone  = todayBatches.filter((s: any) => s.status === 'completed' || s.status === 'failed').length
+
+      let promptsSucceeded = 0
+      let promptsFailed    = 0
+      for (const s of todayBatches) {
+        const chatgptBme = (bmeFresh[s.id] || {})['chatgpt']
+        if (chatgptBme && chatgptBme.status !== 'pending') {
+          promptsSucceeded += chatgptBme.prompts_ok || 0
+          promptsFailed    += (chatgptBme.prompts_failed || 0) + (chatgptBme.prompts_no_result || 0)
+        } else if (s.status === 'failed') {
+          // batch never ran — all prompts count as lost
+          promptsFailed += s.batch_size || 0
+        }
+      }
+
+      const brandIdsToday = [...new Set(todayBatches.map((s: any) => s.brand_id).filter(Boolean))] as string[]
+      let totalActivePrompts = 0
+      if (brandIdsToday.length > 0) {
+        const { count } = await supabase
+          .from('brand_prompts')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'active')
+          .in('brand_id', brandIdsToday)
+        totalActivePrompts = count || 0
+      }
+
+      // Nightly scheduler ran at = earliest created_at of today's non-retry batches
+      let nightlySchedulerRanAt: string | null = null
+      const { data: minRow } = await supabase
+        .from('daily_schedules')
+        .select('created_at')
+        .eq('schedule_date', todayStr)
+        .eq('is_retry', false)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      nightlySchedulerRanAt = (minRow as any)?.created_at || null
+
+      const cycleStats = { batchesTotal, batchesDone, promptsSucceeded, promptsFailed, totalActivePrompts, nightlySchedulerRanAt }
+
       return NextResponse.json({
         success: true,
         _debug: {
@@ -668,7 +712,8 @@ export async function GET(request: NextRequest) {
           sessionMatrix: sessionsResult.data || [],
           citationTrace: transformedCitations,
           schedulingQueue: enrichedQueue || [],
-          systemCapacity
+          systemCapacity,
+          cycleStats,
         }
       }, { headers: { 'Cache-Control': 'no-store' } })
     }

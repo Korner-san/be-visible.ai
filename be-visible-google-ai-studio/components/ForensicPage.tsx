@@ -86,11 +86,21 @@ interface StorageStateHealth {
   prompts24h: number;
 }
 
+interface CycleStats {
+  batchesTotal: number;
+  batchesDone: number;
+  promptsSucceeded: number;
+  promptsFailed: number;
+  totalActivePrompts: number;
+  nightlySchedulerRanAt: string | null;
+}
+
 interface ForensicData {
   storageStateHealth: StorageStateHealth[];
   sessionMatrix: SessionAttempt[];
   citationTrace: CitationTrace[];
   schedulingQueue: ScheduleItem[];
+  cycleStats?: CycleStats;
 }
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
@@ -558,44 +568,78 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
           {/* ── Table D: Scheduling Queue ── */}
           <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-8 py-6 border-b border-gray-100">
-              <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
-              <p className="text-xs text-slate-400 mt-1">Today &amp; tomorrow's batches — click a row to expand and see all prompts</p>
-
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table D: Scheduling Queue</h2>
+                  <p className="text-xs text-slate-400 mt-1">Today's batches — click a row to expand and see all prompts</p>
+                </div>
+                {data.cycleStats?.nightlySchedulerRanAt && (
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full whitespace-nowrap">
+                    🌙 Nightly scheduler ran at{' '}
+                    {new Date(data.cycleStats.nightlySchedulerRanAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Summary bar */}
             {(() => {
               const q = data.schedulingQueue;
-              const pendingQ = q.filter(s => s.status !== 'completed' && s.status !== 'failed');
-              const totalPrompts = pendingQ.reduce((sum, s) => sum + (s.batch_size || 0), 0);
+              const cs = data.cycleStats;
               const uniqueAccounts = new Set(q.map(s => s.account_assigned).filter(Boolean));
-              const uniqueProxies = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
-              const uniqueUsers = new Set(q.flatMap(s => s.prompts.map(p => p.user_email)).filter(e => e && e !== 'Unknown'));
+              const uniqueProxies  = new Set(q.map(s => s.proxy_assigned).filter(Boolean));
+              const uniqueUsers    = new Set(q.flatMap(s => s.prompts.map(p => p.user_email)).filter(e => e && e !== 'Unknown'));
+              const promptsAttempted = (cs?.promptsSucceeded ?? 0) + (cs?.promptsFailed ?? 0);
+              const totalActive = cs?.totalActivePrompts ?? 0;
               return (
-                <div className="flex items-center gap-6 px-8 py-4 bg-slate-50 border-b border-gray-100">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Prompts</span>
-                    <span className="text-2xl font-black text-slate-800">{totalPrompts}</span>
-                    <span className="text-[10px] text-slate-400">across {pendingQ.length} {pendingQ.length === 1 ? 'batch' : 'batches'}</span>
+                <div className="flex items-center gap-6 px-8 py-4 bg-slate-50 border-b border-gray-100 flex-wrap">
+                  {/* Prompts executed */}
+                  <div className="flex flex-col min-w-[110px]">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Prompts</span>
+                    <span className="text-2xl font-black text-slate-800">
+                      {promptsAttempted}
+                      {totalActive > 0 && <span className="text-base font-bold text-slate-400">/{totalActive}</span>}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {cs ? `${cs.batchesDone}/${cs.batchesTotal} batches` : `${q.filter(s => s.status === 'completed' || s.status === 'failed').length}/${q.length} batches`}
+                    </span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
+                  {/* Users */}
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Users</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueUsers.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueUsers.size === 1 ? 'user' : 'users'} in batches</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
+                  {/* Accounts */}
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ChatGPT Accounts</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueAccounts.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueAccounts.size === 1 ? 'account' : 'accounts'} assigned</span>
                   </div>
                   <div className="w-px h-12 bg-gray-200" />
+                  {/* Proxies */}
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Proxies</span>
                     <span className="text-2xl font-black text-slate-800">{uniqueProxies.size}</span>
                     <span className="text-[10px] text-slate-400">{uniqueProxies.size === 1 ? 'proxy' : 'proxies'} in use</span>
                   </div>
+                  {cs && (
+                    <>
+                      <div className="w-px h-12 bg-gray-200" />
+                      {/* Succeeded / Failed */}
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">This Cycle</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-base font-black text-emerald-600">✅ {cs.promptsSucceeded}</span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-base font-black text-red-500">❌ {cs.promptsFailed}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">succeeded / failed</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()}

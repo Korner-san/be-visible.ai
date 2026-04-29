@@ -28,7 +28,7 @@ const supabase = createClient(
 const WORKER_DIR = '/root/be-visible.ai/worker';
 const LOG_DIR = '/root/be-visible.ai/logs';
 const RETRY_START_HOUR = 20;  // 8 PM UTC
-const RETRY_END_HOUR   = 24;  // midnight UTC
+const RETRY_END_HOUR   = 23;  // 11 PM UTC — leaves 30 min before nightly scheduler wipes crontab at 23:30
 const RETRY_WINDOW_MIN = (RETRY_END_HOUR - RETRY_START_HOUR) * 60; // 240 min
 const MIN_SPACING_MIN  = 10;
 
@@ -65,17 +65,15 @@ async function scheduleRetryBatches() {
       console.log(`   - Brand ${b.brand_id?.substring(0, 8)} | Batch ${b.batch_number} | ${b.batch_size} prompts | Date ${b.schedule_date}`);
     });
 
-    // 1b. Filter out batches that already have a retry record (prevents duplicate key errors
-    //     when the scheduler runs on consecutive days for the same still-failing batch).
+    // 1b. Filter out batches that already have a retry record today (keyed by retry_of_id).
     const { data: existingRetries } = await supabase
       .from('daily_schedules')
-      .select('user_id, batch_number, schedule_date')
-      .eq('is_retry', true)
-      .in('schedule_date', [...new Set(failedBatches.map(b => b.schedule_date))]);
+      .select('retry_of_id')
+      .eq('schedule_date', todayUtc)
+      .eq('is_retry', true);
 
-    const retryKey = (b) => `${b.user_id}|${b.batch_number}|${b.schedule_date}`;
-    const existingKeys = new Set((existingRetries || []).map(retryKey));
-    const newBatches = failedBatches.filter(b => !existingKeys.has(retryKey(b)));
+    const alreadyRetriedIds = new Set((existingRetries || []).map(r => r.retry_of_id).filter(Boolean));
+    const newBatches = failedBatches.filter(b => !alreadyRetriedIds.has(b.id));
 
     if (newBatches.length === 0) {
       console.log('✅ All failed batches already have a retry record scheduled — nothing to do');
@@ -85,17 +83,26 @@ async function scheduleRetryBatches() {
       console.log(`ℹ️  ${failedBatches.length - newBatches.length} batch(es) already retried — scheduling ${newBatches.length} new retry(ies)\n`);
     }
 
-    // 2. Generate evenly-spaced retry times within the 20:00–24:00 UTC window
-    const maxSlots = Math.floor(RETRY_WINDOW_MIN / MIN_SPACING_MIN); // 24 max
+    // 1c. Get current max batch_number for today to assign unique sequential numbers
+    const { data: maxBatchRow } = await supabase
+      .from('daily_schedules')
+      .select('batch_number')
+      .eq('schedule_date', todayUtc)
+      .order('batch_number', { ascending: false })
+      .limit(1)
+      .single();
+    const maxBatchNum = maxBatchRow?.batch_number || 0;
+
+    // 2. Generate evenly-spaced retry times within the 20:00–23:00 UTC window
+    const maxSlots = Math.floor(RETRY_WINDOW_MIN / MIN_SPACING_MIN);
     if (newBatches.length > maxSlots) {
       console.warn(`⚠️  ${newBatches.length} retries but only ${maxSlots} slots — some will share times`);
     }
-    // Spread evenly; floor spacing at MIN_SPACING_MIN
     const spacing = Math.max(MIN_SPACING_MIN, Math.floor(RETRY_WINDOW_MIN / newBatches.length));
 
     const retryTimes = newBatches.map((_, i) => {
       const totalMinute = RETRY_START_HOUR * 60 + i * spacing;
-      const h = Math.min(Math.floor(totalMinute / 60), 23); // cap at 23:xx
+      const h = Math.min(Math.floor(totalMinute / 60), 23);
       const m = totalMinute % 60;
       return {
         hour: h,
@@ -105,17 +112,20 @@ async function scheduleRetryBatches() {
     });
 
     // 3. Insert retry records into daily_schedules
+    //    Use todayUtc as schedule_date and new sequential batch_numbers to avoid the
+    //    unique constraint (schedule_date, user_id, batch_number) on the original rows.
     const retryRecords = newBatches.map((batch, i) => ({
-      schedule_date: batch.schedule_date,
-      user_id: batch.user_id,
-      brand_id: batch.brand_id,
+      schedule_date:      todayUtc,
+      user_id:            batch.user_id,
+      brand_id:           batch.brand_id,
       chatgpt_account_id: batch.chatgpt_account_id,
-      batch_number: batch.batch_number,
-      execution_time: retryTimes[i].iso,
-      prompt_ids: batch.prompt_ids,
-      batch_size: batch.batch_size,
-      status: 'pending',
-      is_retry: true,
+      batch_number:       maxBatchNum + i + 1,
+      execution_time:     retryTimes[i].iso,
+      prompt_ids:         batch.prompt_ids,
+      batch_size:         batch.batch_size,
+      status:             'pending',
+      is_retry:           true,
+      retry_of_id:        batch.id,
     }));
 
     const { data: inserted, error: insertError } = await supabase
