@@ -666,7 +666,9 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                     const todayDate = new Date().toISOString().split('T')[0];
                     const firstTodayIdx = data.schedulingQueue.findIndex((s: any) => s.schedule_date === todayDate);
                     const nightlyTime = data.cycleStats?.nightlySchedulerRanAt ? new Date(data.cycleStats.nightlySchedulerRanAt).getTime() : null;
-                    const retryTime   = data.cycleStats?.retrySchedulerRanAt   ? new Date(data.cycleStats.retrySchedulerRanAt).getTime()   : null;
+                    const retryRanAt  = data.cycleStats?.retrySchedulerRanAt ?? null;
+                    // Retry window always opens at 20:00 UTC — use as the timeline boundary
+                    const retryWindowStart = new Date(todayDate + 'T20:00:00Z').getTime();
                     let nightlySeparatorShown = false;
                     let retrySeparatorShown   = false;
                     return data.schedulingQueue.map((schedule: any, idx: number) => {
@@ -684,11 +686,13 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         nightlySeparatorShown = true;
                       }
                     }
-                    // Show retry scheduler separator before the first retry batch
+                    // Show retry window separator before the first batch at or after 20:00 UTC
                     let showRetrySeparator = false;
-                    if (retryTime && !retrySeparatorShown && schedule.is_retry && schedule.execution_time) {
-                      showRetrySeparator = true;
-                      retrySeparatorShown = true;
+                    if (!retrySeparatorShown && schedule.execution_time && schedule.schedule_date === todayDate) {
+                      if (new Date(schedule.execution_time).getTime() >= retryWindowStart) {
+                        showRetrySeparator = true;
+                        retrySeparatorShown = true;
+                      }
                     }
                     return (
                       <Fragment key={schedule.id}>
@@ -722,15 +726,15 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                         )}
                         {showRetrySeparator && (
                           <tr>
-                            <td colSpan={11} className="px-4 py-2 bg-orange-50/60 border-y border-orange-200">
+                            <td colSpan={11} className={`px-4 py-2 border-y ${retryRanAt ? 'bg-orange-50/60 border-orange-200' : 'bg-slate-50/60 border-slate-200'}`}>
                               <div className="flex items-center gap-3">
-                                <div className="flex-1 h-px bg-orange-300" />
-                                <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">
-                                  🔄 Retry scheduler ran at{' '}
-                                  {new Date(data.cycleStats!.retrySchedulerRanAt!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC
-                                  {' '}— retry batches below
+                                <div className={`flex-1 h-px ${retryRanAt ? 'bg-orange-300' : 'bg-slate-300'}`} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${retryRanAt ? 'text-orange-600' : 'text-slate-400'}`}>
+                                  {retryRanAt
+                                    ? `🔄 Retry scheduler ran at ${new Date(retryRanAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false })} UTC — retry batches below`
+                                    : '🔄 Retry window — 20:00 UTC — failed batches will be rescheduled here'}
                                 </span>
-                                <div className="flex-1 h-px bg-orange-300" />
+                                <div className={`flex-1 h-px ${retryRanAt ? 'bg-orange-300' : 'bg-slate-300'}`} />
                               </div>
                             </td>
                           </tr>
