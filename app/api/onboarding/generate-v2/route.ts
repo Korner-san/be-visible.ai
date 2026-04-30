@@ -245,6 +245,82 @@ function normalizeDomain(url: string): string {
   return url.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase()
 }
 
+// ─── Real Estate Israel: classification ───────────────────────────────────────
+async function classifyRealEstateIsrael(rawText: string, profile: any): Promise<{ isRealEstate: boolean; confidence: string }> {
+  const result = await gpt(
+    `You are a business classifier. Determine if this company is a real estate developer, builder, or agent that builds and/or sells residential or commercial properties specifically in Israel.
+
+Return true ONLY if the company:
+- Develops, constructs, markets, or sells physical real estate properties in Israel
+- Is a real estate agency or brokerage operating in Israel
+
+Return false for: international companies with minor Israel presence, property management only, real estate tech/software, mortgage brokers, overseas property sales.
+
+Output JSON: { "isRealEstate": boolean, "confidence": "high|medium|low", "reason": "one sentence" }`,
+    `Industry: ${profile.industry}\nDescription: ${profile.description}\nProducts/Services: ${(profile.productsServices || []).join(', ')}\n\nWebsite excerpt:\n${rawText.slice(0, 3000)}`
+  )
+  return { isRealEstate: result.isRealEstate === true, confidence: result.confidence || 'low' }
+}
+
+// ─── Real Estate Israel: subpage fetch ────────────────────────────────────────
+async function fetchRESubpages(baseUrl: string): Promise<string> {
+  const base = baseUrl.replace(/\/$/, '')
+  const subpaths = ['/projects', '/פרויקטים', '/portfolio', '/our-projects', '/homes', '/apartments']
+  for (const path of subpaths) {
+    try {
+      const text = await fetchWebsiteText(base + path)
+      if (text && text.length > 200) return text.slice(0, 4000)
+    } catch {}
+  }
+  return ''
+}
+
+// ─── Real Estate Israel: extract projects + cities ────────────────────────────
+async function extractREProjectsAndCities(combinedText: string, profile: any): Promise<{ projects: string[]; cities: string[] }> {
+  const result = await gpt(
+    `You are a real estate data extractor for Israeli real estate companies.
+
+From the website content, extract:
+1. "projects" — proper names of specific real estate projects or developments the company builds/markets (e.g. "מגדל השחר", "פרויקט הפארק", "Aliya Tower"). Max 15. Empty array if none clearly found.
+2. "cities" — cities, towns, or neighborhoods where the company operates or has projects. Max 10.
+
+Only include names that are clearly identifiable as actual project names or locations. Do not invent or guess.
+
+Output JSON: { "projects": [], "cities": [] }`,
+    `Company: ${profile.businessName}\n\nWebsite content:\n${combinedText.slice(0, 8000)}`
+  )
+  return {
+    projects: Array.isArray(result.projects) ? result.projects.slice(0, 15) : [],
+    cities: Array.isArray(result.cities) ? result.cities.slice(0, 10) : [],
+  }
+}
+
+// ─── Real Estate Israel: topic generation ────────────────────────────────────
+async function generateRETopics(profile: any): Promise<string[]> {
+  const result = await gpt(
+    `You are an AI search behavior analyst for the Israeli real estate market. Given a real estate company profile, generate exactly 5 competitive search topics.
+
+MANDATORY: 2 of the 5 topics must cover:
+1. Finding/comparing real estate projects or new developments in Israel (e.g. "פרויקטי נדל\"ן חדשים למכירה")
+2. Neighborhoods, localities, or areas to buy/invest in Israel (e.g. "שכונות חדשות להשקעה בישראל")
+
+The other 3 topics should cover the company's main competitive search spaces (e.g. home buying process, developers comparison, apartment pricing, investment opportunities).
+
+Rules:
+- Written in the language: ${profile.outputLanguage}
+- Never include the brand name
+- Category-level topics — broad enough that multiple companies compete for them
+- Relevant to the Israeli real estate market specifically
+
+Output JSON: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5"] }`,
+    `Business profile:\n${JSON.stringify({ businessName: profile.businessName, description: profile.description, industry: profile.industry, productsServices: profile.productsServices, geographicScope: profile.geographicScope, outputLanguage: profile.outputLanguage, userRegion: profile.userRegion }, null, 2)}`
+  )
+  if (!Array.isArray(result.topics) || result.topics.length < 5) {
+    throw new Error('RE topics generation returned insufficient topics')
+  }
+  return result.topics.slice(0, 5)
+}
+
 // ─── POST handler (SSE stream) ────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   if (!OPENAI_KEY) {
@@ -352,10 +428,41 @@ export async function POST(request: NextRequest) {
         }
         send({ type: 'profile', data: profile })
 
-        // ── Layer 2: Topics ───────────────────────────────────────────────────
+        // ── RE Classification ─────────────────────────────────────────────────
+        let isRealEstateIsrael = false
+        let reProjectData: { projects: string[]; cities: string[] } = { projects: [], cities: [] }
+
+        try {
+          const reClass = await classifyRealEstateIsrael(rawText, profile)
+          isRealEstateIsrael = reClass.isRealEstate
+        } catch (e: any) {
+          console.error('[generate-v2] RE classification failed (non-blocking):', e.message)
+        }
+
+        if (isRealEstateIsrael) {
+          // Try to find project names from subpages
+          const subpageText = await fetchRESubpages(websiteUrl).catch(() => '')
+          const combinedText = (rawText + (subpageText ? '\n\n' + subpageText : '')).slice(0, 12000)
+
+          try {
+            reProjectData = await extractREProjectsAndCities(combinedText, profile)
+          } catch (e: any) {
+            console.error('[generate-v2] RE project extraction failed (non-blocking):', e.message)
+          }
+
+          // Mark brand as real estate
+          await adminSupabase.from('brands').update({ user_business_type: 'real_estate_israel' }).eq('id', brandId)
+
+          // Stream RE data so the frontend can show State D
+          send({ type: 'real_estate_data', data: reProjectData })
+        }
+
+        // ── Layer 2: Topics (RE-branched) ─────────────────────────────────────
         let topics: string[]
         try {
-          topics = await generateTopics(profile)
+          topics = isRealEstateIsrael
+            ? await generateRETopics(profile)
+            : await generateTopics(profile)
           if (!Array.isArray(topics) || topics.length < 3) throw new Error('Not enough topics generated')
         } catch (e: any) {
           send({ type: 'error', data: { message: `Failed to generate search topics: ${e.message}` } })

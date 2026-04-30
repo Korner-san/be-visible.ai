@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Parse body first — brandId is the primary brand identifier
     const body = await request.json().catch(() => ({}))
-    const { brandId: bodyBrandId, timezone = 'UTC', competitors: bodyCompetitors } = body
+    const { brandId: bodyBrandId, timezone = 'UTC', competitors: bodyCompetitors, projects: bodyProjects } = body
     console.log('🔍 [COMPLETE-FINAL API] brandId from body:', bodyBrandId)
 
     const adminSupabaseForCapacity = createAdminClient(
@@ -180,6 +180,8 @@ export async function POST(request: NextRequest) {
       .in('status', ['active', 'inactive', 'improved'])
       .order('created_at', { ascending: true })
 
+    const WAVE1_MAX = 5
+
     if (allPrompts && allPrompts.length > 0) {
       // V2 brands: 1 prompt per topic category for wave 1 (cross-category coverage)
       // V1 brands: first 6 sequential prompts for wave 1 (backward-compatible)
@@ -187,17 +189,18 @@ export async function POST(request: NextRequest) {
 
       let wave1Ids: string[]
       if (isV2) {
-        // Select first prompt from each distinct category — gives 1 per topic (5 total)
+        // Select first prompt from each distinct category, hard-capped at WAVE1_MAX
         const seenCategories = new Set<string>()
         wave1Ids = []
         for (const p of allPrompts as any[]) {
+          if (wave1Ids.length >= WAVE1_MAX) break
           if (p.category && !seenCategories.has(p.category)) {
             seenCategories.add(p.category)
             wave1Ids.push(p.id)
           }
         }
-        // Fallback: if no categories exist, take first 5
-        if (wave1Ids.length === 0) wave1Ids = allPrompts.slice(0, 5).map((p: any) => p.id)
+        // Fallback: if no categories exist, take first WAVE1_MAX
+        if (wave1Ids.length === 0) wave1Ids = allPrompts.slice(0, WAVE1_MAX).map((p: any) => p.id)
       } else {
         wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
       }
@@ -279,6 +282,26 @@ export async function POST(request: NextRequest) {
         console.warn('⚠️ [COMPLETE-FINAL API] Could not save competitors:', competitorError.message)
       } else {
         console.log('✅ [COMPLETE-FINAL API] Saved', competitors.length, 'competitors for brand:', updatedBrand.id)
+      }
+    }
+
+    // Save real estate projects (RE brands only — bodyProjects comes from State D)
+    const projectEntries: { project_name: string; city?: string }[] = (bodyProjects || [])
+      .map((p: any) => ({
+        project_name: (typeof p === 'string' ? p : (p?.project_name || p?.name || '')).trim(),
+        city: typeof p === 'object' ? (p?.city || '').trim() || undefined : undefined,
+      }))
+      .filter((e: any) => e.project_name)
+
+    if (projectEntries.length > 0) {
+      await adminSupabaseForCapacity.from('real_estate_projects').delete().eq('brand_id', updatedBrand.id)
+      const { error: projectError } = await adminSupabaseForCapacity
+        .from('real_estate_projects')
+        .insert(projectEntries.map(e => ({ brand_id: updatedBrand.id, project_name: e.project_name, city: e.city || null })))
+      if (projectError) {
+        console.warn('⚠️ [COMPLETE-FINAL API] Could not save projects:', projectError.message)
+      } else {
+        console.log('✅ [COMPLETE-FINAL API] Saved', projectEntries.length, 'RE projects for brand:', updatedBrand.id)
       }
     }
 
