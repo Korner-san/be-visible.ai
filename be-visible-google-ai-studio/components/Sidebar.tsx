@@ -7,7 +7,9 @@ import {
   ChevronDown,
   Activity,
   Rocket,
-  Shield
+  Shield,
+  Building2,
+  MapPin,
 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
@@ -17,10 +19,13 @@ interface SidebarProps {
   onSignOut?: () => void;
   brandName?: string;
   brandDomain?: string;
+  userBusinessType?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSignOut, brandName, brandDomain }) => {
-  const { user } = useAuth();
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSignOut, brandName, brandDomain, userBusinessType }) => {
+  const isRealEstate = userBusinessType === 'real_estate_israel'
+  const { user } = useAuth()
+
 
   const handleNavClick = (tabName: string) => {
     if (setActiveTab) {
@@ -68,12 +73,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
             active={activeTab === 'Manage Prompts'} 
             onClick={() => handleNavClick('Manage Prompts')}
           />
-          <NavItem 
-            icon={<Shield size={18} />} 
-            label="Manage Competitors" 
-            active={activeTab === 'Manage Competitors'} 
+          <NavItem
+            icon={<Shield size={18} />}
+            label="Manage Competitors"
+            active={activeTab === 'Manage Competitors'}
             onClick={() => handleNavClick('Manage Competitors')}
           />
+          {isRealEstate && (
+            <NavItem
+              icon={<Building2 size={18} />}
+              label="Projects"
+              active={activeTab === 'Projects'}
+              onClick={() => handleNavClick('Projects')}
+            />
+          )}
+          {isRealEstate && (
+            <NavItem
+              icon={<MapPin size={18} />}
+              label="Manage Projects"
+              active={activeTab === 'Manage Projects'}
+              onClick={() => handleNavClick('Manage Projects')}
+            />
+          )}
           <NavItem 
             icon={<Link2 size={18} />} 
             label="Integrations" 

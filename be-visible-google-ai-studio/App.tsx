@@ -15,6 +15,8 @@ import { CompetitorsPage } from './components/CompetitorsPage';
 import { PromptsPage } from './components/PromptsPage';
 import { ManagePromptsPage } from './components/ManagePromptsPage';
 import { ManageCompetitorsPage } from './components/ManageCompetitorsPage';
+import { ProjectsPage } from './components/ProjectsPage';
+import { ManageProjectsPage } from './components/ManageProjectsPage';
 import { IntegrationsPage } from './components/IntegrationsPage';
 import { OnboardingPage } from './components/OnboardingPage';
 import { OnboardingV2 } from './components/OnboardingV2';
@@ -49,6 +51,7 @@ interface UserBrand {
   onboarding_completed: boolean;
   first_report_status: string | null;
   onboarding_prompts_sent: number | null;
+  user_business_type?: string;
 }
 
 const initialCompetitors: Competitor[] = [
@@ -145,7 +148,7 @@ function AppContent() {
 
       const { data: brandsData, error } = await supabase
         .from('brands')
-        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
+        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent, user_business_type')
         .eq('owner_user_id', user.id)
         .eq('is_demo', false)
         .order('created_at', { ascending: false });
@@ -291,7 +294,7 @@ function AppContent() {
     if (!user) return;
     const { data } = await supabase
       .from('brands')
-      .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
+      .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent, user_business_type')
       .eq('owner_user_id', user.id)
       .eq('is_demo', false)
       .eq('onboarding_completed', true)
@@ -312,7 +315,7 @@ function AppContent() {
     if (activeBrandId) {
       const { data } = await supabase
         .from('brands')
-        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent')
+        .select('id, name, domain, onboarding_completed, first_report_status, onboarding_prompts_sent, user_business_type')
         .eq('id', activeBrandId)
         .single();
       if (data) setActiveBrand(data);
@@ -448,6 +451,10 @@ function AppContent() {
         />;
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
+      case 'Projects':
+        return <ProjectsPage brandId={activeBrandId} />;
+      case 'Manage Projects':
+        return <ManageProjectsPage brandId={activeBrandId} />;
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} selectedModels={selectedModels} />;
       case 'Prompts':
@@ -477,7 +484,7 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50">
-      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} onSignOut={signOut} brandName={activeBrand?.name} brandDomain={activeBrand?.domain} />
+      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} onSignOut={signOut} brandName={activeBrand?.name} brandDomain={activeBrand?.domain} userBusinessType={activeBrand?.user_business_type} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Header
           activeTab={activeTab}
