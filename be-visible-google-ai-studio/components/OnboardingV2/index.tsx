@@ -5,6 +5,8 @@ import { LeftB } from './LeftB'
 import { RightB } from './RightB'
 import { LeftC, type CompetitorEntry } from './LeftC'
 import { RightC } from './RightC'
+import { LeftD, type ProjectEntry } from './LeftD'
+import { RightD } from './RightD'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
 
 export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNavigate }) => {
@@ -17,6 +19,11 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
   const [brandId, setBrandId] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
+  // RE state
+  const [isRealEstate, setIsRealEstate] = useState(false)
+  const [detectedProjects, setDetectedProjects] = useState<string[]>([])
+  const [detectedCities, setDetectedCities] = useState<string[]>([])
+  const [confirmedProjects, setConfirmedProjects] = useState<ProjectEntry[]>([])
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
 
   const handleScan = useCallback(async (data: FormData) => {
@@ -27,6 +34,10 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     setPromptsByTopic({})
     setCompletedTopics([])
     setBrandId(null)
+    setIsRealEstate(false)
+    setDetectedProjects([])
+    setDetectedCities([])
+    setConfirmedProjects([])
     setState('B_LOADING')
 
     try {
@@ -70,6 +81,10 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
             const event = JSON.parse(line.slice(6))
             if (event.type === 'profile') {
               setProfile(event.data)
+            } else if (event.type === 'real_estate_data') {
+              setIsRealEstate(true)
+              setDetectedProjects(event.data.projects || [])
+              setDetectedCities(event.data.cities || [])
             } else if (event.type === 'topics') {
               setTopics(event.data)
             } else if (event.type === 'prompts_topic') {
@@ -94,8 +109,14 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
     }
   }, [])
 
+  // B_READY → D (RE brands) or C (general brands)
   const handlePromptsConfirm = useCallback((edited: Record<string, string[]>) => {
     setPromptsByTopic(edited)
+    setState(isRealEstate ? 'D' : 'C')
+  }, [isRealEstate])
+
+  const handleProjectsConfirm = useCallback((projects: ProjectEntry[]) => {
+    setConfirmedProjects(projects)
     setState('C')
   }, [])
 
@@ -111,6 +132,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
         body: JSON.stringify({
           brandId,
           competitors,
+          projects: confirmedProjects,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       })
@@ -134,7 +156,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
       setLaunchError('Network error during launch. Please try again.')
       setState('C')
     }
-  }, [brandId, onComplete])
+  }, [brandId, confirmedProjects, onComplete])
 
   const isLaunching = state === 'LAUNCHING'
 
@@ -169,6 +191,13 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
             onConfirm={handlePromptsConfirm}
           />
         )}
+        {(state === 'D') && (
+          <LeftD
+            detectedProjects={detectedProjects}
+            detectedCities={detectedCities}
+            onContinue={handleProjectsConfirm}
+          />
+        )}
         {(state === 'C' || state === 'LAUNCHING') && (
           <LeftC
             suggestedCompetitors={profile?.suggestedCompetitors || []}
@@ -190,6 +219,9 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
             completedTopics={completedTopics}
             isComplete={state === 'B_READY'}
           />
+        )}
+        {(state === 'D') && (
+          <RightD detectedProjects={detectedProjects} />
         )}
         {(state === 'C' || state === 'LAUNCHING') && (
           <RightC

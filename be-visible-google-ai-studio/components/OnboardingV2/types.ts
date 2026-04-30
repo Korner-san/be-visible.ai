@@ -26,7 +26,7 @@ export interface OnboardingV2Props {
   onNavigate?: (tab: string) => void
 }
 
-export type OnboardingState = 'A' | 'B_LOADING' | 'B_READY' | 'C' | 'LAUNCHING'
+export type OnboardingState = 'A' | 'B_LOADING' | 'B_READY' | 'D' | 'C' | 'LAUNCHING'
 
 export interface FormData {
   brandName: string
