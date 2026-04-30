@@ -14,6 +14,44 @@ const normalizeDomain = (domain: string): string => {
   return normalized.toLowerCase()
 }
 
+// Select wave 1 prompts: 5 total, with category-aware logic for RE brands
+function selectWave1Prompts(prompts: any[], userBusinessType: string, max: number): string[] {
+  // Get distinct categories in creation order
+  const categories: string[] = []
+  const seenCats = new Set<string>()
+  for (const p of prompts) {
+    if (p.category && !seenCats.has(p.category)) {
+      seenCats.add(p.category)
+      categories.push(p.category)
+    }
+  }
+
+  if (userBusinessType === 'real_estate_israel' && categories.length >= 7) {
+    // RE: 3 from first 3 standard topics + 1 from projects topic[5] + 1 from localities topic[6]
+    const wave1Ids: string[] = []
+    const targetCats = [categories[0], categories[1], categories[2], categories[5], categories[6]]
+    for (const cat of targetCats) {
+      if (!cat || wave1Ids.length >= max) break
+      const p = prompts.find((x: any) => x.category === cat)
+      if (p) wave1Ids.push(p.id)
+    }
+    if (wave1Ids.length > 0) return wave1Ids
+  }
+
+  // General / fallback: 1 per category, capped at max
+  const wave1Ids: string[] = []
+  const seen = new Set<string>()
+  for (const p of prompts) {
+    if (wave1Ids.length >= max) break
+    if (p.category && !seen.has(p.category)) {
+      seen.add(p.category)
+      wave1Ids.push(p.id)
+    }
+  }
+  if (wave1Ids.length === 0) return prompts.slice(0, max).map((p: any) => p.id)
+  return wave1Ids
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
@@ -91,7 +129,7 @@ export async function POST(request: NextRequest) {
     if (bodyBrandId) {
       const { data, error } = await adminSupabaseForCapacity
         .from('brands')
-        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id')
+        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id, user_business_type')
         .eq('id', bodyBrandId)
         .single()
       if (error) console.error('❌ [COMPLETE-FINAL API] Brand lookup by ID failed:', error.message)
@@ -100,7 +138,7 @@ export async function POST(request: NextRequest) {
     if (!brand && user) {
       const { data, error } = await adminSupabaseForCapacity
         .from('brands')
-        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id')
+        .select('id, name, domain, onboarding_completed, onboarding_answers, first_report_status, owner_user_id, user_business_type')
         .eq('owner_user_id', user.id)
         .eq('is_demo', false)
         .eq('onboarding_completed', false)
@@ -170,8 +208,6 @@ export async function POST(request: NextRequest) {
     console.log('✅ [COMPLETE-FINAL API] first_report_status AFTER:', updatedBrand.first_report_status)
 
     // ── WAVE ASSIGNMENT ───────────────────────────────────────────────────────
-    // Assign wave 1 to first 6 prompts (Phase 1 — gets dashboard access fast)
-    // Assign wave 2 to remaining prompts (Phase 2 — background processing)
     console.log('🌊 [COMPLETE-FINAL API] Assigning onboarding waves to brand_prompts...')
     const { data: allPrompts } = await adminSupabaseForCapacity
       .from('brand_prompts')
@@ -183,24 +219,12 @@ export async function POST(request: NextRequest) {
     const WAVE1_MAX = 5
 
     if (allPrompts && allPrompts.length > 0) {
-      // V2 brands: 1 prompt per topic category for wave 1 (cross-category coverage)
-      // V1 brands: first 6 sequential prompts for wave 1 (backward-compatible)
       const isV2 = onboardingAnswers.onboardingVersion === 'v2'
+      const userBusinessType = brand.user_business_type || 'general'
 
       let wave1Ids: string[]
       if (isV2) {
-        // Select first prompt from each distinct category, hard-capped at WAVE1_MAX
-        const seenCategories = new Set<string>()
-        wave1Ids = []
-        for (const p of allPrompts as any[]) {
-          if (wave1Ids.length >= WAVE1_MAX) break
-          if (p.category && !seenCategories.has(p.category)) {
-            seenCategories.add(p.category)
-            wave1Ids.push(p.id)
-          }
-        }
-        // Fallback: if no categories exist, take first WAVE1_MAX
-        if (wave1Ids.length === 0) wave1Ids = allPrompts.slice(0, WAVE1_MAX).map((p: any) => p.id)
+        wave1Ids = selectWave1Prompts(allPrompts as any[], userBusinessType, WAVE1_MAX)
       } else {
         wave1Ids = allPrompts.slice(0, 6).map((p: any) => p.id)
       }
@@ -285,19 +309,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Save real estate projects (RE brands only — bodyProjects comes from State D)
-    const projectEntries: { project_name: string; city?: string }[] = (bodyProjects || [])
+    // Save real estate projects (RE brands only — bodyProjects comes from State D, each must have city)
+    const projectEntries: { project_name: string; city: string }[] = (bodyProjects || [])
       .map((p: any) => ({
         project_name: (typeof p === 'string' ? p : (p?.project_name || p?.name || '')).trim(),
-        city: typeof p === 'object' ? (p?.city || '').trim() || undefined : undefined,
+        city: (typeof p === 'object' ? (p?.city || '') : '').trim(),
       }))
-      .filter((e: any) => e.project_name)
+      .filter((e: any) => e.project_name && e.city)  // both required
 
     if (projectEntries.length > 0) {
       await adminSupabaseForCapacity.from('real_estate_projects').delete().eq('brand_id', updatedBrand.id)
       const { error: projectError } = await adminSupabaseForCapacity
         .from('real_estate_projects')
-        .insert(projectEntries.map(e => ({ brand_id: updatedBrand.id, project_name: e.project_name, city: e.city || null })))
+        .insert(projectEntries.map(e => ({ brand_id: updatedBrand.id, project_name: e.project_name, city: e.city })))
       if (projectError) {
         console.warn('⚠️ [COMPLETE-FINAL API] Could not save projects:', projectError.message)
       } else {

@@ -26,6 +26,7 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const brandAnalyzer = require('./processors/brand-analyzer');
+const entityMentionAnalyzer = require('./processors/entity-mention-analyzer');
 const citationProcessor = require('./process-daily-report-citations');
 const reportAggregator = require('./processors/report-aggregator');
 const visibilityScoreCalculator = require('./processors/visibility-score-calculator');
@@ -33,6 +34,7 @@ const citationShareCalculator = require('./processors/citation-share-calculator'
 const shareOfVoiceCalculator = require('./processors/share-of-voice-calculator');
 const visibilityIndexCalculator = require('./processors/visibility-index-calculator');
 const competitorMetricsCalculator = require('./processors/competitor-metrics-calculator');
+const projectMentionsCalculator = require('./processors/project-mentions-calculator');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -81,6 +83,20 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
     console.log('─'.repeat(70));
     const analysisResult = await brandAnalyzer.analyzeResults(dailyReportId, providers);
     console.log('✅ Phase 1 complete: analyzed=' + analysisResult.analyzed + ', mentioned=' + analysisResult.brandMentioned);
+
+    // PHASE 1b: ENTITY MENTION ANALYZER (always runs — non-blocking)
+    console.log('\n🧠 PHASE 1b: ENTITY MENTION ANALYZER');
+    console.log('─'.repeat(70));
+    try {
+      const entityResult = await entityMentionAnalyzer.analyzeEntityMentions(dailyReportId);
+      if (entityResult.skipped) {
+        console.log('Phase 1b skipped: ' + (entityResult.error || 'no OpenAI key'));
+      } else {
+        console.log('✅ Phase 1b complete: analyzed=' + (entityResult.analyzed || 0));
+      }
+    } catch (entityError) {
+      console.error('⚠️  Phase 1b failed (non-blocking):', entityError.message);
+    }
 
     // PHASE 2: CITATION PROCESSING (always runs)
     console.log('\n🔗 PHASE 2: CITATION PROCESSING');
@@ -155,6 +171,20 @@ async function processEndOfDay(dailyReportId, options = {}, providers = ['chatgp
       console.log('✅ Phase 7 complete: competitors=' + (compResult.competitorCount || 0));
     } catch (compError) {
       console.error('⚠️  Phase 7 failed (non-blocking):', compError.message);
+    }
+
+    // PHASE 7b: PROJECT METRICS (RE brands only — non-blocking)
+    console.log('\n🏗️  PHASE 7b: PROJECT METRICS');
+    console.log('─'.repeat(70));
+    try {
+      const projResult = await projectMentionsCalculator.calculateProjectMentions(dailyReportId);
+      if (projResult.skipped) {
+        console.log('Phase 7b skipped: not RE brand');
+      } else {
+        console.log('✅ Phase 7b complete: projects=' + (projResult.projectCount || 0));
+      }
+    } catch (projectError) {
+      console.error('⚠️  Phase 7b failed (non-blocking):', projectError.message);
     }
 
     // PHASE 8: FINALIZATION

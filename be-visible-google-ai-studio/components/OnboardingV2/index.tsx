@@ -21,7 +21,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
   const [launchError, setLaunchError] = useState<string | null>(null)
   // RE state
   const [isRealEstate, setIsRealEstate] = useState(false)
-  const [detectedProjects, setDetectedProjects] = useState<string[]>([])
+  const [detectedProjects, setDetectedProjects] = useState<Array<{ project_name: string; city: string | null }>>([])
   const [detectedCities, setDetectedCities] = useState<string[]>([])
   const [confirmedProjects, setConfirmedProjects] = useState<ProjectEntry[]>([])
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
@@ -83,7 +83,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
               setProfile(event.data)
             } else if (event.type === 'real_estate_data') {
               setIsRealEstate(true)
-              setDetectedProjects(event.data.projects || [])
+              setDetectedProjects((event.data.projects || []) as Array<{ project_name: string; city: string | null }>)
               setDetectedCities(event.data.cities || [])
             } else if (event.type === 'topics') {
               setTopics(event.data)

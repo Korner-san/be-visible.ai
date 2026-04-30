@@ -72,10 +72,10 @@ async function calculateProjectMentions(dailyReportId) {
 
     console.log('✅ Projects: ' + projects.map(p => p.project_name).join(', '));
 
-    // 3. Load all ok prompt_results
+    // 3. Load all ok prompt_results (include entity_mention_analysis for reasoning-based detection)
     const { data: promptResults, error: prErr } = await supabase
       .from('prompt_results')
-      .select('id, provider, chatgpt_response, claude_response, google_ai_overview_response, perplexity_response')
+      .select('id, provider, chatgpt_response, claude_response, google_ai_overview_response, perplexity_response, entity_mention_analysis')
       .eq('daily_report_id', dailyReportId)
       .eq('provider_status', 'ok');
 
@@ -84,11 +84,16 @@ async function calculateProjectMentions(dailyReportId) {
     const allResults = promptResults || [];
     const totalResponses = allResults.length;
 
-    console.log('✅ Scanning ' + totalResponses + ' ok responses');
+    // How many rows have entity_mention_analysis
+    const entityRows = allResults.filter(pr => pr.entity_mention_analysis && pr.entity_mention_analysis.projects);
+    const analysisMethod = entityRows.length >= allResults.length * 0.5 ? 'gpt_reasoning' : 'fallback_text_match';
+
+    console.log('✅ Scanning ' + totalResponses + ' ok responses (' + entityRows.length + ' with entity analysis, method: ' + analysisMethod + ')');
 
     if (totalResponses === 0) {
       const emptyData = {
         projects: projects.map(p => ({
+          project_id: p.id,
           project_name: p.project_name,
           city: p.city || null,
           mention_count: 0,
@@ -96,6 +101,7 @@ async function calculateProjectMentions(dailyReportId) {
           by_provider: {},
         })),
         total_responses: 0,
+        analysis_method: analysisMethod,
         calculated_at: new Date().toISOString(),
       };
       await supabase.from('daily_reports').update({ project_mention_data: emptyData }).eq('id', dailyReportId);
@@ -104,16 +110,33 @@ async function calculateProjectMentions(dailyReportId) {
 
     const PROVIDERS = ['chatgpt', 'google_ai_overview', 'claude'];
 
+    // Check if a row mentions a project — prefer entity_mention_analysis, fall back to string match
+    function rowMentionsProject(pr, projectName) {
+      const ema = pr.entity_mention_analysis;
+      if (ema && Array.isArray(ema.projects)) {
+        // Match by exact name or partial match
+        const ep = ema.projects.find(p =>
+          p.project_name && (
+            p.project_name.toLowerCase() === projectName.toLowerCase() ||
+            p.project_name.toLowerCase().includes(projectName.toLowerCase()) ||
+            projectName.toLowerCase().includes(p.project_name.toLowerCase())
+          )
+        );
+        if (ep) return ep.mentioned === true;
+      }
+      // Fallback: string matching
+      const col = PROVIDER_RESPONSE_COL[pr.provider];
+      const text = col ? pr[col] : null;
+      return mentionsProject(text, projectName);
+    }
+
     // 4. For each project, count mentions across all responses + per-provider
     const projectStats = projects.map(project => {
       const name = project.project_name;
 
-      // Overall — scan the response column matching each row's provider
       let totalMentions = 0;
       for (const pr of allResults) {
-        const col = PROVIDER_RESPONSE_COL[pr.provider];
-        const text = col ? pr[col] : null;
-        if (mentionsProject(text, name)) totalMentions++;
+        if (rowMentionsProject(pr, name)) totalMentions++;
       }
 
       // Per-provider breakdown
@@ -121,8 +144,7 @@ async function calculateProjectMentions(dailyReportId) {
       for (const provider of PROVIDERS) {
         const provResults = allResults.filter(pr => pr.provider === provider);
         if (provResults.length === 0) continue;
-        const col = PROVIDER_RESPONSE_COL[provider];
-        const mentionCount = provResults.filter(pr => mentionsProject(pr[col], name)).length;
+        const mentionCount = provResults.filter(pr => rowMentionsProject(pr, name)).length;
         byProvider[provider] = {
           mention_count: mentionCount,
           mention_rate: parseFloat(((mentionCount / provResults.length) * 100).toFixed(1)),
@@ -131,6 +153,7 @@ async function calculateProjectMentions(dailyReportId) {
       }
 
       return {
+        project_id: project.id,
         project_name: name,
         city: project.city || null,
         mention_count: totalMentions,
@@ -143,6 +166,7 @@ async function calculateProjectMentions(dailyReportId) {
     const mentionData = {
       projects: projectStats,
       total_responses: totalResponses,
+      analysis_method: analysisMethod,
       calculated_at: new Date().toISOString(),
     };
 

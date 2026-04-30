@@ -1,8 +1,8 @@
 import React from 'react'
-import { BarChart2 } from 'lucide-react'
+import { BarChart2, MapPin } from 'lucide-react'
 
 interface RightDProps {
-  detectedProjects: string[]
+  detectedProjects: Array<{ project_name: string; city: string | null }>
 }
 
 export const RightD: React.FC<RightDProps> = ({ detectedProjects }) => {
@@ -28,8 +28,15 @@ export const RightD: React.FC<RightDProps> = ({ detectedProjects }) => {
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Detected projects</p>
           <div className="space-y-2">
             {preview.map(p => (
-              <div key={p} className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-xl">
-                <span className="text-sm text-white font-medium truncate">{p}</span>
+              <div key={p.project_name} className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-xl">
+                <div className="min-w-0">
+                  <span className="text-sm text-white font-medium truncate block">{p.project_name}</span>
+                  {p.city && (
+                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5">
+                      <MapPin size={9} />{p.city}
+                    </div>
+                  )}
+                </div>
                 <span className="text-xs text-slate-500 ml-3 whitespace-nowrap">tracking soon</span>
               </div>
             ))}

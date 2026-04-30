@@ -136,17 +136,19 @@ Output JSON: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5"] }`,
 }
 
 // ─── Tier count calculation ────────────────────────────────────────────────────
-function computeTierCounts(profile: any) {
+function computeTierCounts(profile: any, count = 10) {
   const { simpleSeeker, informedShopper, evaluativeResearcher } = profile.audienceDistribution
-  let t3 = Math.max(2, Math.round((evaluativeResearcher / 100) * 10))
-  let t2 = Math.max(3, Math.round((informedShopper / 100) * 10 + (simpleSeeker / 100) * 5))
-  let t1 = 10 - t2 - t3
+  const minT3 = count >= 10 ? 2 : 1
+  const minT2 = count >= 10 ? 3 : 2
+  let t3 = Math.max(minT3, Math.round((evaluativeResearcher / 100) * count))
+  let t2 = Math.max(minT2, Math.round((informedShopper / 100) * count + (simpleSeeker / 100) * (count / 2)))
+  let t1 = count - t2 - t3
   if (t1 < 1) { t2 -= (1 - t1); t1 = 1 }
   return { t1, t2, t3 }
 }
 
 // ─── Layer 3: Prompts per topic ───────────────────────────────────────────────
-async function generatePromptsForTopic(topic: string, profile: any, tierCounts: any, attempt = 1): Promise<string[]> {
+async function generatePromptsForTopic(topic: string, profile: any, tierCounts: any, attempt = 1, count = 10): Promise<string[]> {
   const { t1, t2, t3 } = tierCounts
   const isLocal = profile.geographicScope.isLocalNiche
   const globalRegions = profile.geographicScope.type === 'global'
@@ -154,14 +156,14 @@ async function generatePromptsForTopic(topic: string, profile: any, tierCounts: 
     : `${profile.geographicScope.primaryRegion} and surrounding regions`
 
   const geographicRule = isLocal
-    ? `ALL prompts must reference the specific locality "${profile.userRegion}". Critically: vary HOW the locality is expressed — use different framings across the 10 prompts:
+    ? `ALL prompts must reference the specific locality "${profile.userRegion}". Critically: vary HOW the locality is expressed — use different framings across the ${count} prompts:
   - As expertise: "agencies specializing in [X] in ${profile.userRegion}"
   - As cultural fit: "who understand [local community] in ${profile.userRegion}"
   - As a direct question with urgency: "Is there someone who can handle [X] in ${profile.userRegion} within [timeframe]?"
   - As credential framing: "with proven experience in the ${profile.userRegion} market"
   - As community language: use local phrasing, not just translating "in ${profile.userRegion}"
-  Never use the same locality phrasing twice across the 10 prompts.`
-    : `Tier 1 prompts: no geography OR use "near me" / "in my area" — but "near me" may appear AT MOST ONCE across all 10 prompts
+  Never use the same locality phrasing twice across the ${count} prompts.`
+    : `Tier 1 prompts: no geography OR use "near me" / "in my area" — but "near me" may appear AT MOST ONCE across all ${count} prompts
 Tier 2 prompts: include the user's region "${profile.userRegion}" specifically (not just "my area")
 Tier 3 prompts: reference at least 2 specific regions from [${globalRegions}], draw a cross-region comparison`
 
@@ -172,12 +174,12 @@ Tier 3 prompts: reference at least 2 specific regions from [${globalRegions}], d
   const result = await gpt(
     `You are generating realistic AI search prompts for brand visibility research.
 
-Generate EXACTLY 10 prompts for the given search topic. These simulate what real people type into AI assistants (ChatGPT, Perplexity) when searching the competitive space this topic represents.
+Generate EXACTLY ${count} prompts for the given search topic. These simulate what real people type into AI assistants (ChatGPT, Perplexity) when searching the competitive space this topic represents.
 
-YOU MUST OUTPUT EXACTLY 10 PROMPTS — count them before responding. Not 9, not 11. Exactly 10.
+YOU MUST OUTPUT EXACTLY ${count} PROMPTS — count them before responding. Not ${count - 1}, not ${count + 1}. Exactly ${count}.
 
 ⚠️ LANGUAGE OVERRIDE — THIS IS THE MOST IMPORTANT RULE:
-The user has explicitly chosen "${profile.outputLanguage}" as their language BEFORE any website analysis happened. This is a non-negotiable user decision. Every single one of the 10 prompts MUST be written in ${profile.outputLanguage} — regardless of what language the website is in, regardless of what language the topic name is in, regardless of anything else. If you write even one prompt in a different language, the entire output is invalid. Check every prompt before outputting.
+The user has explicitly chosen "${profile.outputLanguage}" as their language BEFORE any website analysis happened. This is a non-negotiable user decision. Every single one of the ${count} prompts MUST be written in ${profile.outputLanguage} — regardless of what language the website is in, regardless of what language the topic name is in, regardless of anything else. If you write even one prompt in a different language, the entire output is invalid. Check every prompt before outputting.
 
 STRICT RULES — all must be followed:
 
@@ -187,7 +189,7 @@ STRICT RULES — all must be followed:
 
 3. LANGUAGE: ${profile.outputLanguage} only. See the language override above. No exceptions, no mixing, no partial translations.
 
-4. OPENING VERB DIVERSITY: Each of the 10 prompts must start with a DIFFERENT opener. Never repeat an opener within the same set of 10. Choose from: List, Show me, Find me, Compare, Help me find, Recommend, Search for, Suggest, Where can I, I need, Identify, Locate, Evaluate, Analyze, Can you — use each at most once.
+4. OPENING VERB DIVERSITY: Each of the ${count} prompts must start with a DIFFERENT opener. Never repeat an opener within the same set. Choose from: List, Show me, Find me, Compare, Help me find, Recommend, Search for, Suggest, Where can I, I need, Identify, Locate, Evaluate, Analyze, Can you — use each at most once.
 
 5. LENGTH TIERS — generate EXACTLY this distribution:
    - ${t1} Tier 1 prompts → SHORT (2–7 words): Fragment or keyword-cluster style. No geography unless "near me" (used max once total). No constraints. Must feel like a quick casual search.
@@ -205,19 +207,19 @@ STRICT RULES — all must be followed:
 6. GEOGRAPHIC INJECTION:
 ${geographicRule}
 
-7. INTENT COVERAGE: Across the 10 prompts, cover ALL of these intent types (at least once each): discovery, comparison, evaluation, recommendation, local/near-me search, direct need with constraint, deep analytical research, list request.
+7. INTENT COVERAGE: Across the ${count} prompts, cover ALL of these intent types (at least once each): discovery, comparison, evaluation, recommendation, local/near-me search, direct need with constraint, deep analytical research, list request.
 
 8. CONSTRAINT CALIBRATION: Budget and price constraints in Tier 2 must be realistic for "${profile.industry}". A gym membership, a commercial property, and a sneaker brand have very different realistic price ranges — calibrate accordingly.
 
-9. NO STRUCTURAL REPETITION: Avoid repeating sentence structures across prompts. If one prompt starts "I need a [noun] in the US that...", the next Tier 2 prompt should use a different structure. Variety in structure is as important as variety in wording.
+9. NO STRUCTURAL REPETITION: Avoid repeating sentence structures across prompts. Variety in structure is as important as variety in wording.
 
 10. NATURALNESS: Short prompts feel like someone typing fast on their phone. Medium prompts feel like a specific real-world need. Long prompts feel like a researcher crafting a careful, detailed query.
 
 11. GROUND IN CUSTOMER GOALS: Every prompt must reflect something the customer is actually trying to do. Use the customer goals provided in the business context as your anchor — prompts that don't connect to a real customer goal are invalid.
 
-Before outputting: (1) count that you have exactly 10 prompts, (2) verify every single prompt is in ${profile.outputLanguage} — fix any that are not.
+Before outputting: (1) count that you have exactly ${count} prompts, (2) verify every single prompt is in ${profile.outputLanguage} — fix any that are not.
 
-Output JSON: { "prompts": ["prompt1", "prompt2", "prompt3", "prompt4", "prompt5", "prompt6", "prompt7", "prompt8", "prompt9", "prompt10"] }`,
+Output JSON: { "prompts": [/* exactly ${count} strings */] }`,
     `REQUIRED OUTPUT LANGUAGE: ${profile.outputLanguage} — every prompt must be in this language, no exceptions.
 
 Topic: "${topic}"
@@ -231,12 +233,12 @@ Business context:
 - Brand identity: ${profile.brandIdentity.join(', ')}
 - Products/services: ${profile.productsServices.join(', ')}
 - User region: ${profile.userRegion}
-- Required tier counts: ${t1} short / ${t2} medium / ${t3} long (total = 10)`
+- Required tier counts: ${t1} short / ${t2} medium / ${t3} long (total = ${count})`
   )
 
   const prompts = result.prompts
-  if (!Array.isArray(prompts) || prompts.length !== 10) {
-    if (attempt < 2) return generatePromptsForTopic(topic, profile, tierCounts, 2)
+  if (!Array.isArray(prompts) || prompts.length !== count) {
+    if (attempt < 2) return generatePromptsForTopic(topic, profile, tierCounts, 2, count)
   }
   return Array.isArray(prompts) ? prompts : []
 }
@@ -246,20 +248,31 @@ function normalizeDomain(url: string): string {
 }
 
 // ─── Real Estate Israel: classification ───────────────────────────────────────
-async function classifyRealEstateIsrael(rawText: string, profile: any): Promise<{ isRealEstate: boolean; confidence: string }> {
+async function classifyRealEstateIsrael(rawText: string, profile: any): Promise<{ isRealEstate: boolean; confidence: string; reason: string; matchedBusinessKind: string | null }> {
   const result = await gpt(
-    `You are a business classifier. Determine if this company is a real estate developer, builder, or agent that builds and/or sells residential or commercial properties specifically in Israel.
+    `You are a business classifier. Determine if this company is active in the Israeli physical real estate market.
 
-Return true ONLY if the company:
-- Develops, constructs, markets, or sells physical real estate properties in Israel
-- Is a real estate agency or brokerage operating in Israel
+Return true if the company is any of:
+- Real estate developer or builder constructing properties in Israel
+- Real estate agency or brokerage selling properties in Israel
+- Company marketing or selling physical real estate projects in Israel
 
-Return false for: international companies with minor Israel presence, property management only, real estate tech/software, mortgage brokers, overseas property sales.
+Return false for:
+- Real estate software or technology companies
+- Mortgage or finance companies only (no property sales)
+- Property management only (no sales or development)
+- Global real estate portals with minor Israel presence
+- Companies selling overseas properties without Israel activity
 
-Output JSON: { "isRealEstate": boolean, "confidence": "high|medium|low", "reason": "one sentence" }`,
+Output JSON: { "isRealEstate": boolean, "confidence": "high|medium|low", "reason": "one sentence", "matchedBusinessKind": "developer|builder|agency|brokerage|marketing_company|null" }`,
     `Industry: ${profile.industry}\nDescription: ${profile.description}\nProducts/Services: ${(profile.productsServices || []).join(', ')}\n\nWebsite excerpt:\n${rawText.slice(0, 3000)}`
   )
-  return { isRealEstate: result.isRealEstate === true, confidence: result.confidence || 'low' }
+  return {
+    isRealEstate: result.isRealEstate === true,
+    confidence: result.confidence || 'low',
+    reason: result.reason || '',
+    matchedBusinessKind: result.matchedBusinessKind || null,
+  }
 }
 
 // ─── Real Estate Israel: subpage fetch ────────────────────────────────────────
@@ -276,49 +289,57 @@ async function fetchRESubpages(baseUrl: string): Promise<string> {
 }
 
 // ─── Real Estate Israel: extract projects + cities ────────────────────────────
-async function extractREProjectsAndCities(combinedText: string, profile: any): Promise<{ projects: string[]; cities: string[] }> {
+async function extractREProjectsAndCities(combinedText: string, profile: any): Promise<{ projects: Array<{project_name: string; city: string | null}>; cities: string[] }> {
   const result = await gpt(
     `You are a real estate data extractor for Israeli real estate companies.
 
 From the website content, extract:
-1. "projects" — proper names of specific real estate projects or developments the company builds/markets (e.g. "מגדל השחר", "פרויקט הפארק", "Aliya Tower"). Max 15. Empty array if none clearly found.
-2. "cities" — cities, towns, or neighborhoods where the company operates or has projects. Max 10.
+1. "projects" — specific real estate projects the company builds or markets. For each project include:
+   - "project_name": the project's proper name (e.g. "מגדל השחר", "פרויקט הפארק", "Aliya Tower")
+   - "city": the city or neighborhood where the project is located (null if not mentioned)
+   Max 15 projects. Empty array if none clearly found.
+2. "cities" — additional cities or neighborhoods where the company operates, beyond those already named in projects. Max 10.
 
-Only include names that are clearly identifiable as actual project names or locations. Do not invent or guess.
+Only include names clearly identifiable from the text. Do not invent or guess.
 
-Output JSON: { "projects": [], "cities": [] }`,
+Output JSON: { "projects": [{"project_name": "...", "city": "..." or null}], "cities": [] }`,
     `Company: ${profile.businessName}\n\nWebsite content:\n${combinedText.slice(0, 8000)}`
   )
   return {
-    projects: Array.isArray(result.projects) ? result.projects.slice(0, 15) : [],
+    projects: Array.isArray(result.projects)
+      ? result.projects.slice(0, 15).map((p: any) => ({
+          project_name: String(p.project_name || '').trim(),
+          city: p.city ? String(p.city).trim() : null,
+        })).filter((p: any) => p.project_name)
+      : [],
     cities: Array.isArray(result.cities) ? result.cities.slice(0, 10) : [],
   }
 }
 
-// ─── Real Estate Israel: topic generation ────────────────────────────────────
+// ─── Real Estate Israel: topic generation (7 topics) ─────────────────────────
 async function generateRETopics(profile: any): Promise<string[]> {
   const result = await gpt(
-    `You are an AI search behavior analyst for the Israeli real estate market. Given a real estate company profile, generate exactly 5 competitive search topics.
+    `You are an AI search behavior analyst for the Israeli real estate market.
+Given a real estate company profile, generate exactly 7 competitive search topics.
 
-MANDATORY: 2 of the 5 topics must cover:
-1. Finding/comparing real estate projects or new developments in Israel (e.g. "פרויקטי נדל\"ן חדשים למכירה")
-2. Neighborhoods, localities, or areas to buy/invest in Israel (e.g. "שכונות חדשות להשקעה בישראל")
-
-The other 3 topics should cover the company's main competitive search spaces (e.g. home buying process, developers comparison, apartment pricing, investment opportunities).
+STRUCTURE — follow this EXACTLY:
+- Topics 1–5: 5 distinct competitive search categories for Israeli real estate (comparing developers, apartment pricing, investment returns, home buying process, new construction quality, etc.)
+- Topic 6: MUST be specifically about finding or comparing named new real estate projects, developments, towers, or new-build apartments for sale in Israel
+- Topic 7: MUST be specifically about cities, neighborhoods, districts, or areas where to buy or invest in Israeli real estate
 
 Rules:
-- Written in the language: ${profile.outputLanguage}
+- All 7 topics must be written in ${profile.outputLanguage}
 - Never include the brand name
-- Category-level topics — broad enough that multiple companies compete for them
-- Relevant to the Israeli real estate market specifically
+- Category-level topics — broad enough that multiple companies compete
+- Topics 6 and 7 must match their described purpose exactly
 
-Output JSON: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5"] }`,
+Output JSON: { "topics": ["t1", "t2", "t3", "t4", "t5", "t_projects", "t_localities"] }`,
     `Business profile:\n${JSON.stringify({ businessName: profile.businessName, description: profile.description, industry: profile.industry, productsServices: profile.productsServices, geographicScope: profile.geographicScope, outputLanguage: profile.outputLanguage, userRegion: profile.userRegion }, null, 2)}`
   )
-  if (!Array.isArray(result.topics) || result.topics.length < 5) {
+  if (!Array.isArray(result.topics) || result.topics.length < 7) {
     throw new Error('RE topics generation returned insufficient topics')
   }
-  return result.topics.slice(0, 5)
+  return result.topics.slice(0, 7)
 }
 
 // ─── POST handler (SSE stream) ────────────────────────────────────────────────
@@ -430,17 +451,18 @@ export async function POST(request: NextRequest) {
 
         // ── RE Classification ─────────────────────────────────────────────────
         let isRealEstateIsrael = false
-        let reProjectData: { projects: string[]; cities: string[] } = { projects: [], cities: [] }
+        let reProjectData: { projects: Array<{project_name: string; city: string | null}>; cities: string[] } = { projects: [], cities: [] }
+        let reClassification: { confidence: string; reason: string } = { confidence: 'low', reason: '' }
 
         try {
           const reClass = await classifyRealEstateIsrael(rawText, profile)
           isRealEstateIsrael = reClass.isRealEstate
+          reClassification = { confidence: reClass.confidence, reason: reClass.reason }
         } catch (e: any) {
           console.error('[generate-v2] RE classification failed (non-blocking):', e.message)
         }
 
         if (isRealEstateIsrael) {
-          // Try to find project names from subpages
           const subpageText = await fetchRESubpages(websiteUrl).catch(() => '')
           const combinedText = (rawText + (subpageText ? '\n\n' + subpageText : '')).slice(0, 12000)
 
@@ -454,7 +476,11 @@ export async function POST(request: NextRequest) {
           await adminSupabase.from('brands').update({ user_business_type: 'real_estate_israel' }).eq('id', brandId)
 
           // Stream RE data so the frontend can show State D
-          send({ type: 'real_estate_data', data: reProjectData })
+          send({ type: 'real_estate_data', data: {
+            projects: reProjectData.projects,
+            cities: reProjectData.cities,
+            classification: reClassification,
+          } })
         }
 
         // ── Layer 2: Topics (RE-branched) ─────────────────────────────────────
@@ -471,16 +497,20 @@ export async function POST(request: NextRequest) {
         send({ type: 'topics', data: topics })
 
         // ── Layer 3: Prompts per topic (parallel GPT, sequential DB write) ───────
-        const tierCounts = computeTierCounts(profile)
+        // RE brands: 7 topics × [7,7,7,7,7,8,7] prompts = 50 total
+        // General brands: 5 topics × 10 prompts = 50 total
+        const RE_TOPIC_COUNTS = [7, 7, 7, 7, 7, 8, 7]
 
         // Clear any prompts from previous scan attempts before streaming new ones
         await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
 
         // Run all GPT calls in parallel for speed, collect results
         const topicResults: { topic: string; prompts: string[] }[] = await Promise.all(
-          topics.map(async (topic) => {
+          topics.map(async (topic, topicIndex) => {
+            const count = isRealEstateIsrael ? (RE_TOPIC_COUNTS[topicIndex] ?? 10) : 10
+            const topicTierCounts = computeTierCounts(profile, count)
             let prompts: string[]
-            try { prompts = await generatePromptsForTopic(topic, profile, tierCounts) }
+            try { prompts = await generatePromptsForTopic(topic, profile, topicTierCounts, 1, count) }
             catch { prompts = [] }
             send({ type: 'prompts_topic', data: { topic, prompts } })
             return { topic, prompts }
@@ -510,7 +540,7 @@ export async function POST(request: NextRequest) {
           totalPrompts += prompts.length
         }
 
-        send({ type: 'done', data: { brandId, tierCounts, totalPrompts } })
+        send({ type: 'done', data: { brandId, totalPrompts } })
         controller.close()
 
       } catch (err: any) {
