@@ -465,167 +465,6 @@ export default function ForensicPage() {
             </CardContent>
           </Card>
 
-          {/* Table B: Session Matrix */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Table B: Active/Recent Session Matrix</CardTitle>
-              <CardDescription>
-                Last 24 hours of Browserless session connection attempts (raw data)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2 font-semibold">Timestamp</th>
-                      <th className="text-left p-2 font-semibold">Account</th>
-                      <th className="text-left p-2 font-semibold">Session ID</th>
-                      <th className="text-left p-2 font-semibold">Proxy</th>
-                      <th className="text-left p-2 font-semibold">Connection Status</th>
-                      <th className="text-left p-2 font-semibold">Visual State</th>
-                      <th className="text-left p-2 font-semibold">Operation</th>
-                      <th className="text-left p-2 font-semibold">Error</th>
-                      <th className="text-left p-2 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.sessionMatrix.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="text-center p-4 text-muted-foreground">
-                          No session attempts in last 24 hours
-                        </td>
-                      </tr>
-                    ) : (
-                      data.sessionMatrix.map((session, index) => (
-                        <tr key={index} className="border-b hover:bg-muted/50">
-                          <td className="p-2 font-mono text-xs">
-                            {new Date(session.timestamp).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit'
-                            })}
-                          </td>
-                          <td className="p-2 text-xs">{session.chatgpt_account_email}</td>
-                          <td className="p-2 font-mono text-xs truncate max-w-[120px]" title={session.browserless_session_id || ''}>
-                            {session.browserless_session_id ? session.browserless_session_id.substring(0, 12) + '...' : 'N/A'}
-                          </td>
-                          <td className="p-2 text-xs font-mono">{session.proxy_used || 'N/A'}</td>
-                          <td className="p-2">{getStatusBadge(session.connection_status)}</td>
-                          <td className="p-2">{getVisualStateBadge(session.visual_state)}</td>
-                          <td className="p-2 text-xs">{session.operation_type}</td>
-                          <td className="p-2 text-xs max-w-[200px] truncate" title={session.connection_error_raw || ''}>
-                            {session.connection_error_raw || '-'}
-                          </td>
-                          <td className="p-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReinitialize(session.chatgpt_account_email)}
-                              disabled={reinitializing === session.chatgpt_account_email}
-                              className="text-xs"
-                            >
-                              {reinitializing === session.chatgpt_account_email ? (
-                                <>
-                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                  Initializing...
-                                </>
-                              ) : (
-                                <>
-                                  <RefreshCw className="w-3 h-3 mr-1" />
-                                  Re-init
-                                </>
-                              )}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Table C: Citation Extraction Tracker */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Table C: Citation Extraction Tracker</CardTitle>
-              <CardDescription>
-                Last 50 prompt runs showing citation performance. Citation Rate = % of last 5 runs that extracted citations.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2 font-semibold w-32">Date</th>
-                      <th className="text-left p-2 font-semibold w-24">Brand</th>
-                      <th className="text-left p-2 font-semibold">Prompt</th>
-                      <th className="text-left p-2 font-semibold w-24 text-center">Response</th>
-                      <th className="text-left p-2 font-semibold w-24 text-center">Citations</th>
-                      <th className="text-left p-2 font-semibold w-24 text-center">Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.citationTrace.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="text-center p-4 text-muted-foreground">
-                          No citation data found
-                        </td>
-                      </tr>
-                    ) : (
-                      data.citationTrace.map((trace) => (
-                        <tr key={trace.id} className="border-b hover:bg-muted/50">
-                          <td className="p-2 font-mono text-xs">
-                            {new Date(trace.timestamp).toLocaleString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </td>
-                          <td className="p-2">
-                            <Badge variant="outline" className="text-xs">
-                              {trace.brandName}
-                            </Badge>
-                          </td>
-                          <td className="p-2 text-xs max-w-[400px]" title={trace.promptText}>
-                            <div className="line-clamp-2">{trace.promptText}</div>
-                          </td>
-                          <td className="p-2 text-center text-xs font-mono text-muted-foreground">
-                            {trace.responseLength?.toLocaleString() || 0} chars
-                          </td>
-                          <td className="p-2 text-center">
-                            {trace.citationsExtracted > 0 ? (
-                              <Badge className="bg-blue-500">{trace.citationsExtracted}</Badge>
-                            ) : (
-                              <Badge variant="secondary">0</Badge>
-                            )}
-                          </td>
-                          <td className="p-2 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <span className={`font-semibold ${
-                                trace.citationRate >= 60 ? 'text-green-600' :
-                                trace.citationRate >= 20 ? 'text-yellow-600' :
-                                'text-red-600'
-                              }`}>
-                                {trace.citationRate}%
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Table D: Scheduling Queue */}
           <Card>
             <CardHeader>
@@ -662,24 +501,24 @@ export default function ForensicPage() {
                         if (schedule.row_type === 'eod') {
                           const isPhase1 = schedule.batch_type === 'eod_phase1'
                           return (
-                            <tr key={schedule.id} className="border-b bg-indigo-50/50">
+                            <tr key={schedule.id} className="border-b border-l-4 border-l-indigo-500 bg-indigo-100">
                               <td className="p-2" />
-                              <td className="p-2 font-mono text-xs text-indigo-700">
+                              <td className="p-2 font-mono text-xs font-semibold text-indigo-900">
                                 {new Date(schedule.execution_time).toLocaleString('en-US', {
                                   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                                 })}
                               </td>
                               <td className="p-2">
-                                <Badge className="bg-indigo-500 text-[10px] px-2">🌙 EOD</Badge>
+                                <Badge className="bg-indigo-600 text-white text-xs px-2 py-0.5">🌙 EOD Pipeline</Badge>
                               </td>
                               <td className="p-2 text-xs" colSpan={2}>
-                                <span className="font-medium text-indigo-800">{schedule.onboarding_brand_name || '—'}</span>
-                                <Badge variant="outline" className="ml-2 text-[10px] border-indigo-300 text-indigo-600">
-                                  {isPhase1 ? 'Phase 1 · partial' : 'Phase 2 · full'}
+                                <span className="font-semibold text-indigo-900">{schedule.onboarding_brand_name || '—'}</span>
+                                <Badge className={`ml-2 text-xs ${isPhase1 ? 'bg-amber-500' : 'bg-green-600'} text-white`}>
+                                  {isPhase1 ? 'Phase 1 — partial' : 'Phase 2 — complete'}
                                 </Badge>
                               </td>
-                              <td className="p-2 text-xs text-muted-foreground">—</td>
-                              <td className="p-2 text-xs text-muted-foreground">—</td>
+                              <td className="p-2 text-xs text-indigo-400">—</td>
+                              <td className="p-2 text-xs text-indigo-400">—</td>
                               <td className="p-2" />
                             </tr>
                           )
