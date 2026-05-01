@@ -278,10 +278,24 @@ Output JSON: { "isRealEstate": boolean, "confidence": "high|medium|low", "reason
 // ─── Real Estate Israel: subpage fetch ────────────────────────────────────────
 async function fetchRESubpages(baseUrl: string): Promise<string> {
   const base = baseUrl.replace(/\/$/, '')
-  const subpaths = ['/projects', '/פרויקטים', '/portfolio', '/our-projects', '/homes', '/apartments']
-  for (const path of subpaths) {
+  const subpaths = ['/projects', '/פרויקטים', '/portfolio', '/our-projects', '/homes', '/apartments', '/residential']
+  const candidates: string[] = []
+
+  // Try under the given base (e.g. https://electra-re.com/he)
+  for (const path of subpaths) candidates.push(base + path)
+
+  // Also try under domain root when base has a language/locale path (e.g. /he/, /en/)
+  try {
+    const urlObj = new URL(base.startsWith('http') ? base : 'https://' + base)
+    if (urlObj.pathname !== '/') {
+      const root = urlObj.origin
+      for (const path of subpaths) candidates.push(root + path)
+    }
+  } catch {}
+
+  for (const candidate of candidates) {
     try {
-      const text = await fetchWebsiteText(base + path)
+      const text = await fetchWebsiteText(candidate)
       if (text && text.length > 200) return text.slice(0, 4000)
     } catch {}
   }
@@ -454,12 +468,24 @@ export async function POST(request: NextRequest) {
         let reProjectData: { projects: Array<{project_name: string; city: string | null}>; cities: string[] } = { projects: [], cities: [] }
         let reClassification: { confidence: string; reason: string } = { confidence: 'low', reason: '' }
 
-        try {
-          const reClass = await classifyRealEstateIsrael(rawText, profile)
-          isRealEstateIsrael = reClass.isRealEstate
-          reClassification = { confidence: reClass.confidence, reason: reClass.reason }
-        } catch (e: any) {
-          console.error('[generate-v2] RE classification failed (non-blocking):', e.message)
+        // Auto-detect: Hebrew URL path (/he/) or significant Hebrew characters in content + real estate industry
+        const hasHebrewUrlPath = /\/(he)(\/|$)/i.test(websiteUrl)
+        const hebrewCharCount = (rawText.match(/[֐-׿]/g) || []).length
+        const hasHebrewContent = hebrewCharCount > 30
+        const profileText = `${profile.industry || ''} ${profile.description || ''} ${(profile.productsServices || []).join(' ')}`
+        const isREIndustry = /real.?estate|property|properties|residential|housing|apartment|נדל.?ן|דיור|דירות|פרויקט/i.test(profileText)
+
+        if ((hasHebrewUrlPath || hasHebrewContent) && isREIndustry) {
+          isRealEstateIsrael = true
+          reClassification = { confidence: 'high', reason: 'Auto-detected: Hebrew site with real estate industry profile' }
+        } else {
+          try {
+            const reClass = await classifyRealEstateIsrael(rawText, profile)
+            isRealEstateIsrael = reClass.isRealEstate
+            reClassification = { confidence: reClass.confidence, reason: reClass.reason }
+          } catch (e: any) {
+            console.error('[generate-v2] RE classification failed (non-blocking):', e.message)
+          }
         }
 
         if (isRealEstateIsrael) {
