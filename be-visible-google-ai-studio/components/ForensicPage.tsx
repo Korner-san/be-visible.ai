@@ -463,110 +463,6 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
             </div>
           </div>
 
-          {/* ── Table B: Session Matrix ── */}
-          <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-8 py-6 border-b border-gray-100">
-              <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table B: Batch Sessions Connections Matrix</h2>
-              <p className="text-xs text-slate-400 mt-1">Last 24 hours of batch connection events</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Batch ID', 'Timestamp', 'Account', 'Session ID', 'Proxy', 'Connection', 'Visual State', 'Operation', 'Error', 'Action'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.sessionMatrix.length === 0 ? (
-                    <tr><td colSpan={10} className="text-center px-4 py-8 text-sm text-slate-400">No session attempts in last 24 hours</td></tr>
-                  ) : data.sessionMatrix.map((session, i) => (
-                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400 whitespace-nowrap">
-                        {session.batch_id ? session.batch_id.substring(0, 8) : '-'}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
-                        {new Date(session.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-600">{session.chatgpt_account_email}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500 max-w-[120px] truncate" title={session.browserless_session_id || ''}>
-                        {session.browserless_session_id ? session.browserless_session_id.substring(0, 12) + '…' : 'N/A'}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500" title={session.proxy_used || ''}>
-                        {session.proxy_used ? session.proxy_used.substring(0, 4) + '…' + session.proxy_used.substring(session.proxy_used.length - 4) : 'N/A'}
-                      </td>
-                      <td className="px-4 py-3"><StatusBadge status={session.connection_status} /></td>
-                      <td className="px-4 py-3"><VisualStateBadge state={session.visual_state} /></td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{session.operation_type}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400 max-w-[180px] truncate" title={session.connection_error_raw || ''}>
-                        {session.connection_error_raw || '-'}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <button
-                          onClick={() => handleReinitialize(session.chatgpt_account_email)}
-                          disabled={reinitializing === session.chatgpt_account_email}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-bold text-slate-600 hover:border-gray-300 transition-all disabled:opacity-50"
-                        >
-                          {reinitializing === session.chatgpt_account_email
-                            ? <><Loader2 size={11} className="animate-spin" />Init…</>
-                            : <><RefreshCw size={11} />Re-init</>}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* ── Table C: Citation Extraction Tracker ── */}
-          <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-8 py-6 border-b border-gray-100">
-              <h2 className="text-base font-black text-slate-900 uppercase tracking-wide">Table C: Citation Extraction Tracker</h2>
-              <p className="text-xs text-slate-400 mt-1">Last 50 prompt runs · Citation Rate = % of last 5 runs that extracted citations</p>
-            </div>
-            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white z-10">
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    {['Date', 'Brand', 'Prompt', 'Response', 'Citations', 'Rate'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.citationTrace.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center px-4 py-8 text-sm text-slate-400">No citation data found</td></tr>
-                  ) : data.citationTrace.map(trace => (
-                    <tr key={trace.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{fmt(trace.timestamp)}</td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-slate-600 border border-gray-200">{trace.brandName}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-600 max-w-[380px]" title={trace.promptText}>
-                        <div className="line-clamp-2">{trace.promptText}</div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-400 whitespace-nowrap">
-                        {(trace.responseLength || 0).toLocaleString()} chars
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {trace.citationsExtracted > 0
-                          ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700">{trace.citationsExtracted}</span>
-                          : <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">0</span>}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-xs font-black ${trace.citationRate >= 60 ? 'text-emerald-600' : trace.citationRate >= 20 ? 'text-yellow-600' : 'text-red-500'}`}>
-                          {trace.citationRate}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           {/* ── Table D: Scheduling Queue ── */}
           <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-8 py-6 border-b border-gray-100">
@@ -742,6 +638,27 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                             </td>
                           </tr>
                         )}
+                        {schedule.row_type === 'eod' ? (
+                          <tr className="border-b border-l-4 border-l-indigo-500 bg-indigo-50">
+                            <td className="px-3 py-3" />
+                            <td className="px-4 py-3 text-center">
+                              <CheckCircle size={14} className="text-indigo-400 mx-auto" />
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs font-semibold text-indigo-800 whitespace-nowrap">{fmt(schedule.execution_time)}</td>
+                            <td className="px-4 py-3" colSpan={2}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-600 text-white">🌙 EOD Pipeline</span>
+                                <span className="font-semibold text-indigo-900 text-xs">{schedule.onboarding_brand_name || '—'}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold text-white ${schedule.batch_type === 'eod_phase1' ? 'bg-amber-500' : 'bg-emerald-600'}`}>
+                                  {schedule.batch_type === 'eod_phase1' ? 'Phase 1 — partial' : 'Phase 2 — complete'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-indigo-300">—</td>
+                            <td className="px-4 py-3 text-xs text-indigo-300">—</td>
+                            <td className="px-4 py-3" colSpan={3} />
+                          </tr>
+                        ) : (
                         <tr
                           className={`border-b cursor-pointer transition-colors ${
                             isOnboarding
@@ -822,7 +739,8 @@ export const ForensicPage: React.FC<{ onNavigateToOnboardingForensic?: () => voi
                               : <ModelExecBadge exec={schedule.modelExecutions?.claude ?? null} />}
                           </td>
                         </tr>
-                        {isExpanded && (
+                        )}
+                        {schedule.row_type !== 'eod' && isExpanded && (
                           isOnboarding ? (
                             <tr className="bg-purple-50/50 border-b border-purple-100">
                               <td className="px-3 py-3"></td>
