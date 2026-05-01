@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 export const maxDuration = 300 // Vercel Pro: full pipeline needs up to 5 min
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY
+const TAVILY_KEY = process.env.TAVILY_API_KEY
 
 // ─── GPT-4o-mini call ─────────────────────────────────────────────────────────
 async function gpt(system: string, user: string): Promise<any> {
@@ -275,31 +276,64 @@ Output JSON: { "isRealEstate": boolean, "confidence": "high|medium|low", "reason
   }
 }
 
-// ─── Real Estate Israel: subpage fetch ────────────────────────────────────────
-async function fetchRESubpages(baseUrl: string): Promise<string> {
-  const base = baseUrl.replace(/\/$/, '')
-  const subpaths = ['/projects', '/פרויקטים', '/portfolio', '/our-projects', '/homes', '/apartments', '/residential']
-  const candidates: string[] = []
+// ─── Real Estate Israel: Tavily map + extract ─────────────────────────────────
+// Maps the full site to discover URLs, filters relevant ones, extracts content.
+async function tavilyMapAndExtract(websiteUrl: string): Promise<string> {
+  if (!TAVILY_KEY) return ''
 
-  // Try under the given base (e.g. https://electra-re.com/he)
-  for (const path of subpaths) candidates.push(base + path)
-
-  // Also try under domain root when base has a language/locale path (e.g. /he/, /en/)
   try {
-    const urlObj = new URL(base.startsWith('http') ? base : 'https://' + base)
-    if (urlObj.pathname !== '/') {
-      const root = urlObj.origin
-      for (const path of subpaths) candidates.push(root + path)
-    }
-  } catch {}
+    const urlObj = new URL(websiteUrl.startsWith('http') ? websiteUrl : 'https://' + websiteUrl)
+    const origin = urlObj.origin // e.g. https://electra-re.com
 
-  for (const candidate of candidates) {
-    try {
-      const text = await fetchWebsiteText(candidate)
-      if (text && text.length > 200) return text.slice(0, 4000)
-    } catch {}
+    // Step 1: Map the site — discover all URLs
+    const mapRes = await fetch('https://api.tavily.com/map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: TAVILY_KEY, url: origin, limit: 50 }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    let discoveredUrls: string[] = []
+    if (mapRes.ok) {
+      const mapData = await mapRes.json()
+      discoveredUrls = mapData.urls || []
+    }
+
+    // Step 2: Filter to pages likely to contain project/property info
+    const relevantKeywords = [
+      'project', 'פרויקט', 'portfolio', 'apartment', 'דירות', 'residential',
+      'homes', 'properties', 'development', 'neighborhood', 'שכונה', 'building',
+      'our-work', 'estate', 'realty', 'housing',
+    ]
+    let relevantUrls = discoveredUrls
+      .filter(u => relevantKeywords.some(kw => u.toLowerCase().includes(kw.toLowerCase())))
+      .slice(0, 8)
+
+    // If map returned nothing relevant, fall back to domain root + provided URL
+    if (relevantUrls.length === 0) {
+      relevantUrls = [websiteUrl, origin].filter((u, i, arr) => arr.indexOf(u) === i).slice(0, 2)
+    }
+
+    // Step 3: Extract content from relevant URLs in one call
+    const extractRes = await fetch('https://api.tavily.com/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: TAVILY_KEY, urls: relevantUrls }),
+      signal: AbortSignal.timeout(20000),
+    })
+
+    if (!extractRes.ok) return ''
+    const extractData = await extractRes.json()
+
+    return (extractData.results || [])
+      .map((r: any) => r.raw_content || r.content || '')
+      .filter((c: string) => c.length > 100)
+      .join('\n\n')
+      .slice(0, 8000)
+
+  } catch {
+    return ''
   }
-  return ''
 }
 
 // ─── Real Estate Israel: extract projects + cities ────────────────────────────
@@ -489,7 +523,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (isRealEstateIsrael) {
-          const subpageText = await fetchRESubpages(websiteUrl).catch(() => '')
+          const subpageText = await tavilyMapAndExtract(websiteUrl).catch(() => '')
           const combinedText = (rawText + (subpageText ? '\n\n' + subpageText : '')).slice(0, 12000)
 
           try {
