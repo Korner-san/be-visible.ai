@@ -657,9 +657,55 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // ── Cycle stats for Table D summary bar ──────────────────────────────────
+      // ── Inject EOD completion rows into the scheduling queue ─────────────────
       const todayStr = new Date().toISOString().split('T')[0]
-      const todayBatches = (enrichedQueue || []).filter((s: any) => s.schedule_date === todayStr && !s.is_retry)
+      const yesterdayForEod = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+      const { data: completedReports } = await supabase
+        .from('daily_reports')
+        .select('id, brand_id, report_date, is_partial, completed_at, share_of_voice_data')
+        .in('report_date', [todayStr, yesterdayForEod])
+        .eq('status', 'completed')
+
+      if (completedReports && completedReports.length > 0) {
+        const eodBrandIds = [...new Set(completedReports.map((r: any) => r.brand_id))]
+        const { data: eodBrands } = await supabase.from('brands').select('id, name').in('id', eodBrandIds as string[])
+        const eodBrandMap: Record<string, string> = {}
+        for (const b of (eodBrands || []) as any[]) eodBrandMap[b.id] = b.name
+
+        const eodRows = completedReports
+          .map((report: any) => {
+            // Best timestamp: completed_at, then SOV calculated_at, skip if neither
+            const eodTime = report.completed_at || report.share_of_voice_data?.calculated_at
+            if (!eodTime) return null
+            return {
+              id: `eod-${report.id}`,
+              row_type: 'eod',
+              schedule_date: report.report_date,
+              batch_number: null,
+              execution_time: eodTime,
+              status: 'completed',
+              batch_size: 0,
+              batch_type: report.is_partial ? 'eod_phase1' : 'eod_phase2',
+              is_retry: false,
+              onboarding_brand_name: eodBrandMap[report.brand_id] || 'Unknown',
+              onboarding_user_email: null,
+              account_assigned: null,
+              proxy_assigned: null,
+              account_last_visual_state: null,
+              session_id_assigned: null,
+              prompts: [],
+              modelExecutions: { chatgpt: null, google_ai_overview: null, claude: null },
+            }
+          })
+          .filter(Boolean)
+
+        enrichedQueue = [...enrichedQueue, ...eodRows].sort((a: any, b: any) =>
+          new Date(a.execution_time).getTime() - new Date(b.execution_time).getTime()
+        )
+      }
+
+      // ── Cycle stats for Table D summary bar ──────────────────────────────────
+      const todayBatches = (enrichedQueue || []).filter((s: any) => s.schedule_date === todayStr && !s.is_retry && s.row_type !== 'eod')
       const batchesTotal = todayBatches.length
       const batchesDone  = todayBatches.filter((s: any) => s.status === 'completed' || s.status === 'failed').length
 

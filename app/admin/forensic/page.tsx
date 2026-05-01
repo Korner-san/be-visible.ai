@@ -45,15 +45,18 @@ interface PromptDetail {
 
 interface ScheduleItem {
   id: string
+  row_type?: string
   schedule_date: string
-  batch_number: number
+  batch_number: number | null
   execution_time: string
   status: string
   batch_size: number
+  batch_type?: string
   account_assigned: string | null
   proxy_assigned: string | null
   account_last_visual_state: string | null
   session_id_assigned: string | null
+  onboarding_brand_name?: string | null
   prompts: PromptDetail[]
 }
 
@@ -655,6 +658,33 @@ export default function ForensicPage() {
                       </tr>
                     ) : (
                       data.schedulingQueue.map((schedule) => {
+                        // EOD completion row — rendered differently
+                        if (schedule.row_type === 'eod') {
+                          const isPhase1 = schedule.batch_type === 'eod_phase1'
+                          return (
+                            <tr key={schedule.id} className="border-b bg-indigo-50/50">
+                              <td className="p-2" />
+                              <td className="p-2 font-mono text-xs text-indigo-700">
+                                {new Date(schedule.execution_time).toLocaleString('en-US', {
+                                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </td>
+                              <td className="p-2">
+                                <Badge className="bg-indigo-500 text-[10px] px-2">🌙 EOD</Badge>
+                              </td>
+                              <td className="p-2 text-xs" colSpan={2}>
+                                <span className="font-medium text-indigo-800">{schedule.onboarding_brand_name || '—'}</span>
+                                <Badge variant="outline" className="ml-2 text-[10px] border-indigo-300 text-indigo-600">
+                                  {isPhase1 ? 'Phase 1 · partial' : 'Phase 2 · full'}
+                                </Badge>
+                              </td>
+                              <td className="p-2 text-xs text-muted-foreground">—</td>
+                              <td className="p-2 text-xs text-muted-foreground">—</td>
+                              <td className="p-2" />
+                            </tr>
+                          )
+                        }
+
                         const isExpanded = expandedBatches.has(schedule.id)
                         const uniqueBrands = new Set(schedule.prompts.map(p => p.brand_name))
 
