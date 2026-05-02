@@ -47,11 +47,37 @@ const CONTENT_CATEGORIES = {
   OTHER_LOW_CONFIDENCE: 'Use ONLY when all other categories score below 0.45'
 };
 
+const REAL_ESTATE_ISRAEL_CONTENT_CATEGORIES = {
+  MARKET_ANALYSIS_ARTICLE: 'Analytical article, market review, forecast, transaction analysis, neighborhood analysis, or economic commentary using interpretation or market signals.',
+  NEWS_ARTICLE: 'Editorial news coverage reporting a recent event, announcement, market update, regulation, deal, company activity, or published data.',
+  LONG_FORM_GUIDE: 'Long-form guide, explainer, how-to article, legal/tax/buyer guide, price guide, or educational walkthrough.',
+  HOMEPAGE_COMMERCIAL_GATEWAY: 'Homepage or commercial gateway for a company, agency, developer, investment firm, marketplace, or service provider.',
+  SEARCH_LISTINGS_PLATFORM: 'Search/listings platform entry point where users can search, browse, or discover properties, projects, companies, or services.',
+  FILTERED_RESULTS_OR_LISTING_INDEX: 'Filtered search results, listing index, project list, inventory page, sold-properties list, or category result page.',
+  PROFESSIONAL_DIRECTORY: 'Directory, catalog, ranking, or index of professionals, companies, developers, contractors, brokers, agencies, or investors.',
+  OFFICIAL_REPORT_OR_DOCUMENT: 'Official report, PDF, government document, formal filing, legal/regulatory document, or institutional publication.',
+  OFFICIAL_PUBLICATION_OR_DATA_INDEX: 'Official publication index, government/statistical portal, data repository, or page listing official datasets/reports.',
+  DATA_TABLE_OR_BENCHMARK: 'Data table, benchmark index, ranking table, calculator-like data page, yield table, price table, or comparable structured dataset.',
+  OPINION_COLUMN: 'Opinion column, expert viewpoint, commentary, or subjective thought piece.',
+  BRANDED_BLOG_OR_COMMERCIAL_ARTICLE: 'Branded blog post, sponsored/commercial article, professional article, marketing-led educational article, or company-authored content.',
+  SOCIAL_OR_COMMUNITY_PAGE: 'Social media post, group page, forum discussion, community thread, gated social page, or public social profile content.',
+  REFERENCE_ENTRY: 'Dictionary entry, encyclopedia page, glossary definition, wiki/reference page, or general factual reference entry.',
+  PROJECT_OR_SERVICE_PAGE: 'Project page, service page, product page, about page, area information page, or commercial offer page that is not primarily a homepage.'
+};
+
+const REAL_ESTATE_ISRAEL_CLASSIFIER_VERSION = 'real_estate_israel_content_type_v2';
+
 // ========== MAIN FUNCTION ==========
 async function processDailyReportCitations(dailyReportId) {
   console.log(`\n🔍 [PROCESSOR] Starting citation processing for daily report: ${dailyReportId}\n`);
   
   try {
+    const reportContext = await getDailyReportContext(dailyReportId);
+    const isRealEstateIsrael = reportContext?.brand?.user_business_type === 'real_estate_israel';
+    if (isRealEstateIsrael) {
+      console.log(`[REAL ESTATE IL] Brand-specific content type analysis enabled for ${reportContext.brand.name || reportContext.brand.id}`);
+    }
+
     // Mark URL processing as started
     await updateUrlProcessingStatus(dailyReportId, 'running');
     
@@ -97,6 +123,14 @@ async function processDailyReportCitations(dailyReportId) {
       }
     }
     
+    if (isRealEstateIsrael) {
+      const realEstateClassifiedCount = await classifyRealEstateIsraelOverrides(
+        reportContext.brand.id,
+        [...new Set(citations.map(c => c.url))]
+      );
+      console.log(`[REAL ESTATE IL] Stored ${realEstateClassifiedCount} brand-specific content classifications`);
+    }
+
     // Step 5: Link ALL citations to prompts (including existing URLs)
     const allUrls = [...newUrls, ...existingUrls];
     const linkedCount = await linkCitationsToPrompts(citations, allUrls);
@@ -128,6 +162,25 @@ async function processDailyReportCitations(dailyReportId) {
     await updateUrlProcessingStatus(dailyReportId, 'failed', null, error.message);
     throw error;
   }
+}
+
+async function getDailyReportContext(dailyReportId) {
+  const { data, error } = await supabase
+    .from('daily_reports')
+    .select('id, brand_id, brands(id, name, user_business_type)')
+    .eq('id', dailyReportId)
+    .single();
+
+  if (error) {
+    console.warn(`[PROCESSOR] Could not load brand context: ${error.message}`);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    brandId: data.brand_id,
+    brand: Array.isArray(data.brands) ? data.brands[0] : data.brands
+  };
 }
 
 // ========== STEP 1: Extract ChatGPT Citations ==========
@@ -381,6 +434,139 @@ async function prepareClassificationInputs(urls) {
         contentSnippet: facts.content_snippet || ''
       };
     });
+}
+
+async function classifyRealEstateIsraelOverrides(brandId, urls) {
+  try {
+    const classificationInputs = await prepareClassificationInputs(urls);
+    if (classificationInputs.length === 0) return 0;
+
+    const urlIds = classificationInputs.map(input => input.urlId);
+    const { data: existingOverrides, error: overrideFetchError } = await supabase
+      .from('brand_url_content_facts')
+      .select('url_id, classifier_version')
+      .eq('brand_id', brandId)
+      .in('url_id', urlIds);
+
+    if (overrideFetchError) {
+      console.warn(`[REAL ESTATE IL] Could not fetch existing overrides: ${overrideFetchError.message}`);
+      return 0;
+    }
+
+    const existingUrlIds = new Set((existingOverrides || [])
+      .filter(row => row.classifier_version === REAL_ESTATE_ISRAEL_CLASSIFIER_VERSION)
+      .map(row => row.url_id));
+    const inputsNeedingOverride = classificationInputs.filter(input => !existingUrlIds.has(input.urlId));
+    if (inputsNeedingOverride.length === 0) return 0;
+
+    const classifications = await classifyRealEstateIsraelContentBatch(inputsNeedingOverride);
+    return storeRealEstateIsraelOverrides(brandId, classifications, inputsNeedingOverride);
+  } catch (error) {
+    console.warn(`[REAL ESTATE IL] Brand-specific classification skipped: ${error.message}`);
+    return 0;
+  }
+}
+
+async function classifyRealEstateIsraelContentBatch(inputs) {
+  if (inputs.length === 0) return [];
+
+  const results = [];
+  const batchSize = 10;
+
+  for (let i = 0; i < inputs.length; i += batchSize) {
+    const batch = inputs.slice(i, i + batchSize);
+    console.log(`[REAL ESTATE IL] Classifying batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(inputs.length / batchSize)} (${batch.length} URLs)`);
+
+    try {
+      const prompt = buildRealEstateIsraelClassificationPrompt(batch);
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You classify web pages by content/page format for Israeli real estate citation analysis. Do not classify by real estate topic. Always respond with valid JSON object format.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.15,
+        max_tokens: 3000,
+        response_format: { type: 'json_object' }
+      });
+
+      const classification = response.choices[0]?.message?.content || '';
+      results.push(...parseClassificationResponse(classification, batch.length));
+
+      if (i + batchSize < inputs.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      console.error(`[REAL ESTATE IL] Classification error:`, error.message);
+      batch.forEach(() => {
+        results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
+      });
+    }
+  }
+
+  return results;
+}
+
+function buildRealEstateIsraelClassificationPrompt(batch) {
+  let prompt = `Classify each URL using this Israeli real estate content taxonomy:\n\n`;
+
+  Object.entries(REAL_ESTATE_ISRAEL_CONTENT_CATEGORIES).forEach(([key, definition], index) => {
+    prompt += `${index + 1}. ${key} - ${definition}\n`;
+  });
+
+  prompt += `\nClassify by WEB PAGE FORMAT, editorial structure, and user intent. Do NOT classify by real estate topic.\n`;
+  prompt += `Use Hebrew or English page signals equally. Choose exactly one allowed category key.\n`;
+  prompt += `Score every category from 0.00 to 1.00 and choose the highest scoring category.\n\n`;
+  prompt += `URLs to classify:\n\n`;
+
+  batch.forEach((input, index) => {
+    prompt += `URL ${index + 1}:\n`;
+    prompt += `URL: ${input.url}\n`;
+    prompt += `Title: ${input.title}\n`;
+    prompt += `Description: ${input.description.substring(0, 300)}\n`;
+    prompt += `Content Snippet: ${input.contentSnippet.substring(0, 1200)}\n\n`;
+  });
+
+  prompt += `Respond with a JSON object containing a "classifications" array with category and scores for each URL.`;
+  return prompt;
+}
+
+async function storeRealEstateIsraelOverrides(brandId, classifications, inputs) {
+  const rows = [];
+
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const classification = classifications[i];
+    if (!classification) continue;
+
+    rows.push({
+      brand_id: brandId,
+      url_id: input.urlId,
+      content_structure_category: classification.content_structure_category,
+      classification_confidence: classification.confidence,
+      classifier_version: REAL_ESTATE_ISRAEL_CLASSIFIER_VERSION,
+      classified_at: new Date().toISOString()
+    });
+  }
+
+  if (rows.length === 0) return 0;
+
+  const { error } = await supabase
+    .from('brand_url_content_facts')
+    .upsert(rows, { onConflict: 'brand_id,url_id' });
+
+  if (error) {
+    console.warn(`[REAL ESTATE IL] Could not store overrides: ${error.message}`);
+    return 0;
+  }
+
+  return rows.length;
 }
 
 // ========== STEP 4b: Classify URL Content ==========

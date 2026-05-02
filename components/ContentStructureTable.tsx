@@ -29,8 +29,90 @@ interface ContentStructureTableProps {
   isLoading?: boolean
 }
 
+const REAL_ESTATE_CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
+  'MARKET_ANALYSIS_ARTICLE': {
+    label: 'מאמר ניתוח שוק',
+    description: 'מאמרים אנליטיים, סקירות שוק, תחזיות, ניתוח עסקאות או פרשנות כלכלית.',
+    color: 'bg-teal-100 text-teal-800'
+  },
+  'NEWS_ARTICLE': {
+    label: 'כתבה חדשותית',
+    description: 'כתבות מערכתיות המדווחות על אירועים, נתונים, רגולציה, עסקאות או עדכוני שוק.',
+    color: 'bg-cyan-100 text-cyan-800'
+  },
+  'LONG_FORM_GUIDE': {
+    label: 'מדריך עומק / מאמר הסבר',
+    description: 'מדריכים, מאמרי הסבר, מדריכים משפטיים, מדריכי מס, רכישה או מחירים.',
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  'HOMEPAGE_COMMERCIAL_GATEWAY': {
+    label: 'דף בית / שער מסחרי',
+    description: 'דפי בית או שערים מסחריים של חברות, סוכנויות, יזמים, מרקטפלייסים או נותני שירות.',
+    color: 'bg-purple-100 text-purple-800'
+  },
+  'SEARCH_LISTINGS_PLATFORM': {
+    label: 'פלטפורמת חיפוש נכסים',
+    description: 'עמודי כניסה לפלטפורמות שבהן משתמשים מחפשים או מגלים נכסים, פרויקטים, חברות או שירותים.',
+    color: 'bg-blue-100 text-blue-800'
+  },
+  'FILTERED_RESULTS_OR_LISTING_INDEX': {
+    label: 'עמוד תוצאות / אינדקס נכסים',
+    description: 'תוצאות חיפוש, אינדקסים, רשימות פרויקטים, מלאי נכסים, דירות שנמכרו או עמודי קטגוריה.',
+    color: 'bg-sky-100 text-sky-800'
+  },
+  'PROFESSIONAL_DIRECTORY': {
+    label: 'אינדקס בעלי מקצוע / חברות',
+    description: 'קטלוגים, דירוגים ואינדקסים של אנשי מקצוע, חברות, יזמים, קבלנים, סוכנויות או משקיעים.',
+    color: 'bg-amber-100 text-amber-800'
+  },
+  'OFFICIAL_REPORT_OR_DOCUMENT': {
+    label: 'דוח / מסמך רשמי',
+    description: 'דוחות רשמיים, PDF, מסמכים ממשלתיים, רגולטוריים, משפטיים, מוסדיים או דיווחים פורמליים.',
+    color: 'bg-slate-100 text-slate-800'
+  },
+  'OFFICIAL_PUBLICATION_OR_DATA_INDEX': {
+    label: 'אינדקס רשמי / מאגר נתונים',
+    description: 'אינדקס פרסומים רשמיים, פורטל ממשלתי או סטטיסטי, מאגר נתונים או רשימת דוחות ודאטה.',
+    color: 'bg-gray-100 text-gray-800'
+  },
+  'DATA_TABLE_OR_BENCHMARK': {
+    label: 'טבלת נתונים / מדד השוואתי',
+    description: 'טבלאות נתונים, מדדים, דירוגים, מחשבונים, טבלאות תשואה או מחירים ודאטה מובנה להשוואה.',
+    color: 'bg-emerald-100 text-emerald-800'
+  },
+  'OPINION_COLUMN': {
+    label: 'טור דעה',
+    description: 'טורי דעה, פרשנות אישית, נקודת מבט מומחה או מאמרים סובייקטיביים.',
+    color: 'bg-rose-100 text-rose-800'
+  },
+  'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': {
+    label: 'מאמר בלוג / תוכן ממותג',
+    description: 'פוסטים בבלוג, תוכן ממומן, מאמרים מקצועיים או תוכן חינוכי שמפורסם מטעם חברה או מותג.',
+    color: 'bg-orange-100 text-orange-800'
+  },
+  'SOCIAL_OR_COMMUNITY_PAGE': {
+    label: 'רשת חברתית / קהילה',
+    description: 'פוסטים ברשתות חברתיות, קבוצות, פורומים, דיונים קהילתיים או עמודים חברתיים סגורים.',
+    color: 'bg-pink-100 text-pink-800'
+  },
+  'REFERENCE_ENTRY': {
+    label: 'ערך מידע / מילון',
+    description: 'ערכי מילון, אנציקלופדיה, גלוסרי, ויקי או עמודי רפרנס עובדתיים.',
+    color: 'bg-lime-100 text-lime-800'
+  },
+  'PROJECT_OR_SERVICE_PAGE': {
+    label: 'עמוד פרויקט / שירות',
+    description: 'עמודי פרויקט, שירות, מוצר, אודות, מידע אזורי או הצעה מסחרית שאינם דף בית.',
+    color: 'bg-violet-100 text-violet-800'
+  }
+}
+
 // Helper to format category labels to Title case
 const formatCategoryLabel = (category: string): string => {
+  if (REAL_ESTATE_CONTENT_CATEGORY_INFO[category]) {
+    return REAL_ESTATE_CONTENT_CATEGORY_INFO[category].label
+  }
+
   const labels: Record<string, string> = {
     // New 11-category system
     'OFFICIAL_DOCS': 'Official docs',
@@ -45,6 +127,23 @@ const formatCategoryLabel = (category: string): string => {
     'VIDEO_CONTENT': 'Video content',
     'OTHER_LOW_CONFIDENCE': 'Other (low confidence)',
     'UNCLASSIFIED': 'Unclassified',
+
+    // Israeli real estate content/page format system
+    'MARKET_ANALYSIS_ARTICLE': 'מאמר ניתוח שוק',
+    'NEWS_ARTICLE': 'כתבה חדשותית',
+    'LONG_FORM_GUIDE': 'מדריך עומק / מאמר הסבר',
+    'HOMEPAGE_COMMERCIAL_GATEWAY': 'דף בית / שער מסחרי',
+    'SEARCH_LISTINGS_PLATFORM': 'פלטפורמת חיפוש נכסים',
+    'FILTERED_RESULTS_OR_LISTING_INDEX': 'עמוד תוצאות / אינדקס נכסים',
+    'PROFESSIONAL_DIRECTORY': 'אינדקס בעלי מקצוע / חברות',
+    'OFFICIAL_REPORT_OR_DOCUMENT': 'דוח / מסמך רשמי',
+    'OFFICIAL_PUBLICATION_OR_DATA_INDEX': 'אינדקס רשמי / מאגר נתונים',
+    'DATA_TABLE_OR_BENCHMARK': 'טבלת נתונים / מדד השוואתי',
+    'OPINION_COLUMN': 'טור דעה',
+    'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': 'מאמר בלוג / תוכן ממותג',
+    'SOCIAL_OR_COMMUNITY_PAGE': 'רשת חברתית / קהילה',
+    'REFERENCE_ENTRY': 'ערך מידע / מילון',
+    'PROJECT_OR_SERVICE_PAGE': 'עמוד פרויקט / שירות',
     
     // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Q&A or FAQ block',
@@ -80,6 +179,83 @@ const formatCategoryLabel = (category: string): string => {
 }
 
 const CONTENT_CATEGORY_INFO: Record<string, { label: string; description: string; color: string }> = {
+  // Israeli real estate content/page format system
+  'MARKET_ANALYSIS_ARTICLE': {
+    label: formatCategoryLabel('MARKET_ANALYSIS_ARTICLE'),
+    description: 'מאמרים אנליטיים, סקירות שוק, תחזיות, ניתוח עסקאות או פרשנות כלכלית.',
+    color: 'bg-teal-100 text-teal-800'
+  },
+  'NEWS_ARTICLE': {
+    label: formatCategoryLabel('NEWS_ARTICLE'),
+    description: 'כתבות מערכתיות המדווחות על אירועים, נתונים, רגולציה, עסקאות או עדכוני שוק.',
+    color: 'bg-cyan-100 text-cyan-800'
+  },
+  'LONG_FORM_GUIDE': {
+    label: formatCategoryLabel('LONG_FORM_GUIDE'),
+    description: 'מדריכים, מאמרי הסבר, how-to, מדריכים משפטיים, מדריכי מס, רכישה או מחירים.',
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  'HOMEPAGE_COMMERCIAL_GATEWAY': {
+    label: formatCategoryLabel('HOMEPAGE_COMMERCIAL_GATEWAY'),
+    description: 'דפי בית או שערים מסחריים של חברות, סוכנויות, יזמים, מרקטפלייסים או נותני שירות.',
+    color: 'bg-purple-100 text-purple-800'
+  },
+  'SEARCH_LISTINGS_PLATFORM': {
+    label: formatCategoryLabel('SEARCH_LISTINGS_PLATFORM'),
+    description: 'עמודי כניסה לפלטפורמות שבהן משתמשים מחפשים או מגלים נכסים, פרויקטים, חברות או שירותים.',
+    color: 'bg-blue-100 text-blue-800'
+  },
+  'FILTERED_RESULTS_OR_LISTING_INDEX': {
+    label: formatCategoryLabel('FILTERED_RESULTS_OR_LISTING_INDEX'),
+    description: 'תוצאות חיפוש, אינדקסים, רשימות פרויקטים, מלאי נכסים, דירות שנמכרו או עמודי קטגוריה.',
+    color: 'bg-sky-100 text-sky-800'
+  },
+  'PROFESSIONAL_DIRECTORY': {
+    label: formatCategoryLabel('PROFESSIONAL_DIRECTORY'),
+    description: 'קטלוגים, דירוגים ואינדקסים של אנשי מקצוע, חברות, יזמים, קבלנים, סוכנויות או משקיעים.',
+    color: 'bg-amber-100 text-amber-800'
+  },
+  'OFFICIAL_REPORT_OR_DOCUMENT': {
+    label: formatCategoryLabel('OFFICIAL_REPORT_OR_DOCUMENT'),
+    description: 'דוחות רשמיים, PDF, מסמכים ממשלתיים, רגולטוריים, משפטיים, מוסדיים או דיווחים פורמליים.',
+    color: 'bg-slate-100 text-slate-800'
+  },
+  'OFFICIAL_PUBLICATION_OR_DATA_INDEX': {
+    label: formatCategoryLabel('OFFICIAL_PUBLICATION_OR_DATA_INDEX'),
+    description: 'אינדקס פרסומים רשמיים, פורטל ממשלתי/סטטיסטי, מאגר נתונים או רשימת דוחות ודאטה.',
+    color: 'bg-gray-100 text-gray-800'
+  },
+  'DATA_TABLE_OR_BENCHMARK': {
+    label: formatCategoryLabel('DATA_TABLE_OR_BENCHMARK'),
+    description: 'טבלאות נתונים, מדדים, דירוגים, מחשבונים, טבלאות תשואה/מחירים או דאטה מובנה להשוואה.',
+    color: 'bg-emerald-100 text-emerald-800'
+  },
+  'OPINION_COLUMN': {
+    label: formatCategoryLabel('OPINION_COLUMN'),
+    description: 'טורי דעה, פרשנות אישית, נקודת מבט מומחה או מאמרים סובייקטיביים.',
+    color: 'bg-rose-100 text-rose-800'
+  },
+  'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': {
+    label: formatCategoryLabel('BRANDED_BLOG_OR_COMMERCIAL_ARTICLE'),
+    description: 'פוסטים בבלוג, תוכן ממומן, מאמרים מקצועיים או תוכן חינוכי שמפורסם מטעם חברה/מותג.',
+    color: 'bg-orange-100 text-orange-800'
+  },
+  'SOCIAL_OR_COMMUNITY_PAGE': {
+    label: formatCategoryLabel('SOCIAL_OR_COMMUNITY_PAGE'),
+    description: 'פוסטים ברשתות חברתיות, קבוצות, פורומים, דיונים קהילתיים או עמודים חברתיים סגורים.',
+    color: 'bg-pink-100 text-pink-800'
+  },
+  'REFERENCE_ENTRY': {
+    label: formatCategoryLabel('REFERENCE_ENTRY'),
+    description: 'ערכי מילון, אנציקלופדיה, גלוסרי, ויקי או עמודי רפרנס עובדתיים.',
+    color: 'bg-lime-100 text-lime-800'
+  },
+  'PROJECT_OR_SERVICE_PAGE': {
+    label: formatCategoryLabel('PROJECT_OR_SERVICE_PAGE'),
+    description: 'עמודי פרויקט, שירות, מוצר, אודות, מידע אזורי או הצעה מסחרית שאינם דף בית.',
+    color: 'bg-violet-100 text-violet-800'
+  },
+
   // New 11-category system
   'OFFICIAL_DOCS': {
     label: formatCategoryLabel('OFFICIAL_DOCS'),
@@ -378,7 +554,7 @@ export function ContentStructureTable({ data, isLoading }: ContentStructureTable
             </TableHeader>
             <TableBody>
               {data.map((category) => {
-                const info = CONTENT_CATEGORY_INFO[category.category] || {
+                const info = REAL_ESTATE_CONTENT_CATEGORY_INFO[category.category] || CONTENT_CATEGORY_INFO[category.category] || {
                   label: formatCategoryLabel(category.category),
                   description: `${formatCategoryLabel(category.category)} content type.`,
                   color: 'bg-gray-100 text-gray-800'

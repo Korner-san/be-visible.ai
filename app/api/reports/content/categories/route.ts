@@ -22,6 +22,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Brand ID required' }, { status: 400 })
     }
 
+    const { data: brand } = await supabase
+      .from('brands')
+      .select('id, user_business_type')
+      .eq('id', brandId)
+      .single()
+
+    const useBrandContentOverrides = brand?.user_business_type === 'real_estate_israel'
+
     // Get all prompt results for this brand within date range
     // First get the daily report IDs that match our criteria
     let dailyReportsQuery = supabase
@@ -243,6 +251,37 @@ export async function GET(request: NextRequest) {
     
     console.log(`📊 [CONTENT API] URL classification map size: ${urlClassificationMap.size} (from ${urlData.length} records)`)
     
+    if (useBrandContentOverrides) {
+      const overrideRows: any[] = []
+
+      for (let i = 0; i < urlIds.length; i += BATCH_SIZE) {
+        const batch = urlIds.slice(i, i + BATCH_SIZE)
+        const { data: batchOverrides, error: overrideError } = await supabase
+          .from('brand_url_content_facts')
+          .select('url_id, content_structure_category, classified_at')
+          .eq('brand_id', brandId)
+          .in('url_id', batch)
+
+        if (overrideError) {
+          console.warn(`ג ן¸ [CONTENT API] Brand content overrides unavailable:`, overrideError.message)
+          break
+        }
+
+        if (batchOverrides) overrideRows.push(...batchOverrides)
+      }
+
+      overrideRows.forEach((override: any) => {
+        if (override.content_structure_category) {
+          urlClassificationMap.set(override.url_id, {
+            content_structure_category: override.content_structure_category,
+            extracted_at: override.classified_at
+          })
+        }
+      })
+
+      console.log(`[CONTENT API] Applied ${overrideRows.length} Israeli real estate content overrides`)
+    }
+
     // Build citation timeline for first-cited and classification timing analysis
     const citationTimeline: Record<string, {
       urlId: number

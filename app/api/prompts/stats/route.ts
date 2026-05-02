@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
 
     const { data: brand } = await supabase
       .from('brands')
-      .select('id, name, domain, owner_user_id')
+      .select('id, name, domain, owner_user_id, user_business_type')
       .eq('id', brandId)
       .single()
     if (!brand || brand.owner_user_id !== user.id) {
@@ -99,6 +99,7 @@ export async function GET(request: NextRequest) {
     const brandDomain = brand.domain
       ? brand.domain.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]
       : null
+    const useBrandContentOverrides = brand.user_business_type === 'real_estate_israel'
 
     const selectedModels = modelsParam?.split(',').filter(Boolean).length
       ? modelsParam!.split(',').filter(Boolean)
@@ -222,6 +223,23 @@ export async function GET(request: NextRequest) {
         })
 
         // result_id → brand_prompt_id lookup
+        if (useBrandContentOverrides) {
+          const { data: brandContentFacts, error: brandFactsError } = await serviceClient
+            .from('brand_url_content_facts')
+            .select('url_id, content_structure_category')
+            .eq('brand_id', brandId)
+            .in('url_id', allUrlIds)
+            .not('content_structure_category', 'is', null)
+
+          if (brandFactsError) {
+            console.warn('[prompts/stats] Brand content overrides unavailable:', brandFactsError.message)
+          } else {
+            ;(brandContentFacts || []).forEach((f: any) => {
+              if (f.content_structure_category) urlCategoryMap.set(f.url_id, f.content_structure_category)
+            })
+          }
+        }
+
         const resultPromptMap = new Map<string, string>()
         ;(results || []).forEach((r: any) => resultPromptMap.set(r.id, r.brand_prompt_id))
 

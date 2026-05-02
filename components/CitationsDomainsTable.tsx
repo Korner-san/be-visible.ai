@@ -8,10 +8,50 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ScopeModal } from "./ScopeModal"
 
+const REAL_ESTATE_CONTENT_TYPE_LABELS: Record<string, string> = {
+  'MARKET_ANALYSIS_ARTICLE': 'מאמר ניתוח שוק',
+  'NEWS_ARTICLE': 'כתבה חדשותית',
+  'LONG_FORM_GUIDE': 'מדריך עומק / מאמר הסבר',
+  'HOMEPAGE_COMMERCIAL_GATEWAY': 'דף בית / שער מסחרי',
+  'SEARCH_LISTINGS_PLATFORM': 'פלטפורמת חיפוש נכסים',
+  'FILTERED_RESULTS_OR_LISTING_INDEX': 'עמוד תוצאות / אינדקס נכסים',
+  'PROFESSIONAL_DIRECTORY': 'אינדקס בעלי מקצוע / חברות',
+  'OFFICIAL_REPORT_OR_DOCUMENT': 'דוח / מסמך רשמי',
+  'OFFICIAL_PUBLICATION_OR_DATA_INDEX': 'אינדקס רשמי / מאגר נתונים',
+  'DATA_TABLE_OR_BENCHMARK': 'טבלת נתונים / מדד השוואתי',
+  'OPINION_COLUMN': 'טור דעה',
+  'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': 'מאמר בלוג / תוכן ממותג',
+  'SOCIAL_OR_COMMUNITY_PAGE': 'רשת חברתית / קהילה',
+  'REFERENCE_ENTRY': 'ערך מידע / מילון',
+  'PROJECT_OR_SERVICE_PAGE': 'עמוד פרויקט / שירות'
+}
+
+const REAL_ESTATE_CONTENT_TYPE_DESCRIPTIONS: Record<string, string> = {
+  'MARKET_ANALYSIS_ARTICLE': 'מאמרים אנליטיים, סקירות שוק, תחזיות, ניתוח עסקאות או פרשנות כלכלית.',
+  'NEWS_ARTICLE': 'כתבות מערכתיות המדווחות על אירועים, נתונים, רגולציה, עסקאות או עדכוני שוק.',
+  'LONG_FORM_GUIDE': 'מדריכים, מאמרי הסבר, מדריכים משפטיים, מדריכי מס, רכישה או מחירים.',
+  'HOMEPAGE_COMMERCIAL_GATEWAY': 'דפי בית או שערים מסחריים של חברות, סוכנויות, יזמים, מרקטפלייסים או נותני שירות.',
+  'SEARCH_LISTINGS_PLATFORM': 'עמודי כניסה לפלטפורמות שבהן משתמשים מחפשים או מגלים נכסים, פרויקטים, חברות או שירותים.',
+  'FILTERED_RESULTS_OR_LISTING_INDEX': 'תוצאות חיפוש, אינדקסים, רשימות פרויקטים, מלאי נכסים, דירות שנמכרו או עמודי קטגוריה.',
+  'PROFESSIONAL_DIRECTORY': 'קטלוגים, דירוגים ואינדקסים של אנשי מקצוע, חברות, יזמים, קבלנים, סוכנויות או משקיעים.',
+  'OFFICIAL_REPORT_OR_DOCUMENT': 'דוחות רשמיים, PDF, מסמכים ממשלתיים, רגולטוריים, משפטיים, מוסדיים או דיווחים פורמליים.',
+  'OFFICIAL_PUBLICATION_OR_DATA_INDEX': 'אינדקס פרסומים רשמיים, פורטל ממשלתי או סטטיסטי, מאגר נתונים או רשימת דוחות ודאטה.',
+  'DATA_TABLE_OR_BENCHMARK': 'טבלאות נתונים, מדדים, דירוגים, מחשבונים, טבלאות תשואה או מחירים ודאטה מובנה להשוואה.',
+  'OPINION_COLUMN': 'טורי דעה, פרשנות אישית, נקודת מבט מומחה או מאמרים סובייקטיביים.',
+  'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': 'פוסטים בבלוג, תוכן ממומן, מאמרים מקצועיים או תוכן חינוכי שמפורסם מטעם חברה או מותג.',
+  'SOCIAL_OR_COMMUNITY_PAGE': 'פוסטים ברשתות חברתיות, קבוצות, פורומים, דיונים קהילתיים או עמודים חברתיים סגורים.',
+  'REFERENCE_ENTRY': 'ערכי מילון, אנציקלופדיה, גלוסרי, ויקי או עמודי רפרנס עובדתיים.',
+  'PROJECT_OR_SERVICE_PAGE': 'עמודי פרויקט, שירות, מוצר, אודות, מידע אזורי או הצעה מסחרית שאינם דף בית.'
+}
+
 // Category label formatters
 
 const formatContentType = (category: string | null | undefined): string => {
   if (!category) return 'Not categorized yet'
+
+  if (REAL_ESTATE_CONTENT_TYPE_LABELS[category]) {
+    return REAL_ESTATE_CONTENT_TYPE_LABELS[category]
+  }
   
   // Specific mappings for known categories
   const labels: Record<string, string> = {
@@ -27,6 +67,23 @@ const formatContentType = (category: string | null | undefined): string => {
     'COMMUNITY_DISCUSSION': 'Community discussion',
     'VIDEO_CONTENT': 'Video content',
     'OTHER_LOW_CONFIDENCE': 'Other (low confidence)',
+
+    // Israeli real estate content/page format system
+    'MARKET_ANALYSIS_ARTICLE': 'מאמר ניתוח שוק',
+    'NEWS_ARTICLE': 'כתבה חדשותית',
+    'LONG_FORM_GUIDE': 'מדריך עומק / מאמר הסבר',
+    'HOMEPAGE_COMMERCIAL_GATEWAY': 'דף בית / שער מסחרי',
+    'SEARCH_LISTINGS_PLATFORM': 'פלטפורמת חיפוש נכסים',
+    'FILTERED_RESULTS_OR_LISTING_INDEX': 'עמוד תוצאות / אינדקס נכסים',
+    'PROFESSIONAL_DIRECTORY': 'אינדקס בעלי מקצוע / חברות',
+    'OFFICIAL_REPORT_OR_DOCUMENT': 'דוח / מסמך רשמי',
+    'OFFICIAL_PUBLICATION_OR_DATA_INDEX': 'אינדקס רשמי / מאגר נתונים',
+    'DATA_TABLE_OR_BENCHMARK': 'טבלת נתונים / מדד השוואתי',
+    'OPINION_COLUMN': 'טור דעה',
+    'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': 'מאמר בלוג / תוכן ממותג',
+    'SOCIAL_OR_COMMUNITY_PAGE': 'רשת חברתית / קהילה',
+    'REFERENCE_ENTRY': 'ערך מידע / מילון',
+    'PROJECT_OR_SERVICE_PAGE': 'עמוד פרויקט / שירות',
     
     // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Q&A or FAQ block',
@@ -66,6 +123,10 @@ const formatContentType = (category: string | null | undefined): string => {
 
 const getContentTypeDescription = (category: string | null | undefined): string => {
   if (!category) return 'This content has not been categorized yet.'
+
+  if (REAL_ESTATE_CONTENT_TYPE_DESCRIPTIONS[category]) {
+    return REAL_ESTATE_CONTENT_TYPE_DESCRIPTIONS[category]
+  }
   
   const descriptions: Record<string, string> = {
     // New 11-category system
@@ -80,6 +141,23 @@ const getContentTypeDescription = (category: string | null | undefined): string 
     'COMMUNITY_DISCUSSION': 'Informal discussions, Q&A threads, Reddit/HN/SO style content.',
     'VIDEO_CONTENT': 'Video-first educational or narrative media content.',
     'OTHER_LOW_CONFIDENCE': 'Use ONLY when all other categories score below 0.45.',
+
+    // Israeli real estate content/page format system
+    'MARKET_ANALYSIS_ARTICLE': 'מאמרים אנליטיים, סקירות שוק, תחזיות, ניתוח עסקאות או פרשנות כלכלית.',
+    'NEWS_ARTICLE': 'כתבות מערכתיות המדווחות על אירועים, נתונים, רגולציה, עסקאות או עדכוני שוק.',
+    'LONG_FORM_GUIDE': 'מדריכים, מאמרי הסבר, how-to, מדריכים משפטיים, מדריכי מס, רכישה או מחירים.',
+    'HOMEPAGE_COMMERCIAL_GATEWAY': 'דפי בית או שערים מסחריים של חברות, סוכנויות, יזמים, מרקטפלייסים או נותני שירות.',
+    'SEARCH_LISTINGS_PLATFORM': 'עמודי כניסה לפלטפורמות שבהן משתמשים מחפשים או מגלים נכסים, פרויקטים, חברות או שירותים.',
+    'FILTERED_RESULTS_OR_LISTING_INDEX': 'תוצאות חיפוש, אינדקסים, רשימות פרויקטים, מלאי נכסים, דירות שנמכרו או עמודי קטגוריה.',
+    'PROFESSIONAL_DIRECTORY': 'קטלוגים, דירוגים ואינדקסים של אנשי מקצוע, חברות, יזמים, קבלנים, סוכנויות או משקיעים.',
+    'OFFICIAL_REPORT_OR_DOCUMENT': 'דוחות רשמיים, PDF, מסמכים ממשלתיים, רגולטוריים, משפטיים, מוסדיים או דיווחים פורמליים.',
+    'OFFICIAL_PUBLICATION_OR_DATA_INDEX': 'אינדקס פרסומים רשמיים, פורטל ממשלתי/סטטיסטי, מאגר נתונים או רשימת דוחות ודאטה.',
+    'DATA_TABLE_OR_BENCHMARK': 'טבלאות נתונים, מדדים, דירוגים, מחשבונים, טבלאות תשואה/מחירים או דאטה מובנה להשוואה.',
+    'OPINION_COLUMN': 'טורי דעה, פרשנות אישית, נקודת מבט מומחה או מאמרים סובייקטיביים.',
+    'BRANDED_BLOG_OR_COMMERCIAL_ARTICLE': 'פוסטים בבלוג, תוכן ממומן, מאמרים מקצועיים או תוכן חינוכי שמפורסם מטעם חברה/מותג.',
+    'SOCIAL_OR_COMMUNITY_PAGE': 'פוסטים ברשתות חברתיות, קבוצות, פורומים, דיונים קהילתיים או עמודים חברתיים סגורים.',
+    'REFERENCE_ENTRY': 'ערכי מילון, אנציקלופדיה, גלוסרי, ויקי או עמודי רפרנס עובדתיים.',
+    'PROJECT_OR_SERVICE_PAGE': 'עמודי פרויקט, שירות, מוצר, אודות, מידע אזורי או הצעה מסחרית שאינם דף בית.',
     
     // Old 8-category system (backward compatibility)
     'QA_BLOCK': 'Short, structured text designed to answer a single question. Commonly found in FAQ or glossary sections. Often uses schema such as "FAQPage" or "HowTo" for direct extraction by AI models.',

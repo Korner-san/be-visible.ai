@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     // Verify brand exists (service client bypasses RLS)
     const { data: brand, error: brandError } = await supabase
       .from('brands')
-      .select('id, name')
+      .select('id, name, user_business_type')
       .eq('id', brandId)
       .single()
 
@@ -149,9 +149,24 @@ export async function GET(request: NextRequest) {
         console.log(`✅ [URLs API] Successfully enriched ${urlData.url} via ${matchedVariation}`)
       }
       
+      let contentStructureCategory = categoryData?.url_content_facts?.content_structure_category || null
+
+      if (brand.user_business_type === 'real_estate_israel' && categoryData?.id) {
+        const { data: override } = await supabase
+          .from('brand_url_content_facts')
+          .select('content_structure_category')
+          .eq('brand_id', brandId)
+          .eq('url_id', categoryData.id)
+          .maybeSingle()
+
+        if (override?.content_structure_category) {
+          contentStructureCategory = override.content_structure_category
+        }
+      }
+
       return {
         ...urlData,
-        content_structure_category: categoryData?.url_content_facts?.content_structure_category || null
+        content_structure_category: contentStructureCategory
       }
     }))
 
