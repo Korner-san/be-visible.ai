@@ -34,6 +34,21 @@ const CATEGORY_LABELS: Record<string, string> = {
   VIDEO_CONTENT: 'Video content',
   OTHER_LOW_CONFIDENCE: 'Other',
   UNCLASSIFIED: 'Unclassified',
+  MARKET_ANALYSIS_ARTICLE: 'מאמר ניתוח שוק',
+  NEWS_ARTICLE: 'כתבה חדשותית',
+  LONG_FORM_GUIDE: 'מדריך עומק / מאמר הסבר',
+  HOMEPAGE_COMMERCIAL_GATEWAY: 'דף בית / שער מסחרי',
+  SEARCH_LISTINGS_PLATFORM: 'פלטפורמת חיפוש נכסים',
+  FILTERED_RESULTS_OR_LISTING_INDEX: 'עמוד תוצאות / אינדקס נכסים',
+  PROFESSIONAL_DIRECTORY: 'אינדקס בעלי מקצוע / חברות',
+  OFFICIAL_REPORT_OR_DOCUMENT: 'דוח / מסמך רשמי',
+  OFFICIAL_PUBLICATION_OR_DATA_INDEX: 'אינדקס רשמי / מאגר נתונים',
+  DATA_TABLE_OR_BENCHMARK: 'טבלת נתונים / מדד השוואתי',
+  OPINION_COLUMN: 'טור דעה',
+  BRANDED_BLOG_OR_COMMERCIAL_ARTICLE: 'מאמר בלוג / תוכן ממותג',
+  SOCIAL_OR_COMMUNITY_PAGE: 'רשת חברתית / קהילה',
+  REFERENCE_ENTRY: 'ערך מידע / מילון',
+  PROJECT_OR_SERVICE_PAGE: 'עמוד פרויקט / שירות',
 };
 
 // Map DB category keys to icons
@@ -50,6 +65,21 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   VIDEO_CONTENT: <Video size={14} />,
   OTHER_LOW_CONFIDENCE: <HelpCircle size={14} />,
   UNCLASSIFIED: <AlertTriangle size={14} />,
+  MARKET_ANALYSIS_ARTICLE: <BookOpen size={14} />,
+  NEWS_ARTICLE: <Newspaper size={14} />,
+  LONG_FORM_GUIDE: <List size={14} />,
+  HOMEPAGE_COMMERCIAL_GATEWAY: <ShoppingBag size={14} />,
+  SEARCH_LISTINGS_PLATFORM: <FileText size={14} />,
+  FILTERED_RESULTS_OR_LISTING_INDEX: <FileText size={14} />,
+  PROFESSIONAL_DIRECTORY: <Shield size={14} />,
+  OFFICIAL_REPORT_OR_DOCUMENT: <Shield size={14} />,
+  OFFICIAL_PUBLICATION_OR_DATA_INDEX: <Shield size={14} />,
+  DATA_TABLE_OR_BENCHMARK: <FileText size={14} />,
+  OPINION_COLUMN: <BookOpen size={14} />,
+  BRANDED_BLOG_OR_COMMERCIAL_ARTICLE: <FileText size={14} />,
+  SOCIAL_OR_COMMUNITY_PAGE: <MessageCircle size={14} />,
+  REFERENCE_ENTRY: <BookOpen size={14} />,
+  PROJECT_OR_SERVICE_PAGE: <ShoppingBag size={14} />,
 };
 
 const MOCK_DATA: ContentTypeData[] = [
