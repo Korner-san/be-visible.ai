@@ -85,6 +85,7 @@ function AppContent() {
   const [dashboardKey, setDashboardKey] = useState(0);
   const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt', 'google_ai_overview', 'claude']);
   const [promptsLoading, setPromptsLoading] = useState(false);
+  const [promptLimit, setPromptLimit] = useState(50);
 
   // Load competitors from DB when brand is known
   useEffect(() => {
@@ -145,6 +146,9 @@ function AppContent() {
       // Fetch user's stored timezone (non-blocking — best effort)
       supabase.from('users').select('timezone').eq('id', user.id).single().then(({ data: userData }) => {
         if (userData?.timezone) setUserTimezone(userData.timezone);
+      });
+      supabase.rpc('get_active_prompt_limit', { p_user_id: user.id }).then(({ data }) => {
+        setPromptLimit(Number(data) || 50);
       });
 
       const { data: brandsData, error } = await supabase
@@ -479,7 +483,7 @@ function AppContent() {
       case 'Citations':
         return <CitationsPage onNavigateToAcademy={handleNavigateToAcademy} brandId={activeBrandId} timeRange={timeRange} customDateRange={customFrom && customTo ? { from: customFrom, to: customTo } : undefined} selectedModels={selectedModels} />;
       case 'Prompts':
-        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} isLoading={promptsLoading} />;
+        return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} isLoading={promptsLoading} promptLimit={promptLimit} />;
       case 'Improve':
         return <ImprovePage />;
       case 'Integrations':

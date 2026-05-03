@@ -44,6 +44,7 @@ interface PromptsPageProps {
   selectedModels?: string[];
   customDateRange?: { from: string; to: string };
   isLoading?: boolean;
+  promptLimit?: number;
 }
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
@@ -262,7 +263,7 @@ const MentionBadge = ({ tone, label }: { tone: 'positive' | 'negative' | 'neutra
   );
 };
 
-export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange, isLoading }) => {
+export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange, isLoading, promptLimit = 50 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
@@ -277,6 +278,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
   
   const brandTerracotta = '#874B34';
   const brandBrown = '#2C1308';
+  const activePromptCount = prompts.filter(prompt => prompt.isActive).length;
+  const totalPromptCount = prompts.length;
 
   // Reset popup days when entity changes, fetch fresh stats
   useEffect(() => {
@@ -771,13 +774,26 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <button 
-            onClick={onNavigateToManage}
-            className="flex items-center gap-2 px-5 py-2.5 border-2 border-brand-brown text-brand-brown rounded-xl text-sm font-black hover:bg-brand-brown hover:text-white transition-all shadow-sm"
-          >
-            <Settings size={18} />
-            Manage prompts
-          </button>
+          <div className="flex w-full md:w-auto flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
+              <Database size={16} className="text-slate-400" />
+              <span className="text-xs font-black tabular-nums whitespace-nowrap">
+                {activePromptCount} / {promptLimit} active
+              </span>
+              {totalPromptCount !== activePromptCount && (
+                <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">
+                  {totalPromptCount} total
+                </span>
+              )}
+            </div>
+            <button
+              onClick={onNavigateToManage}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 border-2 border-brand-brown text-brand-brown rounded-xl text-sm font-black hover:bg-brand-brown hover:text-white transition-all shadow-sm"
+            >
+              <Settings size={18} />
+              Manage prompts
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
