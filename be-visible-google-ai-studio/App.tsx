@@ -217,6 +217,7 @@ function AppContent() {
         .from('brand_prompts')
         .select('id, raw_prompt, improved_prompt, category, status, is_active, created_at')
         .eq('brand_id', activeBrandId)
+        .is('deleted_at', null)
         .order('category')
         .order('created_at');
 

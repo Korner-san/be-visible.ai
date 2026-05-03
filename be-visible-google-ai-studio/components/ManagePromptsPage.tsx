@@ -346,7 +346,7 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
               <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-2">What will happen on save</p>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-                <p className="text-sm text-slate-600 leading-snug">These prompts will be permanently removed from your library.</p>
+                <p className="text-sm text-slate-600 leading-snug">These prompts will be removed from your library and kept inactive for future runs.</p>
               </div>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />

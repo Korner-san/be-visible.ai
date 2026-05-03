@@ -212,6 +212,7 @@ async function runQueueOrganizer() {
         .select('id', { count: 'exact', head: true })
         .eq('brand_id', brand.id)
         .eq('status', 'inactive')
+        .is('deleted_at', null)
         .in('onboarding_wave', [1, 2]);
 
       if (inactiveOnboardingPrompts > 0) {
@@ -688,6 +689,7 @@ async function activateAllowedPromptsForBrand(brandId) {
     .from('brand_prompts')
     .select('id, status, is_active, created_at')
     .eq('brand_id', brandId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true });
 
   if (promptsErr) {
@@ -962,7 +964,8 @@ async function injectBrandIntoTomorrowSchedule(brand) {
       .from('brand_prompts')
       .select('id')
       .eq('brand_id', brand.id)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .is('deleted_at', null);
 
     if (!prompts || prompts.length === 0) {
       console.log('[INJECT] No active prompts for brand', brand.id.substring(0, 8), '— skipping');

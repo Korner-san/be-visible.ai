@@ -71,6 +71,7 @@ async function getActivePromptsForUser(userId) {
     .select('id, raw_prompt, improved_prompt, status')
     .eq('brand_id', brand.id)
     .eq('status', 'active')
+    .is('deleted_at', null)
     .order('created_at', { ascending: true });
 
   if (promptsError) {

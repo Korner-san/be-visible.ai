@@ -130,7 +130,9 @@ async function main() {
   const { data: prompts, error: promptError } = await supabase
     .from('brand_prompts')
     .select('id, improved_prompt, raw_prompt')
-    .in('id', promptIds);
+    .in('id', promptIds)
+    .eq('status', 'active')
+    .is('deleted_at', null);
 
   if (promptError || !prompts) throw new Error('Failed to load prompts: ' + promptError?.message);
 

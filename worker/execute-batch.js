@@ -173,6 +173,45 @@ async function spawnSessionReinit(accountId) {
   }
 }
 
+async function syncScheduleWithActivePrompts(schedule) {
+  const promptIds = Array.isArray(schedule.prompt_ids) ? schedule.prompt_ids : [];
+  if (!schedule.brand_id || promptIds.length === 0) return schedule;
+
+  const { data: activePrompts, error } = await supabase
+    .from('brand_prompts')
+    .select('id')
+    .eq('brand_id', schedule.brand_id)
+    .eq('status', 'active')
+    .is('deleted_at', null)
+    .in('id', promptIds);
+
+  if (error) {
+    console.warn('[BATCH] Could not validate active prompts before execution:', error.message);
+    return schedule;
+  }
+
+  const activeIds = new Set((activePrompts || []).map(p => p.id));
+  const filteredPromptIds = promptIds.filter(id => activeIds.has(id));
+
+  if (filteredPromptIds.length !== promptIds.length) {
+    console.log(`[BATCH] Manage Prompts sync removed ${promptIds.length - filteredPromptIds.length} inactive/deleted prompt(s) from this pending batch`);
+    await supabase
+      .from('daily_schedules')
+      .update({
+        prompt_ids: filteredPromptIds,
+        batch_size: filteredPromptIds.length,
+        error_message: filteredPromptIds.length === 0 ? 'Skipped: no active prompts remain after Manage Prompts sync' : null,
+      })
+      .eq('id', schedule.id);
+  }
+
+  return {
+    ...schedule,
+    prompt_ids: filteredPromptIds,
+    batch_size: filteredPromptIds.length,
+  };
+}
+
 async function executeBatch() {
   const startTime = new Date();
 
@@ -186,7 +225,7 @@ async function executeBatch() {
   try {
     // 1. Fetch schedule from database
     console.log('📊 Loading schedule from database...');
-    const { data: schedule, error } = await supabase
+    let { data: schedule, error } = await supabase
       .from('daily_schedules')
       .select('*')
       .eq('id', scheduleId)
@@ -202,6 +241,27 @@ async function executeBatch() {
     console.log(`   Batch Size: ${schedule.batch_size}`);
     console.log(`   User ID: ${schedule.user_id}`);
     console.log(`   Status: ${schedule.status}`);
+
+    schedule = await syncScheduleWithActivePrompts(schedule);
+    if (schedule.prompt_ids && schedule.prompt_ids.length === 0) {
+      console.log('[BATCH] No active prompts remain in this batch after Manage Prompts sync. Marking completed.');
+      await supabase
+        .from('daily_schedules')
+        .update({
+          status: 'completed',
+          completed_at: startTime.toISOString(),
+          batch_size: 0,
+          error_message: 'Skipped: no active prompts remain after Manage Prompts sync',
+        })
+        .eq('id', scheduleId);
+      await upsertBME(scheduleId, 'chatgpt', {
+        status: 'skipped',
+        completed_at: startTime.toISOString(),
+        prompts_attempted: 0,
+        prompts_ok: 0,
+      });
+      process.exit(0);
+    }
 
     // 2. Check if already running/completed
     if (schedule.status === 'running') {
