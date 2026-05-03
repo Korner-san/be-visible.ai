@@ -118,7 +118,14 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
         );
       }
 
-      if ((data.insertedAsInactive || []).length > 0) setInactiveNotice(data.insertedAsInactive.length);
+      for (const { id, isActive } of (data.updated || [])) {
+        finalPrompts = finalPrompts.map(p =>
+          p.id === id ? { ...p, isActive: isActive ?? p.isActive } : p
+        );
+      }
+
+      const inactiveDowngradeCount = (data.insertedAsInactive || []).length + (data.updatedAsInactive || []).length;
+      if (inactiveDowngradeCount > 0) setInactiveNotice(inactiveDowngradeCount);
       if (duplicateSet.size > 0) setDuplicateNotice(duplicateSet.size);
 
       // Sync snapshot + parent state

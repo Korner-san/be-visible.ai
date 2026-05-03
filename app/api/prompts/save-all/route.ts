@@ -169,6 +169,8 @@ export async function POST(request: NextRequest) {
     const skippedDuplicates: string[] = []
     const insertedAsInactive: string[] = []
     const added: Array<{ tempId: string; id: string; isActive: boolean }> = []
+    const updated: Array<{ id: string; isActive: boolean }> = []
+    const updatedAsInactive: string[] = []
 
     const validDeleteIds = toDelete.filter(id => existingById.has(id))
     if (validDeleteIds.length > 0) {
@@ -197,6 +199,7 @@ export async function POST(request: NextRequest) {
       const canBeActive = wantsActive && (wasActive || activeSlots > 0)
       const finalStatus = canBeActive ? 'active' : 'inactive'
       if (wantsActive && !wasActive && canBeActive) activeSlots -= 1
+      if (wantsActive && !wasActive && !canBeActive) updatedAsInactive.push(update.id)
 
       const { error } = await adminSupabase
         .from('brand_prompts')
@@ -213,6 +216,7 @@ export async function POST(request: NextRequest) {
 
       if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
       changedPromptIds.add(update.id)
+      updated.push({ id: update.id, isActive: finalStatus === 'active' })
     }
 
     const activeTexts = new Set(
@@ -267,8 +271,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       added,
+      updated,
       skippedDuplicates,
       insertedAsInactive,
+      updatedAsInactive,
       promptLimit,
     })
   } catch (error) {
