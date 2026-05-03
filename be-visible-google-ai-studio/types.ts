@@ -33,9 +33,11 @@ export enum TimeRange {
 export interface PromptHistoryPoint {
   date: string;
   visibility: number;
-  avgPosition: number;
+  avgPosition: number | null;
   citationShare: number;
-  mentions: number;
+  mentionRate: number;
+  mentionedCount?: number;
+  totalResults?: number;
 }
 
 export interface PromptStats {
@@ -44,8 +46,12 @@ export interface PromptStats {
   category: string;
   visibilityScore: number;
   visibilityTrend: number;
-  avgPosition: number;
+  avgPosition: number | null;
   mentionRate: number;
+  mentionedCount?: number;
+  totalResults?: number;
+  positionCount?: number;
+  positionSum?: number;
   citationShare: number;
   citations: number;
   citationTrend: number;
@@ -65,6 +71,9 @@ export interface PromptStats {
     promptText: string;
     response: string;
     mentioned: boolean;
+    position?: number | null;
+    provider?: string;
+    orderedEntities?: Array<{ name: string; position: number; type: string }>;
     citationCount: number;
     citations: string[];
     date: string;

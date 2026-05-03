@@ -101,12 +101,50 @@ const HeaderWithInfo = ({ title, info, align = 'right' }: { title: string, info:
   );
 };
 
+const formatPosition = (position: number | null | undefined): string => {
+  if (position == null || !Number.isFinite(Number(position)) || Number(position) <= 0) return '—';
+  const value = Number(position);
+  return `#${Number.isInteger(value) ? value : value.toFixed(1)}`;
+};
+
+const formatMentionSummary = (mentionedCount?: number, totalResults?: number): string => {
+  const mentioned = mentionedCount || 0;
+  const total = totalResults || 0;
+  if (total === 0) return 'No runs';
+  if (mentioned === 0) return 'Not mentioned';
+  if (mentioned === total) return 'Mentioned';
+  return `${mentioned}/${total} mentioned`;
+};
+
+const getMentionTone = (mentionedCount?: number, totalResults?: number): 'positive' | 'negative' | 'neutral' => {
+  const mentioned = mentionedCount || 0;
+  const total = totalResults || 0;
+  if (total === 0) return 'neutral';
+  return mentioned > 0 ? 'positive' : 'negative';
+};
+
+const MentionBadge = ({ tone, label }: { tone: 'positive' | 'negative' | 'neutral'; label: string }) => {
+  const styles = tone === 'positive'
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+    : tone === 'negative'
+      ? 'text-rose-600 bg-rose-50 border-rose-100'
+      : 'text-slate-400 bg-slate-50 border-slate-100';
+  const Icon = tone === 'positive' ? CheckCircle2 : tone === 'negative' ? XCircle : Clock;
+
+  return (
+    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${styles}`}>
+      <Icon size={11} />
+      <span className="text-[9px] font-black uppercase tracking-wider whitespace-nowrap">{label}</span>
+    </div>
+  );
+};
+
 export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange, isLoading }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<'Citation sources' | 'Ai preference' | 'Sample history'>('Citation sources');
-  const [activeChartMetric, setActiveChartMetric] = useState<MetricType>('visibility');
+  const [activeChartMetric, setActiveChartMetric] = useState<MetricType>('mentionRate');
   const [selectedRun, setSelectedRun] = useState<any | null>(null);
   // Popup-local date range (starts at global, can be overridden)
   const [popupDays, setPopupDays] = useState<number>(timeRangeDays);
@@ -147,8 +185,18 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             const ids = catPrompts.map((p: PromptStats) => p.id);
             const allStats = ids.map((id: string) => data.stats[id]).filter(Boolean);
             if (allStats.length === 0) { setPopupStats(null); return; }
+            const totalResults = allStats.reduce((s: number, x: any) => s + (x.totalResults || 0), 0);
+            const mentionedCount = allStats.reduce((s: number, x: any) => s + (x.mentionedCount || 0), 0);
+            const positionCount = allStats.reduce((s: number, x: any) => s + (x.positionCount || 0), 0);
+            const positionSum = allStats.reduce((s: number, x: any) => s + (x.positionSum || 0), 0);
             setPopupStats({
               visibilityScore: Math.round(allStats.reduce((s: number, x: any) => s + x.visibilityScore, 0) / allStats.length),
+              avgPosition: positionCount > 0 ? Number((positionSum / positionCount).toFixed(1)) : null,
+              mentionRate: totalResults > 0 ? Math.round((mentionedCount / totalResults) * 100) : 0,
+              mentionedCount,
+              totalResults,
+              positionCount,
+              positionSum,
               citationShare: Math.round(allStats.reduce((s: number, x: any) => s + x.citationShare, 0) / allStats.length),
               citations: allStats.reduce((s: number, x: any) => s + x.citations, 0),
               history: allStats[0]?.history || [],
@@ -180,7 +228,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
   const groupedPrompts = useMemo(() => {
     return filteredPrompts.reduce((acc, prompt) => {
       if (!acc[prompt.category]) {
-        acc[prompt.category] = { prompts: [], stats: { visibility: 0, position: 0, share: 0, trend: 0, citations: 0, citationTrend: 0 } };
+        acc[prompt.category] = { prompts: [], stats: { position: null, share: 0, trend: 0, citations: 0, citationTrend: 0, mentionedCount: 0, totalResults: 0, positionCount: 0, positionSum: 0 } };
       }
       acc[prompt.category].prompts.push(prompt);
       return acc;
@@ -193,17 +241,21 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     const group = groupedPrompts[cat];
     const count = group.prompts.length;
     if (count > 0) {
-      group.stats.visibility = Math.round(group.prompts.reduce((sum, p) => sum + p.visibilityScore, 0) / count);
-      group.stats.position = Number((group.prompts.reduce((sum, p) => sum + p.avgPosition, 0) / count).toFixed(1));
+      group.stats.mentionedCount = group.prompts.reduce((sum, p) => sum + (p.mentionedCount || 0), 0);
+      group.stats.totalResults = group.prompts.reduce((sum, p) => sum + (p.totalResults || 0), 0);
+      group.stats.positionCount = group.prompts.reduce((sum, p) => sum + (p.positionCount || 0), 0);
+      group.stats.positionSum = group.prompts.reduce((sum, p) => sum + (p.positionSum || 0), 0);
+      group.stats.position = group.stats.positionCount > 0
+        ? Number((group.stats.positionSum / group.stats.positionCount).toFixed(1))
+        : null;
       group.stats.share = Number((group.prompts.reduce((sum, p) => sum + p.citationShare, 0) / count).toFixed(1));
       group.stats.citations = group.prompts.reduce((sum, p) => sum + p.citations, 0);
-      group.stats.visibilityTrend = Number((group.prompts.reduce((sum, p) => sum + p.visibilityTrend, 0) / count).toFixed(1));
     }
   });
 
   const handleSelectPrompt = (prompt: PromptStats) => {
     setSelectedEntity({ type: 'prompt', data: prompt, displayName: prompt.text });
-    setActiveChartMetric('visibility');
+    setActiveChartMetric('mentionRate');
     setActiveModalTab('Citation sources');
     setSelectedRun(null);
     setExpandedCitationDomain(null);
@@ -216,13 +268,13 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       ...group.stats,
       category: category,
       history: group.prompts[0].history, // Just using first prompt history as sample for group trend
-      visibilityScore: group.stats.visibility,
       avgPosition: group.stats.position,
       citationShare: group.stats.share,
+      mentionRate: group.stats.totalResults > 0 ? Math.round((group.stats.mentionedCount / group.stats.totalResults) * 100) : 0,
       lastRun: group.prompts[0].lastRun,
     };
     setSelectedEntity({ type: 'category', data: categoryData, displayName: formatCategory(category) });
-    setActiveChartMetric('visibility');
+    setActiveChartMetric('mentionRate');
     setActiveModalTab('Citation sources');
     setSelectedRun(null);
     setExpandedCitationDomain(null);
@@ -250,10 +302,11 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       time: r.date || '—',
       model: providerLabel(r.provider || 'chatgpt'),
       mentioned: r.mentioned,
-      position: r.position != null ? r.position : '-',
+      position: r.position != null ? Number(r.position) : null,
+      orderedEntities: r.orderedEntities || [],
       promptText: r.promptText,
       response: r.response,
-      mentions: [],
+      mentions: (r.orderedEntities || []).map((e: any) => e.name),
       region: '—',
       searchQueries: 'n/a',
       citations: (r.citations || []).map((url: string) => {
@@ -305,14 +358,14 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visibility</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand mention</span>
             <div className="flex items-center gap-3">
               {run.mentioned ? (
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
                   <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white">
                     <CheckCircle2 size={12} />
                   </div>
-                  {brandName || 'Brand'} is mentioned
+                  {brandName || 'Brand'} is mentioned{run.position != null ? ` at ${formatPosition(run.position)}` : ''}
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
@@ -326,12 +379,12 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           </div>
 
           <div className="space-y-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mentions</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ordered entities</span>
             <div className="flex flex-wrap gap-2">
-              {run.mentions.length > 0 ? run.mentions.map((m: string) => (
-                <div key={m} className="flex items-center gap-2 px-3 py-1 bg-gray-50 border border-gray-100 rounded-full text-[10px] font-black text-slate-700 uppercase tracking-widest">
+              {run.orderedEntities.length > 0 ? run.orderedEntities.map((entity: any) => (
+                <div key={`${entity.name}-${entity.position}`} className="flex items-center gap-2 px-3 py-1 bg-gray-50 border border-gray-100 rounded-full text-[10px] font-black text-slate-700 uppercase tracking-widest">
                   <div className="w-4 h-4 bg-gray-200 rounded-full" />
-                  {m}
+                  #{entity.position} {entity.name}
                 </div>
               )) : <span className="text-xs font-bold text-slate-400 italic">None detected</span>}
             </div>
@@ -558,8 +611,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                       </div>
                     </td>
                     <td className="px-6 py-5 text-center">
-                      <span className={`text-sm font-bold tabular-nums ${run.position === '-' ? 'text-slate-300' : 'text-slate-900'}`}>
-                        {run.position === '-' ? '-' : `#${run.position}`}
+                      <span className={`text-sm font-bold tabular-nums ${run.position == null ? 'text-slate-300' : 'text-slate-900'}`}>
+                        {formatPosition(run.position)}
                       </span>
                     </td>
                     <td className="px-6 py-5 max-w-[200px]">
@@ -618,16 +671,16 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className="w-1/2 px-8 py-4 font-bold">Topic group / prompt</th>
-                <th className="w-[15%] px-4 py-4 font-bold text-center">
-                  <HeaderWithInfo title="Visibility index" info="How visible your brand is relative to other entities in AI answers. Combines whether you were mentioned and where you ranked among all entities in each response." align="center" />
+                <th className="w-[16%] px-4 py-4 font-bold text-center">
+                  <HeaderWithInfo title="Brand mentioned" info="Whether your brand appeared in the selected AI answers for this prompt." align="center" />
                 </th>
-                <th className="w-[15%] px-4 py-4 font-bold text-center">
-                  <HeaderWithInfo title="Average position" info="Average rank in AI generated lists." align="center" />
+                <th className="w-[14%] px-4 py-4 font-bold text-center">
+                  <HeaderWithInfo title="Avg position" info="Average entity rank using only answers where your brand was mentioned." align="center" />
                 </th>
-                <th className="w-[15%] px-4 py-4 font-bold text-center">
+                <th className="w-[10%] px-4 py-4 font-bold text-center">
                   <HeaderWithInfo title="Mention rate" info="Average number of times your brand is mentioned per AI response." align="center" />
                 </th>
-                <th className="w-[15%] px-8 py-4 font-bold text-center">
+                <th className="w-[10%] px-8 py-4 font-bold text-center">
                   <HeaderWithInfo title="Citation share" info="Proportion of citations linking to your site." align="center" />
                 </th>
               </tr>
@@ -658,20 +711,20 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                         </div>
                       </td>
                       <td className="px-4 py-5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.visibility}</span>
-                          {group.stats.visibilityTrend != null && group.stats.visibilityTrend !== 0 && (
-                            <PromptTrendBadge trend={group.stats.visibilityTrend} />
-                          )}
-                        </div>
+                        <MentionBadge
+                          tone={getMentionTone(group.stats.mentionedCount, group.stats.totalResults)}
+                          label={formatMentionSummary(group.stats.mentionedCount, group.stats.totalResults)}
+                        />
                       </td>
                       <td className="px-4 py-5 text-center">
-                        <span className="font-bold text-slate-900 text-[13px] tabular-nums">{group.stats.position}</span>
+                        <span className={`font-bold text-[13px] tabular-nums ${group.stats.position == null ? 'text-slate-300' : 'text-slate-900'}`}>
+                          {formatPosition(group.stats.position)}
+                        </span>
                       </td>
                       <td className="px-4 py-5 text-center">
                         <span className="font-bold text-slate-900 text-[13px] tabular-nums">
-                          {group.prompts.length > 0
-                            ? Math.round(group.prompts.reduce((s, p) => s + (p.mentionRate || 0), 0) / group.prompts.length)
+                          {group.stats.totalResults > 0
+                            ? Math.round((group.stats.mentionedCount / group.stats.totalResults) * 100)
                             : '—'}%
                         </span>
                       </td>
@@ -704,17 +757,15 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                             {isQueued ? (
                               <span className="text-[13px] font-bold text-slate-300">—</span>
                             ) : (
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span className="font-bold text-slate-400 group-hover:text-slate-900 transition-colors text-[13px] tabular-nums">{prompt.visibilityScore}</span>
-                                {prompt.visibilityTrend !== 0 && (
-                                  <PromptTrendBadge trend={prompt.visibilityTrend} />
-                                )}
-                              </div>
+                              <MentionBadge
+                                tone={getMentionTone(prompt.mentionedCount, prompt.totalResults)}
+                                label={formatMentionSummary(prompt.mentionedCount, prompt.totalResults)}
+                              />
                             )}
                           </td>
                           <td className="px-4 py-4 text-center">
                             <span className={`font-bold transition-colors text-[13px] tabular-nums ${isQueued ? 'text-slate-300' : 'text-slate-400 group-hover:text-slate-900'}`}>
-                              {isQueued ? '—' : prompt.avgPosition}
+                              {isQueued ? '—' : formatPosition(prompt.avgPosition)}
                             </span>
                           </td>
                           <td className="px-4 py-4 text-center">
@@ -833,8 +884,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                      <div className="col-span-12 lg:col-span-7 bg-white rounded-[24px] border-2 border-gray-200 shadow-sm p-6 flex flex-col h-[300px]">
                        <div className="flex items-start justify-between mb-2">
                          <span className="text-[10px] font-black text-gray-400 tracking-widest">
-                            {activeChartMetric === 'visibility' ? 'Visibility trend' :
-                             activeChartMetric === 'avgPosition' ? 'Position trend' :
+                            {activeChartMetric === 'avgPosition' ? 'Position trend' :
                              activeChartMetric === 'citationShare' ? 'Citation share trend' : 'Mention rate trend'}
                          </span>
                          <div className="flex items-center gap-2 text-brand-brown font-black text-[10px]">
@@ -885,20 +935,8 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
 
                      <div className="col-span-12 lg:col-span-5 grid grid-cols-2 gap-4">
                        <MetricCard
-                         label="Visibility index"
-                         value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore}`}
-                         trend={`${(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? '+' : ''}${popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend} vs prev`}
-                         trendColor={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) >= 0 ? 'text-emerald-500' : 'text-rose-500'}
-                         isDown={(popupStats?.visibilityTrend ?? selectedEntity.data.visibilityTrend) < 0}
-                         isHighlighted={activeChartMetric === 'visibility'}
-                         onClick={() => setActiveChartMetric('visibility')}
-                       />
-                       <MetricCard
                          label="Avg position"
-                         value={(() => {
-                           const pos = popupStats?.avgPosition ?? selectedEntity.data.avgPosition;
-                           return pos != null ? pos.toFixed(1) : '—';
-                         })()}
+                         value={formatPosition(popupStats?.avgPosition ?? selectedEntity.data.avgPosition)}
                          trend="avg list rank when mentioned"
                          trendColor="text-slate-400"
                          isHighlighted={activeChartMetric === 'avgPosition'}

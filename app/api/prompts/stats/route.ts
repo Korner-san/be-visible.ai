@@ -29,23 +29,39 @@ function extractDomain(url: string): string {
   }
 }
 
+function roundAverage(value: number): number {
+  return Number.isInteger(value) ? value : parseFloat(value.toFixed(1))
+}
+
 function computeMetrics(results: any[], brandDomain: string | null) {
   if (!results.length) {
-    return { visibilityScore: 0, mentionRate: 0, avgPosition: 0, citationShare: 0, citations: 0 }
+    return {
+      visibilityScore: 0,
+      mentionRate: 0,
+      avgPosition: null,
+      citationShare: 0,
+      citations: 0,
+      totalResults: 0,
+      mentionedCount: 0,
+      positionCount: 0,
+      positionSum: 0,
+      brandMentioned: false,
+    }
   }
   const total = results.length
   const mentionedCount = results.filter(r => r.brand_mentioned).length
   const mentionRate = Math.round((mentionedCount / total) * 100)
 
   const positions = results
-    .filter(r => r.brand_mentioned && r.brand_position != null)
-    .map(r => r.brand_position as number)
+    .filter(r => r.brand_mentioned && Number.isFinite(Number(r.brand_position)) && Number(r.brand_position) > 0)
+    .map(r => Number(r.brand_position))
+  const positionSum = positions.reduce((s, p) => s + p, 0)
   const avgPosition = positions.length
-    ? parseFloat((positions.reduce((s, p) => s + p, 0) / positions.length).toFixed(1))
-    : 0
+    ? roundAverage(positionSum / positions.length)
+    : null
 
   // Position score: rank 1 = 100pts, rank 10 = 0pts
-  const positionScore = avgPosition > 0
+  const positionScore = avgPosition != null && avgPosition > 0
     ? Math.max(0, Math.min(100, Math.round(100 - (avgPosition - 1) * 12)))
     : 0
   const visibilityScore = Math.round(mentionRate * 0.65 + positionScore * 0.35)
@@ -64,7 +80,52 @@ function computeMetrics(results: any[], brandDomain: string | null) {
   })
   const citationShare = totalCits > 0 ? Math.round((brandCits / totalCits) * 100) : 0
 
-  return { visibilityScore, mentionRate, avgPosition, citationShare, citations: totalCits }
+  return {
+    visibilityScore,
+    mentionRate,
+    avgPosition,
+    citationShare,
+    citations: totalCits,
+    totalResults: total,
+    mentionedCount,
+    positionCount: positions.length,
+    positionSum,
+    brandMentioned: mentionedCount > 0,
+  }
+}
+
+function getOrderedEntities(result: any, brandName: string): Array<{ name: string; position: number; type: string }> {
+  const entities: Array<{ name: string; position: number; type: string }> = []
+
+  if (result.brand_mentioned && Number.isFinite(Number(result.brand_position)) && Number(result.brand_position) > 0) {
+    entities.push({
+      name: brandName,
+      position: Number(result.brand_position),
+      type: 'brand',
+    })
+  }
+
+  const analysisCompetitors = Array.isArray(result.entity_mention_analysis?.competitors)
+    ? result.entity_mention_analysis.competitors
+    : []
+  for (const comp of analysisCompetitors) {
+    if (!comp?.mentioned) continue
+    const rank = Number(comp.entity_rank)
+    if (!Number.isFinite(rank) || rank <= 0 || !comp.name) continue
+    entities.push({ name: comp.name, position: rank, type: 'competitor' })
+  }
+
+  const competitorDetails = Array.isArray(result.competitor_mention_details)
+    ? result.competitor_mention_details
+    : []
+  for (const comp of competitorDetails) {
+    const rank = Number(comp.entity_rank)
+    if (!Number.isFinite(rank) || rank <= 0 || !comp.name) continue
+    if (entities.some(e => e.name.toLowerCase() === String(comp.name).toLowerCase())) continue
+    entities.push({ name: comp.name, position: rank, type: 'competitor' })
+  }
+
+  return entities.sort((a, b) => a.position - b.position)
 }
 
 export async function GET(request: NextRequest) {
@@ -147,6 +208,8 @@ export async function GET(request: NextRequest) {
         provider,
         brand_mentioned,
         brand_position,
+        competitor_mention_details,
+        entity_mention_analysis,
         chatgpt_response,
         chatgpt_citations,
         claude_response,
@@ -297,6 +360,10 @@ export async function GET(request: NextRequest) {
             date,
             visibility: s.visibilityScore,
             avgPosition: s.avgPosition,
+            mentionedCount: s.mentionedCount,
+            totalResults: s.totalResults,
+            positionCount: s.positionCount,
+            positionSum: s.positionSum,
             citationShare: s.citationShare,
             mentionRate: s.mentionRate,
           }
@@ -309,6 +376,7 @@ export async function GET(request: NextRequest) {
         provider: r.provider,
         mentioned: r.brand_mentioned,
         position: r.brand_position,
+        orderedEntities: getOrderedEntities(r, brand.name),
         promptText: r.prompt_text,
         response: getProviderResponse(r),
         citations: getProviderCitations(r),
