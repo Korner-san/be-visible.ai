@@ -123,6 +123,129 @@ const getMentionTone = (mentionedCount?: number, totalResults?: number): 'positi
   return mentioned > 0 ? 'positive' : 'negative';
 };
 
+const computeVisibilityScore = (mentionRate: number, avgPosition: number | null): number => {
+  const positionScore = avgPosition != null && avgPosition > 0
+    ? Math.max(0, Math.min(100, Math.round(100 - (avgPosition - 1) * 12)))
+    : 0;
+  return Math.round(mentionRate * 0.65 + positionScore * 0.35);
+};
+
+const mergeContentTypeBreakdown = (stats: any[]) => {
+  const counts = new Map<string, number>();
+  stats.forEach(s => {
+    (s.contentTypeBreakdown || []).forEach((row: any) => {
+      counts.set(row.category, (counts.get(row.category) || 0) + (Number(row.urls) || 0));
+    });
+  });
+  const total = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
+  return Array.from(counts.entries())
+    .sort(([, a], [, b]) => b - a)
+    .map(([category, urls]) => ({
+      category,
+      urls,
+      percentage: total > 0 ? Math.round((urls / total) * 100) : 0,
+    }));
+};
+
+const mergeCitationDomains = (stats: any[], totalResults: number) => {
+  const domains = new Map<string, { urls: Set<string>; mentions: number }>();
+  stats.forEach(s => {
+    (s.citationDomains || []).forEach((row: any) => {
+      if (!row.domain) return;
+      if (!domains.has(row.domain)) domains.set(row.domain, { urls: new Set(), mentions: 0 });
+      const entry = domains.get(row.domain)!;
+      entry.mentions += Number(row.mentions) || 0;
+      (row.urls || []).forEach((url: string) => entry.urls.add(url));
+    });
+  });
+  const totalMentions = Array.from(domains.values()).reduce((sum, row) => sum + row.mentions, 0);
+  return Array.from(domains.entries())
+    .sort(([, a], [, b]) => b.mentions - a.mentions)
+    .map(([domain, row]) => ({
+      domain,
+      uniqueUrls: row.urls.size,
+      mentions: row.mentions,
+      pctTotal: totalMentions > 0 ? Math.round((row.mentions / totalMentions) * 100) : 0,
+      coverage: totalResults > 0 ? Math.round((row.mentions / totalResults) * 100) : 0,
+      urls: Array.from(row.urls),
+    }));
+};
+
+const mergeHistories = (stats: any[]) => {
+  const byDate = new Map<string, any>();
+  stats.forEach(s => {
+    (s.history || []).forEach((row: any) => {
+      if (!row.date) return;
+      if (!byDate.has(row.date)) {
+        byDate.set(row.date, {
+          date: row.date,
+          mentionedCount: 0,
+          totalResults: 0,
+          positionCount: 0,
+          positionSum: 0,
+          brandCitations: 0,
+          totalCitations: 0,
+        });
+      }
+      const entry = byDate.get(row.date);
+      entry.mentionedCount += Number(row.mentionedCount) || 0;
+      entry.totalResults += Number(row.totalResults) || 0;
+      entry.positionCount += Number(row.positionCount) || 0;
+      entry.positionSum += Number(row.positionSum) || 0;
+      entry.brandCitations += Number(row.brandCitations) || 0;
+      entry.totalCitations += Number(row.totalCitations) || 0;
+    });
+  });
+
+  return Array.from(byDate.values())
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(row => {
+      const mentionRate = row.totalResults > 0 ? Math.round((row.mentionedCount / row.totalResults) * 100) : 0;
+      const avgPosition = row.positionCount > 0 ? Number((row.positionSum / row.positionCount).toFixed(1)) : null;
+      const citationShare = row.totalCitations > 0 ? Math.round((row.brandCitations / row.totalCitations) * 100) : 0;
+      return {
+        ...row,
+        visibility: computeVisibilityScore(mentionRate, avgPosition),
+        avgPosition,
+        citationShare,
+        mentionRate,
+      };
+    });
+};
+
+const mergeCategoryStats = (stats: any[]) => {
+  const totalResults = stats.reduce((sum, s) => sum + (Number(s.totalResults) || 0), 0);
+  const mentionedCount = stats.reduce((sum, s) => sum + (Number(s.mentionedCount) || 0), 0);
+  const positionCount = stats.reduce((sum, s) => sum + (Number(s.positionCount) || 0), 0);
+  const positionSum = stats.reduce((sum, s) => sum + (Number(s.positionSum) || 0), 0);
+  const brandCitations = stats.reduce((sum, s) => sum + (Number(s.brandCitations) || 0), 0);
+  const totalCitations = stats.reduce((sum, s) => sum + (Number(s.totalCitations) || Number(s.citations) || 0), 0);
+  const avgPosition = positionCount > 0 ? Number((positionSum / positionCount).toFixed(1)) : null;
+  const mentionRate = totalResults > 0 ? Math.round((mentionedCount / totalResults) * 100) : 0;
+  const citationShare = totalCitations > 0 ? Math.round((brandCitations / totalCitations) * 100) : 0;
+  const recentResults = stats
+    .flatMap((s: any) => s.recentResults || [])
+    .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  return {
+    visibilityScore: computeVisibilityScore(mentionRate, avgPosition),
+    avgPosition,
+    mentionRate,
+    mentionedCount,
+    totalResults,
+    positionCount,
+    positionSum,
+    brandCitations,
+    totalCitations,
+    citationShare,
+    citations: totalCitations,
+    history: mergeHistories(stats),
+    recentResults,
+    citationDomains: mergeCitationDomains(stats, totalResults),
+    contentTypeBreakdown: mergeContentTypeBreakdown(stats),
+  };
+};
+
 const MentionBadge = ({ tone, label }: { tone: 'positive' | 'negative' | 'neutral'; label: string }) => {
   const styles = tone === 'positive'
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
@@ -141,7 +264,7 @@ const MentionBadge = ({ tone, label }: { tone: 'positive' | 'negative' | 'neutra
 
 export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToManage, brandId, brandName, timeRangeDays, selectedModels, customDateRange, isLoading }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['Competitive comparison']));
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Competitive comparison']));
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'prompt' | 'category', data: any, displayName: string } | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<'Citation sources' | 'Ai preference' | 'Sample history'>('Citation sources');
   const [activeChartMetric, setActiveChartMetric] = useState<MetricType>('mentionRate');
@@ -185,23 +308,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
             const ids = catPrompts.map((p: PromptStats) => p.id);
             const allStats = ids.map((id: string) => data.stats[id]).filter(Boolean);
             if (allStats.length === 0) { setPopupStats(null); return; }
-            const totalResults = allStats.reduce((s: number, x: any) => s + (x.totalResults || 0), 0);
-            const mentionedCount = allStats.reduce((s: number, x: any) => s + (x.mentionedCount || 0), 0);
-            const positionCount = allStats.reduce((s: number, x: any) => s + (x.positionCount || 0), 0);
-            const positionSum = allStats.reduce((s: number, x: any) => s + (x.positionSum || 0), 0);
-            setPopupStats({
-              visibilityScore: Math.round(allStats.reduce((s: number, x: any) => s + x.visibilityScore, 0) / allStats.length),
-              avgPosition: positionCount > 0 ? Number((positionSum / positionCount).toFixed(1)) : null,
-              mentionRate: totalResults > 0 ? Math.round((mentionedCount / totalResults) * 100) : 0,
-              mentionedCount,
-              totalResults,
-              positionCount,
-              positionSum,
-              citationShare: Math.round(allStats.reduce((s: number, x: any) => s + x.citationShare, 0) / allStats.length),
-              citations: allStats.reduce((s: number, x: any) => s + x.citations, 0),
-              history: allStats[0]?.history || [],
-              recentResults: allStats.flatMap((x: any) => x.recentResults || []).slice(0, 5),
-            });
+            setPopupStats(mergeCategoryStats(allStats));
           }
         }
       })
@@ -209,15 +316,15 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       .finally(() => setPopupLoading(false));
   }, [selectedEntity?.data?.id ?? selectedEntity?.data?.category, popupDays, brandId]);
 
-  const toggleTopic = (topic: string, e: React.MouseEvent) => {
+  const toggleCategory = (category: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const next = new Set(expandedTopics);
-    if (next.has(topic)) {
-      next.delete(topic);
+    const next = new Set(expandedCategories);
+    if (next.has(category)) {
+      next.delete(category);
     } else {
-      next.add(topic);
+      next.add(category);
     }
-    setExpandedTopics(next);
+    setExpandedCategories(next);
   };
 
   const filteredPrompts = prompts.filter(p => 
@@ -248,8 +355,14 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       group.stats.position = group.stats.positionCount > 0
         ? Number((group.stats.positionSum / group.stats.positionCount).toFixed(1))
         : null;
-      group.stats.share = Number((group.prompts.reduce((sum, p) => sum + p.citationShare, 0) / count).toFixed(1));
-      group.stats.citations = group.prompts.reduce((sum, p) => sum + p.citations, 0);
+      group.stats.brandCitations = group.prompts.reduce((sum, p) => sum + (p.brandCitations || 0), 0);
+      group.stats.totalCitations = group.prompts.reduce((sum, p) => sum + (p.totalCitations || p.citations || 0), 0);
+      group.stats.share = group.stats.totalCitations > 0
+        ? Math.round((group.stats.brandCitations / group.stats.totalCitations) * 100)
+        : 0;
+      group.stats.citations = group.stats.totalCitations;
+      group.stats.mentionRate = group.stats.totalResults > 0 ? Math.round((group.stats.mentionedCount / group.stats.totalResults) * 100) : 0;
+      group.stats.visibilityScore = computeVisibilityScore(group.stats.mentionRate, group.stats.position);
     }
   });
 
@@ -267,10 +380,11 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     const categoryData = {
       ...group.stats,
       category: category,
-      history: group.prompts[0].history, // Just using first prompt history as sample for group trend
+      history: mergeHistories(group.prompts),
       avgPosition: group.stats.position,
       citationShare: group.stats.share,
-      mentionRate: group.stats.totalResults > 0 ? Math.round((group.stats.mentionedCount / group.stats.totalResults) * 100) : 0,
+      mentionRate: group.stats.mentionRate,
+      visibilityScore: group.stats.visibilityScore,
       lastRun: group.prompts[0].lastRun,
     };
     setSelectedEntity({ type: 'category', data: categoryData, displayName: formatCategory(category) });
@@ -286,7 +400,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
     const source = popupStats?.recentResults || (
       selectedEntity.type === 'prompt'
         ? selectedEntity.data.recentResults
-        : groupedPrompts[selectedEntity.data.category]?.prompts.flatMap((p: PromptStats) => p.recentResults || []).slice(0, 5)
+        : groupedPrompts[selectedEntity.data.category]?.prompts.flatMap((p: PromptStats) => p.recentResults || [])
     );
 
     if (!source || source.length === 0) return [];
@@ -670,7 +784,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           <table className="w-full text-left table-fixed border-collapse">
             <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200 sticky top-0 z-10">
               <tr>
-                <th className="w-1/2 px-8 py-4 font-bold">Topic group / prompt</th>
+                <th className="w-1/2 px-8 py-4 font-bold">Category / prompt</th>
                 <th className="w-[16%] px-4 py-4 font-bold text-center">
                   <HeaderWithInfo title="Brand mentioned" info="Whether your brand appeared in the selected AI answers for this prompt." align="center" />
                 </th>
@@ -686,27 +800,27 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
               </tr>
             </thead>
             <tbody>
-              {categories.map((topic) => {
-                const group = groupedPrompts[topic];
-                const isExpanded = expandedTopics.has(topic);
+              {categories.map((category) => {
+                const group = groupedPrompts[category];
+                const isExpanded = expandedCategories.has(category);
                 
                 return (
-                  <React.Fragment key={topic}>
+                  <React.Fragment key={category}>
                     {/* Category Row */}
                     <tr
                       className="group transition-all bg-white border-b border-gray-200 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => handleSelectCategory(topic)}
+                      onClick={() => handleSelectCategory(category)}
                     >
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
                           <button
-                            onClick={(e) => toggleTopic(topic, e)}
+                            onClick={(e) => toggleCategory(category, e)}
                             className={`w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 border border-gray-200 text-gray-400 hover:text-brand-brown hover:border-brand-brown bg-white shadow-sm ${isExpanded ? 'rotate-90 text-brand-brown border-brand-brown' : ''}`}
                           >
                             <ChevronRight size={12} strokeWidth={3} />
                           </button>
                           <span className="text-[13px] font-black text-slate-700 tracking-tight">
-                            {formatCategory(topic)}
+                            {formatCategory(category)}
                           </span>
                         </div>
                       </td>
@@ -805,7 +919,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                <div className="space-y-3">
                  <div className="flex items-center gap-4">
                    <span className="px-3 py-1 bg-brand-brown text-white text-[10px] font-black tracking-[0.15em] rounded shadow-sm uppercase">
-                     {selectedEntity.type === 'category' ? 'Topic Group' : formatCategory(selectedEntity.data.category)}
+                     {selectedEntity.type === 'category' ? 'Category' : formatCategory(selectedEntity.data.category)}
                    </span>
                    <div className="flex items-center gap-2 text-slate-400 font-bold text-[11px] tracking-widest">
                      <Clock size={12} className="text-gray-300" />
@@ -823,7 +937,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                    <h2 className="text-xl font-black text-slate-900 tracking-tight leading-tight max-w-4xl">
                      {selectedEntity.type === 'category' ? (
                        <span className="flex items-center gap-3">
-                         <span className="text-slate-400 font-light">Topic Analysis:</span>
+                         <span className="text-slate-400 font-light">Category Analysis:</span>
                          {selectedEntity.displayName}
                        </span>
                      ) : (
@@ -934,6 +1048,14 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                      </div>
 
                      <div className="col-span-12 lg:col-span-5 grid grid-cols-2 gap-4">
+                       <MetricCard
+                         label="Visibility index"
+                         value={`${popupStats?.visibilityScore ?? selectedEntity.data.visibilityScore ?? 0}`}
+                         trend="category-scoped score"
+                         trendColor="text-slate-400"
+                         isHighlighted={activeChartMetric === 'visibility'}
+                         onClick={() => setActiveChartMetric('visibility')}
+                       />
                        <MetricCard
                          label="Avg position"
                          value={formatPosition(popupStats?.avgPosition ?? selectedEntity.data.avgPosition)}

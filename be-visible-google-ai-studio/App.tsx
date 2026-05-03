@@ -284,6 +284,8 @@ function AppContent() {
               positionCount: s.positionCount ?? 0,
               positionSum: s.positionSum ?? 0,
               citationShare: s.citationShare,
+              brandCitations: s.brandCitations ?? 0,
+              totalCitations: s.totalCitations ?? s.citations ?? 0,
               citations: s.citations,
               lastRun: s.lastRun,
               history: s.history,

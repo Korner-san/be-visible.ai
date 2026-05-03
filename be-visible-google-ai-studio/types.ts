@@ -35,6 +35,8 @@ export interface PromptHistoryPoint {
   visibility: number;
   avgPosition: number | null;
   citationShare: number;
+  brandCitations?: number;
+  totalCitations?: number;
   mentionRate: number;
   mentionedCount?: number;
   totalResults?: number;

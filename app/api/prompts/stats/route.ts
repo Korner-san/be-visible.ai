@@ -41,6 +41,8 @@ function computeMetrics(results: any[], brandDomain: string | null) {
       avgPosition: null,
       citationShare: 0,
       citations: 0,
+      brandCitations: 0,
+      totalCitations: 0,
       totalResults: 0,
       mentionedCount: 0,
       positionCount: 0,
@@ -86,6 +88,8 @@ function computeMetrics(results: any[], brandDomain: string | null) {
     avgPosition,
     citationShare,
     citations: totalCits,
+    brandCitations: brandCits,
+    totalCitations: totalCits,
     totalResults: total,
     mentionedCount,
     positionCount: positions.length,
@@ -365,12 +369,15 @@ export async function GET(request: NextRequest) {
             positionCount: s.positionCount,
             positionSum: s.positionSum,
             citationShare: s.citationShare,
+            brandCitations: s.brandCitations,
+            totalCitations: s.totalCitations,
             mentionRate: s.mentionRate,
           }
         })
 
-      // Last 5 results for Sample history tab
-      const recentResults = pResults.slice(0, 5).map(r => ({
+      // Full result history for the selected date range. Category popups merge
+      // these across all prompts in the category.
+      const recentResults = pResults.map(r => ({
         id: r.id,
         date: (r.daily_reports as any).report_date,
         provider: r.provider,
@@ -412,6 +419,8 @@ export async function GET(request: NextRequest) {
       stats[prompt.id] = {
         ...curr,
         visibilityTrend,
+        brandCitations: curr.brandCitations,
+        totalCitations: curr.totalCitations,
         lastRun,
         history,
         recentResults,
