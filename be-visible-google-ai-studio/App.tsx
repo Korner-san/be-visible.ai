@@ -15,6 +15,7 @@ import { CompetitorsPage } from './components/CompetitorsPage';
 import { PromptsPage } from './components/PromptsPage';
 import { ManagePromptsPage } from './components/ManagePromptsPage';
 import { ManageCompetitorsPage } from './components/ManageCompetitorsPage';
+import { PersonasPage } from './components/PersonasPage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { ManageProjectsPage } from './components/ManageProjectsPage';
 import { IntegrationsPage } from './components/IntegrationsPage';
@@ -468,6 +469,8 @@ function AppContent() {
         />;
       case 'Manage Competitors':
         return <ManageCompetitorsPage competitors={competitors} setCompetitors={setCompetitors} brandId={activeBrandId} />;
+      case 'Personas':
+        return <PersonasPage brandId={activeBrandId} />;
       case 'Projects':
         return <ProjectsPage brandId={activeBrandId} />;
       case 'Manage Projects':

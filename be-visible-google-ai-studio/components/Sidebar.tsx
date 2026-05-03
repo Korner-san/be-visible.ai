@@ -10,6 +10,7 @@ import {
   Shield,
   Building2,
   MapPin,
+  UserRound,
 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
@@ -78,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
             label="Manage Competitors"
             active={activeTab === 'Manage Competitors'}
             onClick={() => handleNavClick('Manage Competitors')}
+          />
+          <NavItem
+            icon={<UserRound size={18} />}
+            label="Personas"
+            active={activeTab === 'Personas'}
+            onClick={() => handleNavClick('Personas')}
           />
           {isRealEstate && (
             <NavItem
