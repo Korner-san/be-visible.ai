@@ -167,8 +167,16 @@ async function runQueueOrganizer() {
 
       // Case A: EOD already ran (is_partial=false) but brand status not updated → just fix brand
       if (rep && rep.status === 'completed' && rep.is_partial === false) {
-        console.log('[QUEUE-ORG] SAFETY: brand', brand.id.substring(0, 8), 'report complete+is_partial=false but brand still phase1_complete — setting succeeded');
-        await supabase.from('brands').update({ first_report_status: 'succeeded' }).eq('id', brand.id);
+        console.log('[QUEUE-ORG] SAFETY: brand', brand.id.substring(0, 8), 'report complete+is_partial=false but brand still phase1_complete — retrying final activation');
+        const activation = await activateAllowedPromptsForBrand(brand.id);
+        if (!activation.ok) {
+          console.error('[QUEUE-ORG] SAFETY activation failed for brand', brand.id.substring(0, 8), activation.error);
+          continue;
+        }
+        await supabase
+          .from('brands')
+          .update({ first_report_status: 'succeeded', onboarding_prompts_sent: activation.activeCount })
+          .eq('id', brand.id);
         continue;
       }
 
@@ -186,6 +194,29 @@ async function runQueueOrganizer() {
         console.log('[QUEUE-ORG] SAFETY SWEEP: brand', brand.id.substring(0, 8),
           'phase1_complete + all', completed, 'wave-2 prompts done, Phase 2 EOD never triggered — running now');
         await finalizePhase(brand, 2);
+      }
+    }
+  }
+
+  // 0e. Safety sweep: repair brands marked succeeded before wave-2 prompts were activated.
+  {
+    const { data: succeededBrands } = await supabase
+      .from('brands')
+      .select('id')
+      .eq('first_report_status', 'succeeded')
+      .eq('onboarding_completed', true);
+
+    for (const brand of (succeededBrands || [])) {
+      const { count: inactiveOnboardingPrompts } = await supabase
+        .from('brand_prompts')
+        .select('id', { count: 'exact', head: true })
+        .eq('brand_id', brand.id)
+        .eq('status', 'inactive')
+        .in('onboarding_wave', [1, 2]);
+
+      if (inactiveOnboardingPrompts > 0) {
+        console.log('[QUEUE-ORG] SAFETY: succeeded brand', brand.id.substring(0, 8), 'has', inactiveOnboardingPrompts, 'inactive onboarding prompts — activating allowed set');
+        await activateAllowedPromptsForBrand(brand.id);
       }
     }
   }
@@ -584,6 +615,12 @@ async function finalizePhase(brand, completedWave) {
 
     await ensureUserInTable(brand.owner_user_id);
 
+    const fullActivation = await activateAllowedPromptsForBrand(brandId);
+    if (!fullActivation.ok) {
+      console.error('[QUEUE-ORG] Final prompt activation failed for brand', brandId.substring(0, 8), fullActivation.error);
+      return;
+    }
+
     // Flip all wave-2 prompts from inactive → active so they join the daily scheduling pool.
     // Wave-2 prompts stayed inactive throughout onboarding to avoid the plan trigger during dispatch.
     // Now that onboarding is complete and the trigger allows 50 for starter plan, we activate them.
@@ -612,6 +649,84 @@ async function finalizePhase(brand, completedWave) {
 // Runs on every queue-organizer tick. Replaces crontab-based dispatch entirely.
 // Sequential per brand: never fires a second batch for a brand already running one.
 // Fire-and-forget: detached child, organizer does not wait for completion.
+function getPlanPromptLimit(subscriptionPlan) {
+  switch ((subscriptionPlan || 'starter').toLowerCase()) {
+    case 'free_trial':
+      return 5;
+    case 'business':
+    case 'corporate':
+      return 200;
+    case 'starter':
+    case 'basic':
+    case 'advanced':
+    default:
+      return 50;
+  }
+}
+
+async function activateAllowedPromptsForBrand(brandId) {
+  const { data: brand, error: brandErr } = await supabase
+    .from('brands')
+    .select('id, owner_user_id')
+    .eq('id', brandId)
+    .single();
+
+  if (brandErr || !brand) {
+    return { ok: false, error: brandErr?.message || 'Brand not found', activeCount: 0 };
+  }
+
+  const { data: userRow } = await supabase
+    .from('users')
+    .select('subscription_plan')
+    .eq('id', brand.owner_user_id)
+    .single();
+
+  const subscriptionPlan = userRow?.subscription_plan;
+  const limit = getPlanPromptLimit(subscriptionPlan);
+
+  const { data: prompts, error: promptsErr } = await supabase
+    .from('brand_prompts')
+    .select('id, status, is_active, created_at')
+    .eq('brand_id', brandId)
+    .order('created_at', { ascending: true });
+
+  if (promptsErr) {
+    return { ok: false, error: promptsErr.message, activeCount: 0 };
+  }
+
+  const allowed = (prompts || []).slice(0, limit);
+  const overflow = (prompts || []).slice(limit);
+  const allowedIds = allowed.map(p => p.id);
+  const overflowActiveIds = overflow
+    .filter(p => p.status === 'active' || p.is_active === true)
+    .map(p => p.id);
+
+  if (allowedIds.length > 0) {
+    const { error: activateErr } = await supabase
+      .from('brand_prompts')
+      .update({ status: 'active', is_active: true })
+      .in('id', allowedIds);
+
+    if (activateErr) {
+      return { ok: false, error: activateErr.message, activeCount: 0 };
+    }
+  }
+
+  if (overflowActiveIds.length > 0) {
+    const { error: deactivateErr } = await supabase
+      .from('brand_prompts')
+      .update({ status: 'inactive', is_active: false })
+      .in('id', overflowActiveIds);
+
+    if (deactivateErr) {
+      return { ok: false, error: deactivateErr.message, activeCount: allowedIds.length };
+    }
+  }
+
+  console.log('[QUEUE-ORG] Activated', allowedIds.length, 'prompt(s) for brand', brandId.substring(0, 8), 'limit:', limit, 'plan:', subscriptionPlan || 'starter');
+  return { ok: true, activeCount: allowedIds.length, limit };
+}
+
 async function dispatchDueWave2Batches() {
   const now = new Date().toISOString();
 

@@ -9,9 +9,6 @@ import { callPerplexityAPI, extractPerplexityContent, extractPerplexityCitations
 import { callGoogleAIOverviewAPI, extractGoogleContent, extractGoogleCitations, hasGoogleResults } from '../lib/providers/google-ai-overview'
 import { processChatGPTBatch } from '../lib/providers/chatgpt-browserless'
 
-// CHATGPT-ONLY MODE: Basic plan supports 10 active prompts with ChatGPT
-const MAX_ACTIVE_PROMPTS = 10
-
 interface BrandMentionAnalysis {
   mentioned: boolean
   mentionCount: number
@@ -335,20 +332,19 @@ export const processPromptsForBrand = async (
 }> => {
   const supabase = createServiceClient()
   
-  // Get active prompts - limit to MAX_ACTIVE_PROMPTS (10 for ChatGPT-only mode)
+  // Get every active prompt allowed by the plan. The database trigger owns limits.
   const { data: activePrompts, error: promptsError } = await supabase
     .from('brand_prompts')
     .select('id, raw_prompt, improved_prompt, source_template_code, category')
     .eq('brand_id', brand.id)
     .eq('is_active', true)
     .order('created_at', { ascending: true })
-    .limit(MAX_ACTIVE_PROMPTS)
 
   if (promptsError || !activePrompts || activePrompts.length === 0) {
     throw new Error('No active prompts found for brand')
   }
 
-  console.log(`📊 [PROMPT PROCESSOR] Found ${activePrompts.length} active prompts for brand: ${brand.name} (max ${MAX_ACTIVE_PROMPTS})`)
+  console.log(`📊 [PROMPT PROCESSOR] Found ${activePrompts.length} active prompts for brand: ${brand.name}`)
 
   const competitors = (brand.onboarding_answers as any)?.competitors || []
   console.log('🏢 [PROMPT PROCESSOR] Competitors:', competitors)

@@ -62,10 +62,10 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      if ((currentActiveCount || 0) >= 10) {
+      if ((currentActiveCount || 0) >= 50) {
         return NextResponse.json({
           success: false,
-          error: `Cannot activate prompt. You already have 10 active prompts (maximum allowed).`
+          error: `Cannot activate prompt. You already have 50 active prompts (maximum allowed).`
         }, { status: 400 })
       }
     }

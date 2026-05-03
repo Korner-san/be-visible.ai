@@ -26,7 +26,6 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Configuration
-const MAX_PROMPTS_PER_USER = 10;
 const MIN_PROMPT_REUSE_HOURS = 24; // Don't send same prompt to same account within 24 hours
 const MIN_BRAND_REUSE_HOURS = 12; // Don't send same brand to same account within 12 hours
 const MIN_BATCH_SIZE = 1;
@@ -72,18 +71,16 @@ async function getActivePromptsForUser(userId) {
     .select('id, raw_prompt, improved_prompt, status')
     .eq('brand_id', brand.id)
     .eq('status', 'active')
-    .limit(MAX_PROMPTS_PER_USER);
+    .order('created_at', { ascending: true });
 
   if (promptsError) {
     throw new Error(`Failed to fetch prompts for brand ${brand.id}: ${promptsError.message}`);
   }
 
-  const limitedPrompts = (prompts || []).slice(0, MAX_PROMPTS_PER_USER);
-
   return {
     brandId: brand.id,
     brandName: brand.name,
-    prompts: limitedPrompts.map(p => ({
+    prompts: (prompts || []).map(p => ({
       promptId: p.id,
       promptText: p.improved_prompt || p.raw_prompt
     }))

@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Special handling for 'active' status - ensure only 15 total active
+    // Special handling for 'active' status - ensure only 50 total active
     if (status === 'active') {
       // Count currently active prompts (excluding ones we're about to change)
       const { count: currentActiveCount, error: countError } = await supabase
@@ -87,10 +87,10 @@ export async function POST(request: NextRequest) {
       }
 
       const totalActive = (currentActiveCount || 0) + promptIds.length
-      if (totalActive > 15) {
+      if (totalActive > 50) {
         return NextResponse.json({
           success: false,
-          error: `Cannot activate ${promptIds.length} prompts. This would result in ${totalActive} active prompts, but maximum is 15.`
+          error: `Cannot activate ${promptIds.length} prompts. This would result in ${totalActive} active prompts, but maximum is 50.`
         }, { status: 400 })
       }
     }
