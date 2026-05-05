@@ -481,6 +481,44 @@ function validateRealEstatePrompts(prompts: string[], count: number, profile: an
   return cleaned.slice(0, count)
 }
 
+function countPromptWords(prompt: string): number {
+  return prompt.trim().split(/\s+/).filter(Boolean).length
+}
+
+function validateRealEstateTierShape(prompts: string[], tierCounts: { t1: number; t2: number; t3: number }): boolean {
+  const shortPrompts = prompts.slice(0, tierCounts.t1)
+  const mediumPrompts = prompts.slice(tierCounts.t1, tierCounts.t1 + tierCounts.t2)
+  const longPrompts = prompts.slice(tierCounts.t1 + tierCounts.t2)
+
+  const shortOk = shortPrompts.every(prompt => {
+    const words = countPromptWords(prompt)
+    return words >= 2 && words <= 10
+  })
+  const mediumOk = mediumPrompts.every(prompt => {
+    const words = countPromptWords(prompt)
+    return words >= 8 && words <= 30
+  })
+  const longOk = longPrompts.every(prompt => {
+    const words = countPromptWords(prompt)
+    return words >= 28 && words <= 85
+  })
+
+  return shortOk && mediumOk && longOk
+}
+
+function realEstateIntentSlots(topicIndex: number): string[] {
+  const slots = [
+    ['city discovery', 'neighborhood comparison', 'local recommendation', 'commute/access evaluation', 'direct city-specific need', 'list request', 'family vs investor area fit', 'deep area research'],
+    ['family discovery', 'schools/kindergartens evaluation', 'daily convenience', 'commute and parking', 'long-term family fit', 'safety/community', 'specific apartment-size need', 'recommendation'],
+    ['investment discovery', 'rental yield evaluation', 'rental demand', 'future appreciation', 'risk/liquidity', 'transport/employment access', 'tax/cost awareness', 'city comparison'],
+    ['price evaluation', 'payment terms', 'mortgage affordability', 'indexation risk', 'hidden costs', 'equity/monthly repayment', '20/80 or 10/90 comparison'],
+    ['developer trust', 'construction quality', 'delivery track record', 'permit/bank guarantee', 'contract risk', 'technical specs', 'warning signs'],
+    ['room count', 'garden/penthouse/balcony', 'mamad/parking/storage/elevator', 'layout/sunlight/air directions', 'lifestyle fit'],
+    ['project comparison', 'developer comparison', 'new-build vs second-hand', 'same-city alternatives', 'city-vs-city comparison', 'family vs luxury/investment alternative'],
+  ]
+  return slots[topicIndex] || ['discovery', 'comparison', 'evaluation', 'recommendation']
+}
+
 async function generateRealEstatePromptsForTopic(
   topic: string,
   topicIndex: number,
@@ -493,10 +531,13 @@ async function generateRealEstatePromptsForTopic(
 ): Promise<string[]> {
   const count = REAL_ESTATE_TOPIC_COUNTS[topicIndex]
   const strategy = REAL_ESTATE_TOPIC_STRATEGY[topicIndex]
+  const tierCounts = computeTierCounts(profile, count)
+  const { t1, t2, t3 } = tierCounts
   const cities = uniqueStrings([...detectedCities, ...detectedProjects.map(p => p.city).filter(Boolean)], 25)
   const projects = uniqueStrings(detectedProjects.map(p => p.project_name), 15)
   const minCityMentions = cities.length > 0 ? Math.ceil(count * 0.6) : 0
   const maxProjectMentions = projects.length > 0 ? Math.max(1, Math.floor(count * 0.25)) : 0
+  const intentSlots = realEstateIntentSlots(topicIndex)
 
   const result = await gpt(
     `You generate realistic ChatGPT/AI-assistant prompts for Israeli residential real estate brand visibility research.
@@ -505,9 +546,12 @@ Generate EXACTLY ${count} prompts for this one strategic topic:
 Topic name: ${topic}
 Topic strategy: ${strategy.purpose}
 
+You must preserve the same control discipline as the general onboarding generator, but all content must be Israeli-real-estate-specific.
+
 Non-negotiable rules:
 - Every prompt must be in ${profile.outputLanguage}.
 - Never mention the brand name or brand domain.
+- Every prompt is written from the searcher's perspective, not from the brand's perspective.
 - Do not invent city names, project names, neighborhoods, or competitors.
 - Prefer city/neighborhood-based buyer behavior over generic country-level wording.
 - If detected cities exist, at least ${minCityMentions} of these ${count} prompts must mention one of the detected cities or a directly supported area.
@@ -515,9 +559,18 @@ Non-negotiable rules:
 - If no cities are provided, use broader Israeli real estate phrasing supported by the profile/user region only.
 - If no projects are provided, do not create project-name prompts.
 - Separate family/residential intent from investor intent unless this topic is explicitly comparative.
-- Include a natural mix of short, medium, and long prompts.
-- Prompts should sound like real questions people ask ChatGPT, not generic keyword-only Google searches.
-- Avoid repeated opening words and repeated sentence structures.
+- Opening diversity: each prompt must start differently. Do not repeat the same first 2-3 words.
+- Intent coverage: across these ${count} prompts, cover these intent slots at least once where possible: ${intentSlots.join(', ')}.
+- Constraint calibration: include realistic real-estate constraints where appropriate: budget, equity, mortgage, monthly payment, room count, school/commute need, delivery timeline, rental demand, permit status, parking, mamad, balcony, elevator, indexation, taxes, or hidden costs.
+- Customer-goal grounding: every prompt must reflect a plausible buyer, family, investor, or apartment researcher goal.
+
+Length tiers and order:
+- Output the prompts in this exact order:
+  1. First ${t1} prompts: SHORT Tier 1 prompts, 2-7 words, quick mobile-style searches. They may be question fragments, but must still be natural.
+  2. Next ${t2} prompts: MEDIUM Tier 2 prompts, 10-25 words, conversational, with at least one realistic real-estate constraint.
+  3. Last ${t3} prompts: LONG Tier 3 prompts, 35-70 words, analytical/comparative. They must evaluate dimensions such as location, price, quality, risk, commute, family fit, rental yield, or alternatives.
+- Do not place all city prompts in one tier; spread detected cities across short, medium, and long prompts when cities exist.
+- Long prompts must not be long filler. They should compare or evaluate concrete tradeoffs.
 
 Israeli real estate terms to use when appropriate, especially in Hebrew:
 דירות חדשות, דירה מקבלן, דירת 4 חדרים, דירת 5 חדרים, דירת גן, פנטהאוז, ממ״ד, חניה, מרפסת, מחסן, מעלית, תנאי תשלום, 20/80, 10/90, משכנתא, הצמדה למדד, מס רכישה, תשואה, שכירות, פינוי בינוי, התחדשות עירונית, רכבת, גני ילדים, בתי ספר.
@@ -530,6 +583,21 @@ Quality examples to match in intent and specificity, adapted only to detected da
 - מה עדיף למשפחה צעירה: דירת גן או דירת 4 חדרים עם מרפסת?
 - תעזור לי להשוות בין פרויקטים חדשים בנתניה.
 
+Bad patterns to avoid:
+- Generic country-only wording when detected cities exist.
+- Repeating "מה חשוב לבדוק" or "אילו פרויקטים" across many prompts.
+- Mixing family school needs with rental yield unless the prompt is explicitly comparing buyer profiles.
+- Keyword-only SEO phrases that do not sound like AI-assistant questions.
+- Mentioning a project name in most prompts.
+
+Before outputting, verify:
+1. Exactly ${count} prompts.
+2. Exactly ${t1}/${t2}/${t3} short/medium/long tier order.
+3. Every prompt is in ${profile.outputLanguage}.
+4. No brand/domain mention.
+5. No duplicate prompts.
+6. City and project usage follows the limits above.
+
 Output JSON only: { "prompts": ["prompt1", "..."] }`,
     `Real estate generation context:\n${JSON.stringify({
       ...realEstatePromptContext(profile, cities, detectedProjects, classification),
@@ -540,12 +608,20 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
       detectedProjectNames: projects,
       minPromptsMentioningDetectedCities: minCityMentions,
       maxPromptsMentioningDetectedProjects: maxProjectMentions,
+      requiredTierCounts: { short: t1, medium: t2, long: t3 },
+      requiredIntentSlots: intentSlots,
+      customerGoals: profile.customerGoals || [],
+      typicalCustomer: profile.typicalCustomer || '',
     }, null, 2)}`,
     'gpt-4o'
   )
 
   try {
-    return validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain)
+    const prompts = validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain)
+    if (!validateRealEstateTierShape(prompts, tierCounts)) {
+      throw new Error('Real estate prompt generation did not follow the required short/medium/long tier order')
+    }
+    return prompts
   } catch (error) {
     if (attempt < 2) return generateRealEstatePromptsForTopic(topic, topicIndex, profile, detectedCities, detectedProjects, classification, brandDomain, attempt + 1)
     throw error
