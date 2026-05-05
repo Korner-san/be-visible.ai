@@ -52,6 +52,30 @@ function selectWave1Prompts(prompts: any[], userBusinessType: string, max: numbe
   return wave1Ids
 }
 
+function normalizePromptMap(value: unknown): Array<{ category: string; prompt: string }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+
+  const rows: Array<{ category: string; prompt: string }> = []
+  const seen = new Set<string>()
+
+  for (const [rawCategory, rawPrompts] of Object.entries(value as Record<string, unknown>)) {
+    const category = String(rawCategory || '').trim().slice(0, 200)
+    if (!category || !Array.isArray(rawPrompts)) continue
+
+    for (const rawPrompt of rawPrompts) {
+      const prompt = String(rawPrompt || '').trim().slice(0, 2000)
+      if (prompt.length < 3) continue
+
+      const key = `${category.toLowerCase()}\n${prompt.toLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      rows.push({ category, prompt })
+    }
+  }
+
+  return rows
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log('🔄 [COMPLETE-FINAL API] Starting final completion...')
@@ -59,7 +83,13 @@ export async function POST(request: NextRequest) {
 
     // Parse body first — brandId is the primary brand identifier
     const body = await request.json().catch(() => ({}))
-    const { brandId: bodyBrandId, timezone = 'UTC', competitors: bodyCompetitors, projects: bodyProjects } = body
+    const {
+      brandId: bodyBrandId,
+      timezone = 'UTC',
+      competitors: bodyCompetitors,
+      projects: bodyProjects,
+      promptsByTopic: bodyPromptsByTopic,
+    } = body
     console.log('🔍 [COMPLETE-FINAL API] brandId from body:', bodyBrandId)
 
     const adminSupabaseForCapacity = createAdminClient(
@@ -209,6 +239,37 @@ export async function POST(request: NextRequest) {
 
     // ── WAVE ASSIGNMENT ───────────────────────────────────────────────────────
     console.log('🌊 [COMPLETE-FINAL API] Assigning onboarding waves to brand_prompts...')
+    const replacementPromptRows = normalizePromptMap(bodyPromptsByTopic)
+    if (replacementPromptRows.length > 0) {
+      console.log('[COMPLETE-FINAL API] Replacing generated prompts with reviewed onboarding prompts:', replacementPromptRows.length)
+
+      const { error: deletePromptError } = await adminSupabaseForCapacity
+        .from('brand_prompts')
+        .delete()
+        .eq('brand_id', updatedBrand.id)
+
+      if (deletePromptError) {
+        console.error('[COMPLETE-FINAL API] Could not clear generated prompts:', deletePromptError.message)
+        return NextResponse.json({ success: false, error: 'Failed to replace generated prompts' }, { status: 500 })
+      }
+
+      const { error: insertPromptError } = await adminSupabaseForCapacity
+        .from('brand_prompts')
+        .insert(replacementPromptRows.map(row => ({
+          brand_id: updatedBrand.id,
+          raw_prompt: row.prompt,
+          improved_prompt: row.prompt,
+          status: 'inactive',
+          is_active: false,
+          category: row.category,
+        })))
+
+      if (insertPromptError) {
+        console.error('[COMPLETE-FINAL API] Could not save reviewed prompts:', insertPromptError.message)
+        return NextResponse.json({ success: false, error: 'Failed to save reviewed prompts' }, { status: 500 })
+      }
+    }
+
     const { data: allPrompts } = await adminSupabaseForCapacity
       .from('brand_prompts')
       .select('id, category')

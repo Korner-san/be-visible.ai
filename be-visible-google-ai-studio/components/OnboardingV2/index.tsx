@@ -112,6 +112,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
   // B_READY → D (RE brands) or C (general brands)
   const handlePromptsConfirm = useCallback((edited: Record<string, string[]>) => {
     setPromptsByTopic(edited)
+    setTopics(Object.keys(edited))
     setState(isRealEstate ? 'D' : 'C')
   }, [isRealEstate])
 
@@ -133,6 +134,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
           brandId,
           competitors,
           projects: confirmedProjects,
+          promptsByTopic,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       })
@@ -156,7 +158,7 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
       setLaunchError('Network error during launch. Please try again.')
       setState('C')
     }
-  }, [brandId, confirmedProjects, onComplete])
+  }, [brandId, confirmedProjects, promptsByTopic, onComplete])
 
   const isLaunching = state === 'LAUNCHING'
 
