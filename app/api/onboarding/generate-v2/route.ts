@@ -474,9 +474,37 @@ function containsBrandReference(prompt: string, brandName: string, brandDomain: 
   return Boolean((brand && lower.includes(brand)) || (domain && lower.includes(domain)))
 }
 
-function validateRealEstatePrompts(prompts: string[], count: number, profile: any, brandDomain: string): string[] {
+function realEstateForbiddenTerms(profile: any, brandDomain: string, projects: string[]): string[] {
+  const domain = normalizeDomain(brandDomain || '')
+  const domainParts = domain.split(/[.\-_/]+/g)
+  const brandParts = String(profile.businessName || '').split(/\s+/g)
+  const genericBrandTokens = new Set([
+    'מגורים', 'נדלן', 'נדל״ן', 'נדל"ן', 'פרויקטים', 'דירות', 'ישראל',
+    'real', 'estate', 'homes', 'home', 'residential', 'properties', 'property',
+    'group', 'company', 'development', 'developers', 'developer',
+  ])
+
+  return uniqueStrings([
+    profile.businessName,
+    domain,
+    ...domainParts,
+    ...brandParts,
+    ...projects,
+  ].map(term => String(term || '').trim())
+    .filter(term => term.length >= 3)
+    .filter(term => !genericBrandTokens.has(term.toLowerCase())), 80)
+}
+
+function containsForbiddenRealEstateTerm(prompt: string, forbiddenTerms: string[]): boolean {
+  const lower = prompt.toLowerCase()
+  return forbiddenTerms.some(term => lower.includes(term.toLowerCase()))
+}
+
+function validateRealEstatePrompts(prompts: string[], count: number, profile: any, brandDomain: string, forbiddenTerms: string[]): string[] {
   const cleaned = uniqueStrings(prompts.map(p => String(p || '').trim()).filter(Boolean), count + 10)
     .filter(prompt => !containsBrandReference(prompt, profile.businessName, brandDomain))
+    .filter(prompt => !containsForbiddenRealEstateTerm(prompt, forbiddenTerms))
+    .filter(prompt => countPromptWords(prompt) >= 6)
   if (cleaned.length !== count) throw new Error(`Real estate prompt generation returned ${cleaned.length} valid prompts instead of ${count}`)
   return cleaned.slice(0, count)
 }
@@ -486,24 +514,24 @@ function countPromptWords(prompt: string): number {
 }
 
 function validateRealEstateTierShape(prompts: string[], tierCounts: { t1: number; t2: number; t3: number }): boolean {
-  const shortPrompts = prompts.slice(0, tierCounts.t1)
+  const compactPrompts = prompts.slice(0, tierCounts.t1)
   const mediumPrompts = prompts.slice(tierCounts.t1, tierCounts.t1 + tierCounts.t2)
   const longPrompts = prompts.slice(tierCounts.t1 + tierCounts.t2)
 
-  const shortOk = shortPrompts.every(prompt => {
+  const compactOk = compactPrompts.every(prompt => {
     const words = countPromptWords(prompt)
-    return words >= 2 && words <= 10
+    return words >= 6 && words <= 14
   })
   const mediumOk = mediumPrompts.every(prompt => {
     const words = countPromptWords(prompt)
-    return words >= 8 && words <= 30
+    return words >= 12 && words <= 32
   })
   const longOk = longPrompts.every(prompt => {
     const words = countPromptWords(prompt)
     return words >= 28 && words <= 85
   })
 
-  return shortOk && mediumOk && longOk
+  return compactOk && mediumOk && longOk
 }
 
 function realEstateTierShapeReport(prompts: string[], tierCounts: { t1: number; t2: number; t3: number }) {
@@ -543,7 +571,7 @@ async function generateRealEstatePromptsForTopic(
   const cities = uniqueStrings([...detectedCities, ...detectedProjects.map(p => p.city).filter(Boolean)], 25)
   const projects = uniqueStrings(detectedProjects.map(p => p.project_name), 15)
   const minCityMentions = cities.length > 0 ? Math.ceil(count * 0.6) : 0
-  const maxProjectMentions = projects.length > 0 ? Math.max(1, Math.floor(count * 0.25)) : 0
+  const forbiddenTerms = realEstateForbiddenTerms(profile, brandDomain, projects)
   const intentSlots = realEstateIntentSlots(topicIndex)
 
   const result = await gpt(
@@ -562,7 +590,7 @@ Non-negotiable rules:
 - Do not invent city names, project names, neighborhoods, or competitors.
 - Prefer city/neighborhood-based buyer behavior over generic country-level wording.
 - If detected cities exist, at least ${minCityMentions} of these ${count} prompts must mention one of the detected cities or a directly supported area.
-- Use project names sparingly. No more than ${maxProjectMentions} of these ${count} prompts may mention a specific detected project name.
+- Do not mention specific project names in this version. Users usually search by city, apartment need, financing, risk, lifestyle, or comparison context, not project names.
 - If no cities are provided, use broader Israeli real estate phrasing supported by the profile/user region only.
 - If no projects are provided, do not create project-name prompts.
 - Separate family/residential intent from investor intent unless this topic is explicitly comparative.
@@ -570,11 +598,14 @@ Non-negotiable rules:
 - Intent coverage: across these ${count} prompts, cover these intent slots at least once where possible: ${intentSlots.join(', ')}.
 - Constraint calibration: include realistic real-estate constraints where appropriate: budget, equity, mortgage, monthly payment, room count, school/commute need, delivery timeline, rental demand, permit status, parking, mamad, balcony, elevator, indexation, taxes, or hidden costs.
 - Customer-goal grounding: every prompt must reflect a plausible buyer, family, investor, or apartment researcher goal.
+- Context and intent are mandatory: every prompt must include a real user situation plus a decision, evaluation, recommendation, risk-check, or comparison need. Never output a bare keyword phrase or title.
+- Every prompt must be at least 6 words.
+- Forbidden terms: never include these exact brand/domain/project terms or close variants: ${forbiddenTerms.join(', ')}.
 
 Length tiers and order:
 - Output the prompts in this exact order:
-  1. First ${t1} prompts: SHORT Tier 1 prompts, 2-7 words, quick mobile-style searches. They may be question fragments, but must still be natural.
-  2. Next ${t2} prompts: MEDIUM Tier 2 prompts, 10-25 words, conversational, with at least one realistic real-estate constraint.
+  1. First ${t1} prompts: COMPACT Tier 1 prompts, 6-14 words. These are still full user intents, not keyword fragments.
+  2. Next ${t2} prompts: MEDIUM Tier 2 prompts, 12-32 words, conversational, with at least one realistic real-estate constraint.
   3. Last ${t3} prompts: LONG Tier 3 prompts, 35-70 words, analytical/comparative. They must evaluate dimensions such as location, price, quality, risk, commute, family fit, rental yield, or alternatives.
 - Do not place all city prompts in one tier; spread detected cities across short, medium, and long prompts when cities exist.
 - Long prompts must not be long filler. They should compare or evaluate concrete tradeoffs.
@@ -591,19 +622,23 @@ Quality examples to match in intent and specificity, adapted only to detected da
 - תעזור לי להשוות בין פרויקטים חדשים בנתניה.
 
 Bad patterns to avoid:
+- Bare keyword phrases like "new apartments in Netanya", "neighborhood comparison in Hod Hasharon", or "4-room apartment in Givat Shmuel".
 - Generic country-only wording when detected cities exist.
 - Repeating "מה חשוב לבדוק" or "אילו פרויקטים" across many prompts.
 - Mixing family school needs with rental yield unless the prompt is explicitly comparing buyer profiles.
 - Keyword-only SEO phrases that do not sound like AI-assistant questions.
 - Mentioning a project name in most prompts.
+- Mentioning the brand name, brand sub-brand, domain, or project names.
+- Asking vague comparisons without a reason, such as "what is better, city A or city B?" without buyer profile, budget, apartment type, or decision context.
 
 Before outputting, verify:
 1. Exactly ${count} prompts.
-2. Exactly ${t1}/${t2}/${t3} short/medium/long tier order.
+2. Exactly ${t1}/${t2}/${t3} compact/medium/long tier order.
 3. Every prompt is in ${profile.outputLanguage}.
-4. No brand/domain mention.
+4. No brand/domain/project-name mention.
 5. No duplicate prompts.
-6. City and project usage follows the limits above.
+6. Every prompt has at least 6 words and a clear user intent.
+7. City usage follows the limits above.
 
 Output JSON only: { "prompts": ["prompt1", "..."] }`,
     `Real estate generation context:\n${JSON.stringify({
@@ -612,10 +647,10 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
       topicIndex: topicIndex + 1,
       expectedPromptCount: count,
       detectedCities: cities,
-      detectedProjectNames: projects,
+      detectedProjectNamesForExclusionOnly: projects,
       minPromptsMentioningDetectedCities: minCityMentions,
-      maxPromptsMentioningDetectedProjects: maxProjectMentions,
-      requiredTierCounts: { short: t1, medium: t2, long: t3 },
+      forbiddenBrandDomainAndProjectTerms: forbiddenTerms,
+      requiredTierCounts: { compact: t1, medium: t2, long: t3 },
       requiredIntentSlots: intentSlots,
       customerGoals: profile.customerGoals || [],
       typicalCustomer: profile.typicalCustomer || '',
@@ -624,7 +659,7 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
   )
 
   try {
-    const prompts = validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain)
+    const prompts = validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain, forbiddenTerms)
     if (!validateRealEstateTierShape(prompts, tierCounts)) {
       console.warn('[generate-v2] RE prompt tier shape warning:', {
         topic,
