@@ -520,18 +520,13 @@ function validateRealEstatePromptCandidates(prompts: string[], profile: any, bra
     .filter(prompt => !containsForbiddenRealEstateTerm(prompt, forbiddenTerms))
     .filter(prompt => countPromptWords(prompt) >= 6)
     .filter(prompt => countPromptWords(prompt) <= 40)
-    .filter(hasHomebuyerResearchSignal)
 }
 
-async function validateRealEstatePromptCandidatesWithReasoning(
+async function auditRealEstatePromptCandidatesWithReasoning(
   prompts: string[],
-  profile: any,
-  brandDomain: string,
-  forbiddenTerms: string[]
-): Promise<string[]> {
-  const candidates = validateRealEstatePromptCandidates(prompts, profile, brandDomain, forbiddenTerms)
-  if (candidates.length === 0) return []
-
+  profile: any
+): Promise<void> {
+  if (prompts.length === 0) return
   try {
     const result = await gpt(
       `You are a strict but practical validator for Israeli residential real-estate onboarding prompts.
@@ -545,17 +540,21 @@ Reject rental-only questions with no buying context, generic market trend questi
 Return JSON only: { "validIndexes": [0, 2] }`,
       `Output language: ${profile.outputLanguage}
 Candidate prompts:
-${candidates.map((prompt, index) => `${index}. ${prompt}`).join('\n')}`,
+${prompts.map((prompt, index) => `${index}. ${prompt}`).join('\n')}`,
       'gpt-4o-mini'
     )
 
     const validIndexes = Array.isArray(result.validIndexes)
       ? result.validIndexes.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n))
       : []
-    return candidates.filter((_, index) => validIndexes.includes(index))
+    if (validIndexes.length < prompts.length) {
+      console.warn('[generate-v2] RE prompt advisory validator flagged prompts:', {
+        validIndexes,
+        total: prompts.length,
+      })
+    }
   } catch (error: any) {
-    console.warn('[generate-v2] RE prompt mini-validator failed, using broad lexical validator:', error?.message || String(error))
-    return candidates
+    console.warn('[generate-v2] RE prompt advisory validator failed:', error?.message || String(error))
   }
 }
 
@@ -611,6 +610,55 @@ function realEstateIntentSlots(topicIndex: number): string[] {
 }
 
 function fallbackRealEstatePromptForSlot(topicIndex: number, city: string, position: number): string {
+  const contexts = [
+    'עם הון עצמי של 150 אלף שקל',
+    'עם יכולת החזר חודשית של 6,000 שקל',
+    'למשפחה עם שני ילדים שצריכה ממ״ד וחניה',
+    'כשחשובה לי גישה לרכבת ולעבודה',
+    'כשאני מתלבט בין דירת 4 חדרים לדירת 5 חדרים',
+    'לפני שאני מתחייב למשכנתא ארוכה',
+  ]
+  const context = contexts[position % contexts.length]
+  const directTemplatesByTopic = [
+    [
+      `אני בודק קניית דירה ב${city} ${context}, איזה אזור הכי מתאים?`,
+      `אני מחפש דירה חדשה ב${city} ${context}, אילו שכונות כדאי לבדוק?`,
+      `אני רוצה להבין קניית דירה ב${city} ${context}, מה חשוב להשוות?`,
+    ],
+    [
+      `אנחנו רוצים לקנות דירה ב${city} ${context}, מה חשוב לבדוק למשפחה?`,
+      `אני מחפש דירה למשפחה ב${city} ${context}, איך לבחור אזור מתאים?`,
+      `לפני רכישת דירה ב${city} ${context}, איך לבדוק חינוך וקהילה?`,
+    ],
+    [
+      `אני שוקל לקנות דירה להשקעה ב${city} ${context}, איך לבדוק כדאיות?`,
+      `לפני רכישת דירה להשקעה ב${city} ${context}, מה לבדוק מעבר לתשואה?`,
+      `אני בוחן דירה להשקעה ב${city} ${context}, איך להעריך סיכון ונזילות?`,
+    ],
+    [
+      `אני רוצה להבין אם קניית דירה ב${city} ${context} אפשרית כלכלית.`,
+      `לפני רכישת דירה ב${city} ${context}, איך לבדוק משכנתא ותשלומים?`,
+      `אני בודק דירה מקבלן ב${city} ${context}, איך להשוות מחיר ועלויות?`,
+    ],
+    [
+      `לפני קניית דירה ב${city} ${context}, איך לבדוק אמינות יזם?`,
+      `אני שוקל רכישת דירה חדשה ב${city} ${context}, אילו סיכוני פרויקט לבדוק?`,
+      `לפני חתימה על דירה ב${city} ${context}, איך לבדוק איכות ובטוחות?`,
+    ],
+    [
+      `אני מחפש לקנות דירה ב${city} ${context}, אילו מאפיינים באמת חשובים?`,
+      `לפני רכישת דירה ב${city} ${context}, איך לבחור בין מרפסת לגינה?`,
+      `אני בודק דירה חדשה ב${city} ${context}, איך להעריך תכנון וחניה?`,
+    ],
+    [
+      `אני משווה חלופות לקניית דירה ב${city} ${context}, איך לבחור נכון?`,
+      `לפני רכישת דירה ב${city} ${context}, איך להשוות חדשה מול יד שנייה?`,
+      `אני מתלבט בין כמה דירות ב${city} ${context}, איך להחליט לפי מחיר וסיכון?`,
+    ],
+  ]
+  const directTemplates = directTemplatesByTopic[topicIndex] || directTemplatesByTopic[0]
+  return directTemplates[position % directTemplates.length]
+
   const templatesByTopic = [
     [
       `אני רוצה לקנות דירה חדשה ב${city}, אילו שכונות כדאי לבדוק לפי תחבורה, חינוך ומחיר?`,
@@ -731,7 +779,7 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
     'gpt-4o'
   )
 
-  const repaired = (await validateRealEstatePromptCandidatesWithReasoning(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms))
+  const repaired = validateRealEstatePromptCandidates(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms)
     .filter(prompt => !acceptedPrompts.some(existing => existing.toLowerCase() === prompt.toLowerCase()))
     .slice(0, missingCount)
 
@@ -879,7 +927,7 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
   )
 
   try {
-    let prompts = (await validateRealEstatePromptCandidatesWithReasoning(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms))
+    let prompts = validateRealEstatePromptCandidates(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms)
       .slice(0, count)
 
     if (prompts.length < count) {
@@ -902,6 +950,8 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
     if (prompts.length !== count) {
       throw new Error(`Real estate prompt generation returned ${prompts.length} valid prompts instead of ${count}`)
     }
+
+    await auditRealEstatePromptCandidatesWithReasoning(prompts, profile)
 
     if (!validateRealEstateTierShape(prompts, tierCounts)) {
       console.warn('[generate-v2] RE prompt tier shape warning:', {
