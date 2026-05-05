@@ -5,8 +5,7 @@ import { LeftB } from './LeftB'
 import { RightB } from './RightB'
 import { LeftC, type CompetitorEntry } from './LeftC'
 import { RightC } from './RightC'
-import { LeftD, type ProjectEntry } from './LeftD'
-import { RightD } from './RightD'
+import type { ProjectEntry } from './LeftD'
 import type { OnboardingV2Props, OnboardingState, FormData, BusinessProfile } from './types'
 
 export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNavigate }) => {
@@ -83,8 +82,10 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
               setProfile(event.data)
             } else if (event.type === 'real_estate_data') {
               setIsRealEstate(true)
-              setDetectedProjects((event.data.projects || []) as Array<{ project_name: string; city: string | null }>)
+              const projects = (event.data.projects || []) as Array<{ project_name: string; city: string | null }>
+              setDetectedProjects(projects)
               setDetectedCities(event.data.cities || [])
+              setConfirmedProjects(projects.filter(p => p.project_name && p.city) as ProjectEntry[])
             } else if (event.type === 'topics') {
               setTopics(event.data)
             } else if (event.type === 'prompts_topic') {
@@ -113,11 +114,6 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
   const handlePromptsConfirm = useCallback((edited: Record<string, string[]>) => {
     setPromptsByTopic(edited)
     setTopics(Object.keys(edited))
-    setState(isRealEstate ? 'D' : 'C')
-  }, [isRealEstate])
-
-  const handleProjectsConfirm = useCallback((projects: ProjectEntry[]) => {
-    setConfirmedProjects(projects)
     setState('C')
   }, [])
 
@@ -193,13 +189,6 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
             onConfirm={handlePromptsConfirm}
           />
         )}
-        {(state === 'D') && (
-          <LeftD
-            detectedProjects={detectedProjects}
-            detectedCities={detectedCities}
-            onContinue={handleProjectsConfirm}
-          />
-        )}
         {(state === 'C' || state === 'LAUNCHING') && (
           <LeftC
             suggestedCompetitors={profile?.suggestedCompetitors || []}
@@ -221,9 +210,6 @@ export const OnboardingV2: React.FC<OnboardingV2Props> = ({ onComplete, onNaviga
             completedTopics={completedTopics}
             isComplete={state === 'B_READY'}
           />
-        )}
-        {(state === 'D') && (
-          <RightD detectedProjects={detectedProjects} />
         )}
         {(state === 'C' || state === 'LAUNCHING') && (
           <RightC

@@ -7,13 +7,13 @@ export const maxDuration = 300 // Vercel Pro: full pipeline needs up to 5 min
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 const TAVILY_KEY = process.env.TAVILY_API_KEY
 
-// ─── GPT-4o-mini call ─────────────────────────────────────────────────────────
-async function gpt(system: string, user: string): Promise<any> {
+// ─── GPT call. General onboarding defaults to GPT-4o-mini. ────────────────────
+async function gpt(system: string, user: string, model = 'gpt-4o-mini'): Promise<any> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_KEY!}` },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       temperature: 0.85,
       response_format: { type: 'json_object' },
@@ -351,7 +351,8 @@ From the website content, extract:
 Only include names clearly identifiable from the text. Do not invent or guess.
 
 Output JSON: { "projects": [{"project_name": "...", "city": "..." or null}], "cities": [] }`,
-    `Company: ${profile.businessName}\n\nWebsite content:\n${combinedText.slice(0, 8000)}`
+    `Company: ${profile.businessName}\n\nWebsite content:\n${combinedText.slice(0, 8000)}`,
+    'gpt-4o'
   )
   return {
     projects: Array.isArray(result.projects)
@@ -388,6 +389,167 @@ Output JSON: { "topics": ["t1", "t2", "t3", "t4", "t5", "t_projects", "t_localit
     throw new Error('RE topics generation returned insufficient topics')
   }
   return result.topics.slice(0, 7)
+}
+
+const REAL_ESTATE_TOPIC_COUNTS = [9, 8, 8, 7, 7, 5, 6]
+
+const REAL_ESTATE_TOPIC_STRATEGY = [
+  { key: 'city_area_apartment_search', purpose: 'City / area / neighborhood apartment search. Simulate buyers searching by city, neighborhood, district, or area. Heavily use detectedCities when available.' },
+  { key: 'family_home_buying_residential_living', purpose: 'Family home buying / residential living. Consider schools, kindergartens, parks, safety, community, parking, mamad, balcony, elevator, daily convenience, commute, and long-term family fit.' },
+  { key: 'investment_rental_yield_appreciation', purpose: 'Investment apartment / rental yield / appreciation. Consider rental yield, rental demand, future appreciation, transport access, employment areas, students, development plans, liquidity, taxes, and risk.' },
+  { key: 'price_payment_terms_mortgage_affordability', purpose: 'Price / payment terms / mortgage affordability. Consider price per meter, payment terms, 20/80, 10/90, indexation, mortgage, monthly repayment, equity, taxes, legal fees, and hidden costs.' },
+  { key: 'developer_credibility_construction_quality_risk', purpose: 'Developer credibility / construction quality / project risk. Consider previous projects, delivery track record, construction quality, bank guarantee, permit status, contract risk, technical specs, complaints, transparency, and handover.' },
+  { key: 'apartment_type_physical_features_lifestyle_fit', purpose: 'Apartment type / physical features / lifestyle fit. Consider 3-room, 4-room, 5-room, garden apartment, penthouse, balcony, storage, parking, mamad, elevator, layout, sunlight, air directions, home office, and long-term suitability.' },
+  { key: 'comparing_projects_developers_alternatives', purpose: 'Comparing projects / developers / alternatives. Simulate competitive AI searches comparing projects in the same city, developers in the same region, new-build vs second-hand apartments, city vs city, and family vs luxury alternatives.' },
+]
+
+function uniqueStrings(values: unknown[], max = 30): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const value of values) {
+    const clean = String(value || '').trim()
+    if (!clean) continue
+    const key = clean.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(clean)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function realEstatePromptContext(profile: any, cities: string[], projects: Array<{ project_name: string; city: string | null }>, classification: any) {
+  return {
+    businessName: profile.businessName,
+    description: profile.description,
+    industry: profile.industry,
+    productsServices: profile.productsServices || [],
+    geographicScope: profile.geographicScope,
+    outputLanguage: profile.outputLanguage,
+    userRegion: profile.userRegion,
+    detectedCities: cities,
+    detectedProjects: projects,
+    matchedBusinessKind: classification?.matchedBusinessKind || null,
+    classificationConfidence: classification?.confidence || null,
+    classificationReason: classification?.reason || null,
+  }
+}
+
+async function generateRealEstateTopics(
+  profile: any,
+  detectedCities: string[],
+  detectedProjects: Array<{ project_name: string; city: string | null }>,
+  classification: any
+): Promise<string[]> {
+  const result = await gpt(
+    `You are an AI search behavior analyst for Israeli residential real estate.
+
+Generate EXACTLY 7 topic category names in ${profile.outputLanguage}. These are category labels for onboarding UI and database category grouping.
+
+The 7 topics must follow this exact strategy and order:
+${REAL_ESTATE_TOPIC_STRATEGY.map((topic, i) => `${i + 1}. ${topic.purpose}`).join('\n')}
+
+Rules:
+- Keep each topic name concise: 3-8 words.
+- Do not mention the brand name or brand domain.
+- Use the selected output language only.
+- Make topic 1 naturally reflect the detected city/area search pattern if cities exist.
+- Do not invent cities, neighborhoods, projects, or competitors.
+- Preserve the exact strategic order above.
+
+Output JSON only: { "topics": ["topic1", "topic2", "topic3", "topic4", "topic5", "topic6", "topic7"] }`,
+    `Real estate generation context:\n${JSON.stringify(realEstatePromptContext(profile, detectedCities, detectedProjects, classification), null, 2)}`,
+    'gpt-4o'
+  )
+
+  const topics = Array.isArray(result.topics) ? uniqueStrings(result.topics, 7) : []
+  if (topics.length !== 7) throw new Error(`Real estate topic generation returned ${topics.length} topics instead of 7`)
+  return topics
+}
+
+function containsBrandReference(prompt: string, brandName: string, brandDomain: string): boolean {
+  const lower = prompt.toLowerCase()
+  const domain = normalizeDomain(brandDomain || '')
+  const brand = String(brandName || '').trim().toLowerCase()
+  return Boolean((brand && lower.includes(brand)) || (domain && lower.includes(domain)))
+}
+
+function validateRealEstatePrompts(prompts: string[], count: number, profile: any, brandDomain: string): string[] {
+  const cleaned = uniqueStrings(prompts.map(p => String(p || '').trim()).filter(Boolean), count + 10)
+    .filter(prompt => !containsBrandReference(prompt, profile.businessName, brandDomain))
+  if (cleaned.length !== count) throw new Error(`Real estate prompt generation returned ${cleaned.length} valid prompts instead of ${count}`)
+  return cleaned.slice(0, count)
+}
+
+async function generateRealEstatePromptsForTopic(
+  topic: string,
+  topicIndex: number,
+  profile: any,
+  detectedCities: string[],
+  detectedProjects: Array<{ project_name: string; city: string | null }>,
+  classification: any,
+  brandDomain: string,
+  attempt = 1
+): Promise<string[]> {
+  const count = REAL_ESTATE_TOPIC_COUNTS[topicIndex]
+  const strategy = REAL_ESTATE_TOPIC_STRATEGY[topicIndex]
+  const cities = uniqueStrings([...detectedCities, ...detectedProjects.map(p => p.city).filter(Boolean)], 25)
+  const projects = uniqueStrings(detectedProjects.map(p => p.project_name), 15)
+  const minCityMentions = cities.length > 0 ? Math.ceil(count * 0.6) : 0
+  const maxProjectMentions = projects.length > 0 ? Math.max(1, Math.floor(count * 0.25)) : 0
+
+  const result = await gpt(
+    `You generate realistic ChatGPT/AI-assistant prompts for Israeli residential real estate brand visibility research.
+
+Generate EXACTLY ${count} prompts for this one strategic topic:
+Topic name: ${topic}
+Topic strategy: ${strategy.purpose}
+
+Non-negotiable rules:
+- Every prompt must be in ${profile.outputLanguage}.
+- Never mention the brand name or brand domain.
+- Do not invent city names, project names, neighborhoods, or competitors.
+- Prefer city/neighborhood-based buyer behavior over generic country-level wording.
+- If detected cities exist, at least ${minCityMentions} of these ${count} prompts must mention one of the detected cities or a directly supported area.
+- Use project names sparingly. No more than ${maxProjectMentions} of these ${count} prompts may mention a specific detected project name.
+- If no cities are provided, use broader Israeli real estate phrasing supported by the profile/user region only.
+- If no projects are provided, do not create project-name prompts.
+- Separate family/residential intent from investor intent unless this topic is explicitly comparative.
+- Include a natural mix of short, medium, and long prompts.
+- Prompts should sound like real questions people ask ChatGPT, not generic keyword-only Google searches.
+- Avoid repeated opening words and repeated sentence structures.
+
+Israeli real estate terms to use when appropriate, especially in Hebrew:
+דירות חדשות, דירה מקבלן, דירת 4 חדרים, דירת 5 חדרים, דירת גן, פנטהאוז, ממ״ד, חניה, מרפסת, מחסן, מעלית, תנאי תשלום, 20/80, 10/90, משכנתא, הצמדה למדד, מס רכישה, תשואה, שכירות, פינוי בינוי, התחדשות עירונית, רכבת, גני ילדים, בתי ספר.
+
+Quality examples to match in intent and specificity, adapted only to detected data:
+- איפה כדאי למשפחה עם ילדים לקנות דירה חדשה בנתניה?
+- האם משתלם לקנות דירה להשקעה בנתניה בשנים הקרובות?
+- מה חשוב לבדוק בתנאי תשלום של דירה חדשה מקבלן?
+- איך בודקים אם יזם נדל״ן בישראל אמין?
+- מה עדיף למשפחה צעירה: דירת גן או דירת 4 חדרים עם מרפסת?
+- תעזור לי להשוות בין פרויקטים חדשים בנתניה.
+
+Output JSON only: { "prompts": ["prompt1", "..."] }`,
+    `Real estate generation context:\n${JSON.stringify({
+      ...realEstatePromptContext(profile, cities, detectedProjects, classification),
+      topic,
+      topicIndex: topicIndex + 1,
+      expectedPromptCount: count,
+      detectedCities: cities,
+      detectedProjectNames: projects,
+      minPromptsMentioningDetectedCities: minCityMentions,
+      maxPromptsMentioningDetectedProjects: maxProjectMentions,
+    }, null, 2)}`,
+    'gpt-4o'
+  )
+
+  try {
+    return validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain)
+  } catch (error) {
+    if (attempt < 2) return generateRealEstatePromptsForTopic(topic, topicIndex, profile, detectedCities, detectedProjects, classification, brandDomain, attempt + 1)
+    throw error
+  }
 }
 
 // ─── POST handler (SSE stream) ────────────────────────────────────────────────
@@ -500,7 +662,7 @@ export async function POST(request: NextRequest) {
         // ── RE Classification ─────────────────────────────────────────────────
         let isRealEstateIsrael = false
         let reProjectData: { projects: Array<{project_name: string; city: string | null}>; cities: string[] } = { projects: [], cities: [] }
-        let reClassification: { confidence: string; reason: string } = { confidence: 'low', reason: '' }
+        let reClassification: { confidence: string; reason: string; matchedBusinessKind: string | null } = { confidence: 'low', reason: '', matchedBusinessKind: null }
 
         // Auto-detect: Hebrew URL path (/he/) or significant Hebrew characters in content + real estate industry
         const hasHebrewUrlPath = /\/(he)(\/|$)/i.test(websiteUrl)
@@ -511,12 +673,12 @@ export async function POST(request: NextRequest) {
 
         if ((hasHebrewUrlPath || hasHebrewContent) && isREIndustry) {
           isRealEstateIsrael = true
-          reClassification = { confidence: 'high', reason: 'Auto-detected: Hebrew site with real estate industry profile' }
+          reClassification = { confidence: 'high', reason: 'Auto-detected: Hebrew site with real estate industry profile', matchedBusinessKind: null }
         } else {
           try {
             const reClass = await classifyRealEstateIsrael(rawText, profile)
             isRealEstateIsrael = reClass.isRealEstate
-            reClassification = { confidence: reClass.confidence, reason: reClass.reason }
+            reClassification = { confidence: reClass.confidence, reason: reClass.reason, matchedBusinessKind: reClass.matchedBusinessKind }
           } catch (e: any) {
             console.error('[generate-v2] RE classification failed (non-blocking):', e.message)
           }
@@ -547,9 +709,10 @@ export async function POST(request: NextRequest) {
         let topics: string[]
         try {
           topics = isRealEstateIsrael
-            ? await generateRETopics(profile)
+            ? await generateRealEstateTopics(profile, reProjectData.cities, reProjectData.projects, reClassification)
             : await generateTopics(profile)
-          if (!Array.isArray(topics) || topics.length < 3) throw new Error('Not enough topics generated')
+          if (isRealEstateIsrael && topics.length !== 7) throw new Error('Real estate topic generation must return exactly 7 topics')
+          if (!isRealEstateIsrael && (!Array.isArray(topics) || topics.length < 3)) throw new Error('Not enough topics generated')
         } catch (e: any) {
           send({ type: 'error', data: { message: `Failed to generate search topics: ${e.message}` } })
           controller.close(); return
@@ -557,25 +720,39 @@ export async function POST(request: NextRequest) {
         send({ type: 'topics', data: topics })
 
         // ── Layer 3: Prompts per topic (parallel GPT, sequential DB write) ───────
-        // RE brands: 7 topics × [7,7,7,7,7,8,7] prompts = 50 total
+        // RE brands: 7 topics × [9,8,8,7,7,5,6] prompts = 50 total
         // General brands: 5 topics × 10 prompts = 50 total
-        const RE_TOPIC_COUNTS = [7, 7, 7, 7, 7, 8, 7]
-
         // Clear any prompts from previous scan attempts before streaming new ones
         await adminSupabase.from('brand_prompts').delete().eq('brand_id', brandId)
 
         // Run all GPT calls in parallel for speed, collect results
         const topicResults: { topic: string; prompts: string[] }[] = await Promise.all(
           topics.map(async (topic, topicIndex) => {
-            const count = isRealEstateIsrael ? (RE_TOPIC_COUNTS[topicIndex] ?? 10) : 10
-            const topicTierCounts = computeTierCounts(profile, count)
             let prompts: string[]
-            try { prompts = await generatePromptsForTopic(topic, profile, topicTierCounts, 1, count) }
+            try {
+              if (isRealEstateIsrael) {
+                prompts = await generateRealEstatePromptsForTopic(topic, topicIndex, profile, reProjectData.cities, reProjectData.projects, reClassification, websiteUrl)
+              } else {
+                const count = 10
+                const topicTierCounts = computeTierCounts(profile, count)
+                prompts = await generatePromptsForTopic(topic, profile, topicTierCounts, 1, count)
+              }
+            }
             catch { prompts = [] }
             send({ type: 'prompts_topic', data: { topic, prompts } })
             return { topic, prompts }
           })
         )
+
+        if (isRealEstateIsrael) {
+          const generatedTotalPrompts = topicResults.reduce((sum, row) => sum + row.prompts.length, 0)
+          const hasExpectedDistribution = topicResults.every((row, index) => row.prompts.length === REAL_ESTATE_TOPIC_COUNTS[index])
+          const uniquePromptCount = new Set(topicResults.flatMap(row => row.prompts).map(prompt => prompt.trim().toLowerCase())).size
+          if (generatedTotalPrompts !== 50 || !hasExpectedDistribution || uniquePromptCount !== 50) {
+            send({ type: 'error', data: { message: `Generated ${generatedTotalPrompts} real estate prompts instead of the required 50. Please try scanning again.` } })
+            controller.close(); return
+          }
+        }
 
         // Write to DB sequentially to avoid UNIQUE(brand_id, raw_prompt) race collisions
         // Set improved_prompt = raw_prompt so dashboard reads correctly (V1 parity)
