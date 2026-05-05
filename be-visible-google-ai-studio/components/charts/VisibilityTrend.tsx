@@ -36,15 +36,12 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
   const score = currentScore ?? (brandId ? 0 : 94);
   const [percentage, setPercentage] = useState(81.6);
   const displayPercent = trendPercent ?? percentage;
-  const brandBrown = '#481643';
-
-  // Palette: #481643 → #970E33 → #D90226 → #FB5607 → #FFBD00 (low score → high score)
+  // Palette: #1e1b4b (navy) → #6366f1 (indigo) → #a855f7 (violet) → #f97316 (orange)
   const stops = [
-    { r: 72,  g: 22,  b: 67  }, // #481643
-    { r: 151, g: 14,  b: 51  }, // #970E33
-    { r: 217, g: 2,   b: 38  }, // #D90226
-    { r: 251, g: 86,  b: 7   }, // #FB5607
-    { r: 255, g: 189, b: 0   }  // #FFBD00
+    { r: 30,  g: 27,  b: 75  }, // #1e1b4b navy
+    { r: 99,  g: 102, b: 241 }, // #6366f1 indigo
+    { r: 168, g: 85,  b: 247 }, // #a855f7 violet
+    { r: 249, g: 115, b: 22  }, // #f97316 orange
   ];
 
   const getTicks = (dataset: TrendDataPoint[], count: number) => {

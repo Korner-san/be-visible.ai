@@ -358,8 +358,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
 
   return (
     <div className="grid grid-cols-12 gap-6 items-stretch">
-      {/* Top Row: Primary Charts - Matched to Citations 8/4 @ 340px */}
-      <div className="col-span-12 lg:col-span-8 h-[340px]">
+      {/* Top Row: Primary Charts */}
+      <div className="col-span-12 lg:col-span-8 h-[360px]">
         <VisibilityTrend
           data={visibilityData.length > 0 ? visibilityData : undefined}
           currentScore={currentScore}
@@ -369,7 +369,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           brandName={brandName}
         />
       </div>
-      <div className="col-span-12 lg:col-span-4 h-[340px]">
+      <div className="col-span-12 lg:col-span-4 h-[360px]">
         <MentionRate
           value={mentionRate}
           trend={mentionTrend}
@@ -379,8 +379,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
         />
       </div>
 
-      {/* Bottom Row: Distribution & Ranking - Balanced height */}
-      <div className="col-span-12 lg:col-span-5 h-[380px]">
+      {/* Bottom Row: Distribution & Ranking */}
+      <div className="col-span-12 lg:col-span-5 h-[400px]">
         <ShareOfVoice
           data={sovData}
           trend={sovTrend}
@@ -389,7 +389,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ timeRange, brandId, userTi
           brandId={brandId}
         />
       </div>
-      <div className="col-span-12 lg:col-span-7 h-[380px]">
+      <div className="col-span-12 lg:col-span-7 h-[400px]">
         <PositionRanking brandId={brandId} timeRange={timeRange} customDateRange={customDateRange} selectedModels={selectedModels} onNavigateToPrompts={onNavigateToPrompts} />
       </div>
     </div>

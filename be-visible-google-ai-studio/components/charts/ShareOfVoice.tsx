@@ -3,8 +3,8 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { ShareData } from '../../types';
 
-const BRAND_COLOR = '#2C1308';
-const OTHER_COLOR = '#ea580c';
+const BRAND_COLOR = '#1e1b4b';
+const OTHER_COLOR = '#f97316';
 
 const MOCK_DATA: ShareData[] = [
   { name: 'Incredibuild', value: 45, color: BRAND_COLOR },
@@ -74,7 +74,7 @@ export const ShareOfVoice: React.FC<ShareOfVoiceProps> = ({ data: sovData, trend
               style={trend > 0
                 ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
                 : trend < 0
-                ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+                ? { color: '#dc2626', backgroundColor: '#fef2f2', borderColor: '#fecaca' }
                 : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
               }
             >

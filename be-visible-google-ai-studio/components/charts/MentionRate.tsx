@@ -17,13 +17,12 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, tren
   const displayValue = propValue ?? (brandId ? 0 : mentionValue);
   const [fillColor, setFillColor] = useState('#d5002b');
 
-  // Palette from image: Purple (Darkest) -> Maroon -> Red -> Orange -> Yellow (Brightest)
+  // Palette: Navy → Indigo → Violet → Orange
   const palette = [
-    { pct: 0, color: '#45143f' },   // Deep Purple
-    { pct: 25, color: '#8c0b31' },  // Maroon
-    { pct: 50, color: '#d5002b' },  // Red
-    { pct: 75, color: '#ff5925' },  // Orange
-    { pct: 100, color: '#ffbd00' }  // Yellow
+    { pct: 0,   color: '#1e1b4b' }, // Navy
+    { pct: 33,  color: '#6366f1' }, // Indigo
+    { pct: 66,  color: '#a855f7' }, // Violet
+    { pct: 100, color: '#f97316' }, // Orange
   ];
 
   const hexToRgb = (hex: string) => {
@@ -147,7 +146,7 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, tren
              style={trend > 0
                ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
                : trend < 0
-               ? { color: '#7B3218', backgroundColor: 'rgba(231,179,115,0.18)', borderColor: 'rgba(150,61,31,0.25)' }
+               ? { color: '#dc2626', backgroundColor: '#fef2f2', borderColor: '#fecaca' }
                : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
              }
            >

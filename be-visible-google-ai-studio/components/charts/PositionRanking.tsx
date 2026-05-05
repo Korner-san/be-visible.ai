@@ -69,13 +69,11 @@ const MOCK_DATA: PromptScore[] = [
   { promptText: '"Best distributed compiling solutions for C++ codebases"', currentScore: 30, previousScore: null },
 ];
 
-// Color gradient based on score 0-100
+// Color gradient based on score 0-100: slate → orange
 const stops = [
-  { r: 63, g: 15, b: 3 },    // 0 - darkest
-  { r: 122, g: 36, b: 16 },
-  { r: 150, g: 61, b: 31 },
-  { r: 188, g: 99, b: 58 },
-  { r: 231, g: 179, b: 115 }, // 100 - lightest/gold
+  { r: 148, g: 163, b: 184 }, // slate-400 (0)
+  { r: 251, g: 146, b: 60  }, // orange-400 (50)
+  { r: 249, g: 115, b: 22  }, // orange-500 (100)
 ];
 
 function getScoreColor(score: number): string {
