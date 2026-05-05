@@ -500,13 +500,18 @@ function containsForbiddenRealEstateTerm(prompt: string, forbiddenTerms: string[
   return forbiddenTerms.some(term => lower.includes(term.toLowerCase()))
 }
 
-function hasRealEstatePurchaseIntent(prompt: string): boolean {
+function hasHomebuyerResearchSignal(prompt: string): boolean {
   const lower = prompt.toLowerCase()
-  const purchaseTerms = [
+  const buyerResearchTerms = [
     'לקנות', 'רכיש', 'קניית', 'קונה', 'רוכש', 'רוכשים',
+    '׳“׳™׳¨׳”', '׳“׳™׳¨׳•׳×', '׳׳©׳›׳ ׳×׳', '׳”׳•׳', '׳¢׳¦׳׳™', '׳§׳‘׳׳',
+    '׳™׳–׳', '׳—׳ ׳™׳”', '׳׳׳´׳“', '׳׳¨׳₪׳¡׳×', '׳©׳›׳•׳ ׳”', '׳©׳›׳•׳ ׳•׳×',
+    '20/80', '10/90', '׳”׳¦׳׳“׳”', '׳׳“׳“',
     'buy', 'buying', 'purchase', 'purchasing', 'buyer', 'homebuyer',
+    'apartment', 'home', 'mortgage', 'equity', 'developer', 'contractor',
+    'neighborhood', 'schools', 'parking', 'balcony', 'payment terms',
   ]
-  return purchaseTerms.some(term => lower.includes(term.toLowerCase()))
+  return buyerResearchTerms.some(term => lower.includes(term.toLowerCase()))
 }
 
 function validateRealEstatePromptCandidates(prompts: string[], profile: any, brandDomain: string, forbiddenTerms: string[]): string[] {
@@ -515,7 +520,43 @@ function validateRealEstatePromptCandidates(prompts: string[], profile: any, bra
     .filter(prompt => !containsForbiddenRealEstateTerm(prompt, forbiddenTerms))
     .filter(prompt => countPromptWords(prompt) >= 6)
     .filter(prompt => countPromptWords(prompt) <= 40)
-    .filter(hasRealEstatePurchaseIntent)
+    .filter(hasHomebuyerResearchSignal)
+}
+
+async function validateRealEstatePromptCandidatesWithReasoning(
+  prompts: string[],
+  profile: any,
+  brandDomain: string,
+  forbiddenTerms: string[]
+): Promise<string[]> {
+  const candidates = validateRealEstatePromptCandidates(prompts, profile, brandDomain, forbiddenTerms)
+  if (candidates.length === 0) return []
+
+  try {
+    const result = await gpt(
+      `You are a strict but practical validator for Israeli residential real-estate onboarding prompts.
+
+Accept a prompt if it is something a real person who is considering buying/purchasing a home or apartment would reasonably ask before purchase.
+
+Important: the prompt does NOT need to literally say "buy" or "purchase". It can be about mortgage, equity, monthly repayment, payment terms, neighborhoods, schools, commute, developer reliability, construction quality, apartment features, project risk, taxes, or comparison of alternatives, as long as the implied context is a purchase decision.
+
+Reject rental-only questions with no buying context, generic market trend questions with no buyer decision, bare keyword phrases, brand/project/domain mentions, and prompts unrelated to apartment/home purchase research.
+
+Return JSON only: { "validIndexes": [0, 2] }`,
+      `Output language: ${profile.outputLanguage}
+Candidate prompts:
+${candidates.map((prompt, index) => `${index}. ${prompt}`).join('\n')}`,
+      'gpt-4o-mini'
+    )
+
+    const validIndexes = Array.isArray(result.validIndexes)
+      ? result.validIndexes.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n))
+      : []
+    return candidates.filter((_, index) => validIndexes.includes(index))
+  } catch (error: any) {
+    console.warn('[generate-v2] RE prompt mini-validator failed, using broad lexical validator:', error?.message || String(error))
+    return candidates
+  }
 }
 
 function countPromptWords(prompt: string): number {
@@ -663,10 +704,12 @@ Generate EXACTLY ${missingCount} additional prompts for topic "${topic}".
 
 Hard rules:
 - Every prompt must be in ${profile.outputLanguage}.
-- Every prompt must be about buying or purchasing a home/apartment. Make the purchase intent explicit.
+- Every prompt must be something a person considering buying/purchasing a home or apartment would ask before purchase.
+- Literal "buy/purchase" wording is preferred but not required if mortgage, equity, payment terms, apartment fit, developer risk, neighborhood fit, or comparison context clearly implies a purchase decision.
 - Every prompt must be 6-40 words.
 - Match these missing slot length bands: ${missingBands.join('; ')}.
 - Each prompt needs a real user situation plus a decision, recommendation, comparison, affordability, risk-check, or evaluation need.
+- Medium and long missing slots must include first-person user context such as equity, monthly mortgage capacity, family size, commute, apartment size, schools, or budget tradeoff.
 - Never output bare keyword phrases.
 - Never mention the brand, domain, sub-brand, or project names.
 - Never repeat an accepted prompt or reuse the same opening phrasing.
@@ -688,7 +731,7 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
     'gpt-4o'
   )
 
-  const repaired = validateRealEstatePromptCandidates(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms)
+  const repaired = (await validateRealEstatePromptCandidatesWithReasoning(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms))
     .filter(prompt => !acceptedPrompts.some(existing => existing.toLowerCase() === prompt.toLowerCase()))
     .slice(0, missingCount)
 
@@ -759,7 +802,8 @@ Non-negotiable rules:
 - Every prompt must be in ${profile.outputLanguage}.
 - Never mention the brand name or brand domain.
 - Every prompt is written from the searcher's perspective, not from the brand's perspective.
-- Every prompt must be about buying or purchasing a home/apartment. Make the purchase intent explicit in every prompt.
+- Every prompt must be something a person considering buying/purchasing a home or apartment would ask before purchase.
+- The prompt does not need to literally say "buy" or "purchase" if the purchase decision is clear from mortgage, equity, payment terms, developer risk, apartment features, neighborhood fit, or comparison context.
 - Do not generate rental-only prompts, market-trend-only prompts, or general neighborhood research unless the user is deciding whether/where/how to buy.
 - Do not invent city names, project names, neighborhoods, or competitors.
 - Prefer city/neighborhood-based buyer behavior over generic country-level wording.
@@ -779,8 +823,9 @@ Non-negotiable rules:
 Length tiers and order:
 - Output the prompts in this exact order:
   1. First ${t1} prompts: COMPACT Tier 1 prompts, 6-14 words. These are still full user intents, not keyword fragments.
-  2. Next ${t2} prompts: MEDIUM Tier 2 prompts, 15-26 words, conversational, with at least one realistic purchase constraint.
-  3. Last ${t3} prompts: LONG Tier 3 prompts, 27-40 words, analytical/comparative. They must evaluate purchase tradeoffs such as location, price, quality, risk, commute, family fit, investment purchase logic, or alternatives.
+  2. Next ${t2} prompts: MEDIUM Tier 2 prompts, 15-26 words, conversational, with first-person user context and at least one realistic purchase constraint.
+  3. Last ${t3} prompts: LONG Tier 3 prompts, 27-40 words, with first-person user context and analytical/comparative purchase tradeoffs such as location, price, quality, risk, commute, family fit, investment purchase logic, or alternatives.
+- Medium and long prompts should sound like real user scenarios: "I have X equity", "my monthly mortgage capacity is X", "we are a family with children", "I need train access", "I am comparing 4-room vs 5-room apartments", etc.
 - Do not place all city prompts in one tier; spread detected cities across short, medium, and long prompts when cities exist.
 - Long prompts must not be long filler. They should compare or evaluate concrete tradeoffs.
 
@@ -834,7 +879,7 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
   )
 
   try {
-    let prompts = validateRealEstatePromptCandidates(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms)
+    let prompts = (await validateRealEstatePromptCandidatesWithReasoning(Array.isArray(result.prompts) ? result.prompts : [], profile, brandDomain, forbiddenTerms))
       .slice(0, count)
 
     if (prompts.length < count) {
