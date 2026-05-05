@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
       {/* Logo Area */}
       <div className="h-20 flex items-center px-6 border-b border-gray-100">
         <img
-          src="https://i.ibb.co/4wxqhcJv/image-20.png"
+          src="/be-visible-logo.png"
           alt="be-visible.ai logo"
           className="h-14 w-auto"
         />
