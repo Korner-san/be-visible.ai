@@ -167,19 +167,30 @@ async function processDailyReportCitations(dailyReportId) {
 async function getDailyReportContext(dailyReportId) {
   const { data, error } = await supabase
     .from('daily_reports')
-    .select('id, brand_id, brands(id, name, user_business_type)')
+    .select('id, brand_id')
     .eq('id', dailyReportId)
     .single();
 
   if (error) {
-    console.warn(`[PROCESSOR] Could not load brand context: ${error.message}`);
+    console.warn(`[PROCESSOR] Could not load report: ${error.message}`);
     return null;
+  }
+
+  // Separate query to avoid ambiguous FK join when daily_reports has multiple FK to brands
+  const { data: brand, error: brandError } = await supabase
+    .from('brands')
+    .select('id, name, user_business_type')
+    .eq('id', data.brand_id)
+    .single();
+
+  if (brandError) {
+    console.warn(`[PROCESSOR] Could not load brand context: ${brandError.message}`);
   }
 
   return {
     id: data.id,
     brandId: data.brand_id,
-    brand: Array.isArray(data.brands) ? data.brands[0] : data.brands
+    brand: brand || null
   };
 }
 
@@ -412,17 +423,20 @@ async function updateRetryCounters(failedExtractions, urlList) {
 
 // ========== STEP 4: Prepare Classification Inputs ==========
 async function prepareClassificationInputs(urls) {
-  const { data: urlData } = await supabase
-    .from('url_inventory')
-    .select(`
-      id,
-      url,
-      url_content_facts(title, description, content_snippet)
-    `)
-    .in('url', urls)
-    .eq('content_extracted', true);
-  
-  return (urlData || [])
+  // Batch to 50 to avoid PostgREST URL length limit with long URL strings
+  const BATCH_SIZE = 50;
+  const allData = [];
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const batch = urls.slice(i, i + BATCH_SIZE);
+    const { data: batchData } = await supabase
+      .from('url_inventory')
+      .select('id, url, url_content_facts(title, description, content_snippet)')
+      .in('url', batch)
+      .eq('content_extracted', true);
+    if (batchData) allData.push(...batchData);
+  }
+
+  return allData
     .filter(u => u.url_content_facts && typeof u.url_content_facts === "object")
     .map(u => {
       const facts = u.url_content_facts;
@@ -521,8 +535,7 @@ function buildRealEstateIsraelClassificationPrompt(batch) {
   });
 
   prompt += `\nClassify by WEB PAGE FORMAT, editorial structure, and user intent. Do NOT classify by real estate topic.\n`;
-  prompt += `Use Hebrew or English page signals equally. Choose exactly one allowed category key.\n`;
-  prompt += `Score every category from 0.00 to 1.00 and choose the highest scoring category.\n\n`;
+  prompt += `Use Hebrew or English page signals equally. Choose exactly one category key from the list above.\n\n`;
   prompt += `URLs to classify:\n\n`;
 
   batch.forEach((input, index) => {
@@ -533,7 +546,9 @@ function buildRealEstateIsraelClassificationPrompt(batch) {
     prompt += `Content Snippet: ${input.contentSnippet.substring(0, 1200)}\n\n`;
   });
 
-  prompt += `Respond with a JSON object containing a "classifications" array with category and scores for each URL.`;
+  prompt += `Respond with a JSON object in this exact format:\n`;
+  prompt += `{"classifications":[{"category":"CATEGORY_KEY","score":0.85},...]}\n`;
+  prompt += `Use only category keys from the taxonomy list above. One entry per URL, in order.`;
   return prompt;
 }
 
@@ -659,28 +674,34 @@ function parseClassificationResponse(response, expectedCount) {
     for (let i = 0; i < expectedCount; i++) {
       const classification = classifications[i];
       
-      if (classification && classification.category && classification.scores) {
-        const scores = classification.scores;
-        const scoreEntries = Object.entries(scores);
-        const maxEntry = scoreEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
-        const [topCategory, topScore] = maxEntry;
-        
-        let finalCategory = topCategory;
-        // Reject OTHER_LOW_CONFIDENCE and use next best category
-        if (topCategory === "OTHER_LOW_CONFIDENCE") {
-          const nonOtherEntries = scoreEntries.filter(([cat]) => cat !== "OTHER_LOW_CONFIDENCE");
-          if (nonOtherEntries.length > 0) {
-            const bestNonOther = nonOtherEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
-            finalCategory = bestNonOther[0];
-          } else {
-            finalCategory = "COMPARISON_ANALYSIS";
+      if (classification && classification.category) {
+        let finalCategory = classification.category;
+        let confidence = typeof classification.score === 'number' ? classification.score : 0.75;
+
+        if (classification.scores && typeof classification.scores === 'object') {
+          const scoreEntries = Object.entries(classification.scores);
+          if (scoreEntries.length > 0) {
+            const maxEntry = scoreEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
+            const [topCategory, topScore] = maxEntry;
+            finalCategory = topCategory;
+            confidence = topScore;
+
+            if (topCategory === "OTHER_LOW_CONFIDENCE") {
+              const nonOtherEntries = scoreEntries.filter(([cat]) => cat !== "OTHER_LOW_CONFIDENCE");
+              if (nonOtherEntries.length > 0) {
+                const bestNonOther = nonOtherEntries.reduce((max, curr) => curr[1] > max[1] ? curr : max);
+                finalCategory = bestNonOther[0];
+              } else {
+                finalCategory = "COMPARISON_ANALYSIS";
+              }
+            }
           }
         }
-        
+
         results.push({
           content_structure_category: finalCategory,
-          confidence: topScore,
-          scores: scores
+          confidence,
+          scores: classification.scores || {}
         });
       } else {
         results.push({ content_structure_category: 'OTHER_LOW_CONFIDENCE', confidence: 0.5, scores: {} });
@@ -893,5 +914,5 @@ if (require.main === module) {
     });
 }
 
-module.exports = { processDailyReportCitations };
+module.exports = { processDailyReportCitations, classifyRealEstateIsraelOverrides };
 
