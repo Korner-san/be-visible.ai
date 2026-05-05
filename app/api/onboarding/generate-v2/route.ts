@@ -506,6 +506,13 @@ function validateRealEstateTierShape(prompts: string[], tierCounts: { t1: number
   return shortOk && mediumOk && longOk
 }
 
+function realEstateTierShapeReport(prompts: string[], tierCounts: { t1: number; t2: number; t3: number }) {
+  return {
+    expected: tierCounts,
+    words: prompts.map(countPromptWords),
+  }
+}
+
 function realEstateIntentSlots(topicIndex: number): string[] {
   const slots = [
     ['city discovery', 'neighborhood comparison', 'local recommendation', 'commute/access evaluation', 'direct city-specific need', 'list request', 'family vs investor area fit', 'deep area research'],
@@ -619,7 +626,11 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
   try {
     const prompts = validateRealEstatePrompts(Array.isArray(result.prompts) ? result.prompts : [], count, profile, brandDomain)
     if (!validateRealEstateTierShape(prompts, tierCounts)) {
-      throw new Error('Real estate prompt generation did not follow the required short/medium/long tier order')
+      console.warn('[generate-v2] RE prompt tier shape warning:', {
+        topic,
+        attempt,
+        report: realEstateTierShapeReport(prompts, tierCounts),
+      })
     }
     return prompts
   } catch (error) {
@@ -814,7 +825,15 @@ export async function POST(request: NextRequest) {
                 prompts = await generatePromptsForTopic(topic, profile, topicTierCounts, 1, count)
               }
             }
-            catch { prompts = [] }
+            catch (error: any) {
+              console.error('[generate-v2] prompt generation failed for topic:', {
+                topic,
+                topicIndex,
+                isRealEstateIsrael,
+                message: error?.message || String(error),
+              })
+              prompts = []
+            }
             send({ type: 'prompts_topic', data: { topic, prompts } })
             return { topic, prompts }
           })
@@ -825,6 +844,12 @@ export async function POST(request: NextRequest) {
           const hasExpectedDistribution = topicResults.every((row, index) => row.prompts.length === REAL_ESTATE_TOPIC_COUNTS[index])
           const uniquePromptCount = new Set(topicResults.flatMap(row => row.prompts).map(prompt => prompt.trim().toLowerCase())).size
           if (generatedTotalPrompts !== 50 || !hasExpectedDistribution || uniquePromptCount !== 50) {
+            console.error('[generate-v2] RE prompt distribution invalid:', {
+              generatedTotalPrompts,
+              uniquePromptCount,
+              expectedCounts: REAL_ESTATE_TOPIC_COUNTS,
+              actualCounts: topicResults.map(row => ({ topic: row.topic, count: row.prompts.length })),
+            })
             send({ type: 'error', data: { message: `Generated ${generatedTotalPrompts} real estate prompts instead of the required 50. Please try scanning again.` } })
             controller.close(); return
           }
