@@ -569,6 +569,72 @@ function realEstateIntentSlots(topicIndex: number): string[] {
   return slots[topicIndex] || ['discovery', 'comparison', 'evaluation', 'recommendation']
 }
 
+function fallbackRealEstatePromptForSlot(topicIndex: number, city: string, position: number): string {
+  const templatesByTopic = [
+    [
+      `אני רוצה לקנות דירה חדשה ב${city}, אילו שכונות כדאי לבדוק לפי תחבורה, חינוך ומחיר?`,
+      `איך לבחור אזור מתאים לקניית דירה ב${city} למשפחה שמתכננת לגור שם כמה שנים?`,
+      `מה חשוב להשוות לפני שקונים דירה מקבלן ב${city}, במיוחד סביב נגישות ושירותים יומיומיים?`,
+    ],
+    [
+      `איפה כדאי למשפחה עם ילדים לקנות דירה חדשה ב${city} עם חניה, ממ״ד וגישה לבתי ספר?`,
+      `איך לבדוק אם דירת 4 או 5 חדרים ב${city} תתאים למשפחה לטווח ארוך?`,
+      `מה משפחה צעירה צריכה לבדוק לפני קניית דירה מקבלן ב${city} מבחינת חינוך וקהילה?`,
+    ],
+    [
+      `האם כדאי לקנות דירה להשקעה ב${city} אם חשובים לי ביקוש שכירות ועליית ערך?`,
+      `איך להעריך קניית דירה להשקעה ב${city} לפי תשואה, סיכון ונזילות עתידית?`,
+      `מה לבדוק לפני רכישת דירה להשקעה ב${city}, מעבר למחיר ולשכירות החודשית?`,
+    ],
+    [
+      `איך להבין אם מחיר דירה חדשה ב${city} מתאים להון עצמי ולמשכנתא שלי?`,
+      `מה חשוב לבדוק לפני קניית דירה מקבלן ב${city} עם תנאי תשלום 20/80?`,
+      `איך להשוות בין מחיר, הצמדה למדד ועלויות נלוות לפני רכישת דירה חדשה ב${city}?`,
+    ],
+    [
+      `איך לבדוק אם יזם של דירות חדשות ב${city} אמין לפני שקונים דירה?`,
+      `מה חשוב לבדוק בפרויקט חדש ב${city} לפני רכישת דירה מקבלן?`,
+      `אילו סימני אזהרה חשוב לזהות לפני קניית דירה חדשה ב${city} מיזם לא מוכר?`,
+    ],
+    [
+      `איך לבחור דירת 4 חדרים ב${city} שתתאים למשפחה גם בעוד כמה שנים?`,
+      `מה עדיף לקנייה ב${city}: דירת גן או דירה עם מרפסת, חניה וממ״ד?`,
+      `אילו מאפיינים בדירה חדשה ב${city} באמת משפיעים על איכות החיים אחרי הקנייה?`,
+    ],
+    [
+      `איך להשוות בין קניית דירה חדשה ב${city} לבין דירת יד שנייה באותו אזור?`,
+      `מה חשוב לבדוק כשמשווים יזמים ודירות חדשות ב${city} לפני החלטת קנייה?`,
+      `איך לבחור בין כמה חלופות לקניית דירה ב${city} לפי מחיר, מיקום וסיכון?`,
+    ],
+  ]
+  const templates = templatesByTopic[topicIndex] || templatesByTopic[0]
+  return templates[position % templates.length]
+}
+
+function fallbackRealEstatePromptsForTopic(
+  topicIndex: number,
+  cities: string[],
+  profile: any,
+  brandDomain: string,
+  forbiddenTerms: string[],
+  acceptedPrompts: string[],
+  missingCount: number
+): string[] {
+  const fallbackCities = cities.length > 0 ? cities : ['ישראל']
+  const generated: string[] = []
+  let cursor = 0
+
+  while (generated.length < missingCount && cursor < missingCount * Math.max(6, fallbackCities.length * 3)) {
+    const city = fallbackCities[cursor % fallbackCities.length]
+    const prompt = fallbackRealEstatePromptForSlot(topicIndex, city, cursor)
+    const isDuplicate = [...acceptedPrompts, ...generated].some(existing => existing.toLowerCase() === prompt.toLowerCase())
+    if (!isDuplicate) generated.push(prompt)
+    cursor += 1
+  }
+
+  return validateRealEstatePromptCandidates(generated, profile, brandDomain, forbiddenTerms).slice(0, missingCount)
+}
+
 async function repairRealEstatePromptsForTopic(
   topic: string,
   topicIndex: number,
@@ -642,6 +708,19 @@ Output JSON only: { "prompts": ["prompt1", "..."] }`,
       attempt + 1
     )
     return [...repaired, ...more]
+  }
+
+  if (repaired.length < missingCount) {
+    const fallback = fallbackRealEstatePromptsForTopic(
+      topicIndex,
+      cities,
+      profile,
+      brandDomain,
+      forbiddenTerms,
+      [...acceptedPrompts, ...repaired],
+      missingCount - repaired.length
+    )
+    return [...repaired, ...fallback]
   }
 
   return repaired
