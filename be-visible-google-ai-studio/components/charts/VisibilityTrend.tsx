@@ -116,7 +116,7 @@ export const VisibilityTrend: React.FC<VisibilityTrendProps> = ({ data: propData
 
         <div className="text-right">
            <div className="text-2xl font-black transition-colors duration-500" style={{ color: dynamicColor }}>
-             {Math.round(score)}
+             {score.toFixed(1)}
            </div>
            <div
              className="text-[8px] font-black px-1.5 py-0.5 rounded-full inline-flex border transition-all duration-500 tracking-tight mt-1"
