@@ -42,6 +42,15 @@ const PROVIDER_RESPONSE_COLUMNS = {
   perplexity: 'perplexity_response',
 };
 
+function normalizeEntityName(value) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/["'`״׳]/g, '')
+    .replace(/[.,;:!?()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Extract entities per response with their rank using GPT-4o-mini.
  * Returns per-response data: [{response_index, entities: [{name, rank}]}]
@@ -111,16 +120,34 @@ ${truncated}`
  * Categorize entities as brand, competitor, or other
  */
 function categorizeEntities(entities, brandName, competitorNames) {
-  const brandLower = brandName.toLowerCase();
+  const brandLower = normalizeEntityName(brandName);
+  const brandFirstWord = brandLower.split(' ')[0];
+
   const competitorMap = {};
+  const competitorFirstWords = {};
   competitorNames.forEach(name => {
-    competitorMap[name.toLowerCase()] = name;
+    const normName = normalizeEntityName(name);
+    competitorMap[normName] = name;
+    const fw = normName.split(' ')[0];
+    if (fw.length >= 4) competitorFirstWords[fw] = name;
   });
 
-  return entities.map(entity => {
-    const nameLower = entity.name.toLowerCase();
+  // First-word brand matching: handles cases where GPT extracts a legal variant of
+  // the brand name (e.g. "אלקטרה בע\"מ" for brand "אלקטרה מגורים"). Only enabled
+  // when no competitor starts with the same first word (avoids false positives).
+  const useBrandFirstWord = brandFirstWord.length >= 4 && !competitorFirstWords[brandFirstWord];
 
+  return entities.map(entity => {
+    const nameLower = normalizeEntityName(entity.name);
+    const entityFirstWord = nameLower.split(' ')[0];
+
+    // Substring match (exact, or one contains the other)
     if (nameLower === brandLower || nameLower.includes(brandLower) || brandLower.includes(nameLower)) {
+      return { ...entity, name: brandName, type: 'brand' };
+    }
+
+    // First-word match: catches legal suffixes like "בע\"מ" or parent-company variants
+    if (useBrandFirstWord && entityFirstWord === brandFirstWord) {
       return { ...entity, name: brandName, type: 'brand' };
     }
 
@@ -140,7 +167,7 @@ function categorizeEntities(entities, brandName, competitorNames) {
 function mergeEntities(entities) {
   const merged = {};
   for (const entity of entities) {
-    const key = entity.name.toLowerCase();
+    const key = normalizeEntityName(entity.name);
     if (merged[key]) {
       merged[key].mentions += entity.mentions;
       merged[key].position_score_sum = (merged[key].position_score_sum || 0) + (entity.position_score_sum || 0);
@@ -202,7 +229,7 @@ async function buildSovData(responseItems, brandName, competitorNames, label) {
         perPromptMap[promptId].numRuns++;
         perPromptMap[promptId].totalMentions += N;
         for (const entity of entities) {
-          perPromptMap[promptId].entityKeys.add(entity.name.toLowerCase());
+          perPromptMap[promptId].entityKeys.add(normalizeEntityName(entity.name));
         }
       }
 
@@ -210,7 +237,7 @@ async function buildSovData(responseItems, brandName, competitorNames, label) {
       for (const entity of entities) {
         const K = entity.rank;
         const posScore = N > 1 ? (N - K) / N : (N === 1 ? 1.0 : 0);
-        const key = entity.name.toLowerCase();
+        const key = normalizeEntityName(entity.name);
         if (!entityMap[key]) {
           entityMap[key] = { name: entity.name, mentions: 0, position_score_sum: 0 };
         }
@@ -373,7 +400,7 @@ async function calculateShareOfVoice(dailyReportId) {
     for (const provSov of Object.values(shareOfVoiceByProvider)) {
       totalResponsesSum += provSov.total_responses || 0;
       for (const entity of provSov.entities) {
-        const key = entity.name.toLowerCase();
+        const key = normalizeEntityName(entity.name);
         if (mergedMap[key]) {
           mergedMap[key].mentions += entity.mentions;
           mergedMap[key].position_score_sum = (mergedMap[key].position_score_sum || 0) + (entity.position_score_sum || 0);
