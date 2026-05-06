@@ -117,46 +117,99 @@ ${truncated}`
 }
 
 /**
- * Categorize entities as brand, competitor, or other
+ * Categorize entities using GPT-4o-mini reasoning.
+ * Handles legal name variants, parent/subsidiary relationships, Hebrew/English equivalents.
+ * Returns a map of normalized entity name → { type, matchedName }
  */
-function categorizeEntities(entities, brandName, competitorNames) {
-  const brandLower = normalizeEntityName(brandName);
-  const brandFirstWord = brandLower.split(' ')[0];
+async function categorizeEntitiesWithGPT(entityNames, brandName, competitorNames) {
+  const competitorList = competitorNames.length > 0
+    ? competitorNames.map(c => `"${c}"`).join(', ')
+    : 'none';
 
-  const competitorMap = {};
-  const competitorFirstWords = {};
-  competitorNames.forEach(name => {
-    const normName = normalizeEntityName(name);
-    competitorMap[normName] = name;
-    const fw = normName.split(' ')[0];
-    if (fw.length >= 4) competitorFirstWords[fw] = name;
+  const numberedEntities = entityNames.map((name, i) => `${i + 1}. "${name}"`).join('\n');
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `You categorize extracted entity names by matching them against a brand and its competitors.
+Consider: parent companies, holding companies, legal name variants (בע"מ, Ltd, Inc, ושות'), subsidiaries,
+English/Hebrew name equivalents, abbreviations, and alternative spellings.
+When in doubt whether a legal variant or related company matches, lean toward matching.
+Always respond with valid JSON.`,
+      },
+      {
+        role: 'user',
+        content: `Brand: "${brandName}"
+Competitors: ${competitorList}
+
+For each entity below, determine if it refers to:
+- The brand (including legal variants, parent company, subsidiaries, or clear aliases)
+- One of the named competitors (same matching logic)
+- Neither (type "other")
+
+Return JSON:
+{
+  "categorizations": [
+    { "entity": "<exact name from list>", "type": "brand" },
+    { "entity": "<exact name from list>", "type": "competitor", "matched_competitor": "<exact competitor name>" },
+    { "entity": "<exact name from list>", "type": "other" }
+  ]
+}
+
+Rules:
+- Include every entity in your response (do not skip any)
+- Use the EXACT entity name string from the numbered list
+- For competitors, "matched_competitor" must be one of the competitor names as given above
+
+Entities:
+${numberedEntities}`,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 3000,
+    response_format: { type: 'json_object' },
   });
 
-  // First-word brand matching: handles cases where GPT extracts a legal variant of
-  // the brand name (e.g. "אלקטרה בע\"מ" for brand "אלקטרה מגורים"). Only enabled
-  // when no competitor starts with the same first word (avoids false positives).
-  const useBrandFirstWord = brandFirstWord.length >= 4 && !competitorFirstWords[brandFirstWord];
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error('Empty GPT response for entity categorization');
+
+  const parsed = JSON.parse(content);
+  const resultMap = {};
+  for (const item of (parsed.categorizations || [])) {
+    if (!item.entity) continue;
+    const key = normalizeEntityName(item.entity);
+    resultMap[key] = {
+      type: item.type === 'brand' ? 'brand' : item.type === 'competitor' ? 'competitor' : 'other',
+      matchedName: item.type === 'brand' ? brandName
+        : item.type === 'competitor' ? (item.matched_competitor || item.entity)
+        : item.entity,
+    };
+  }
+  return resultMap;
+}
+
+/**
+ * Fallback code-based categorization (used if GPT categorization fails).
+ */
+function categorizeEntitiesFallback(entities, brandName, competitorNames) {
+  const brandLower = normalizeEntityName(brandName);
+  const competitorMap = {};
+  competitorNames.forEach(name => {
+    competitorMap[normalizeEntityName(name)] = name;
+  });
 
   return entities.map(entity => {
     const nameLower = normalizeEntityName(entity.name);
-    const entityFirstWord = nameLower.split(' ')[0];
-
-    // Substring match (exact, or one contains the other)
     if (nameLower === brandLower || nameLower.includes(brandLower) || brandLower.includes(nameLower)) {
       return { ...entity, name: brandName, type: 'brand' };
     }
-
-    // First-word match: catches legal suffixes like "בע\"מ" or parent-company variants
-    if (useBrandFirstWord && entityFirstWord === brandFirstWord) {
-      return { ...entity, name: brandName, type: 'brand' };
-    }
-
     for (const [compLower, compOriginal] of Object.entries(competitorMap)) {
       if (nameLower === compLower || nameLower.includes(compLower) || compLower.includes(nameLower)) {
         return { ...entity, name: compOriginal, type: 'competitor' };
       }
     }
-
     return { ...entity, type: 'other' };
   });
 }
@@ -276,7 +329,25 @@ async function buildSovData(responseItems, brandName, competitorNames, label) {
     };
   }
 
-  const categorized = categorizeEntities(rawEntities, brandName, competitorNames);
+  // GPT reasoning layer: matches entities to brand/competitors by understanding
+  // legal variants, parent/subsidiary relationships, Hebrew/English equivalents.
+  let categorized;
+  try {
+    const entityNames = rawEntities.map(e => e.name);
+    console.log('   🧠 GPT categorization for ' + entityNames.length + ' entities...');
+    const catMap = await categorizeEntitiesWithGPT(entityNames, brandName, competitorNames);
+    categorized = rawEntities.map(entity => {
+      const key = normalizeEntityName(entity.name);
+      const cat = catMap[key];
+      if (!cat) return { ...entity, type: 'other' };
+      return { ...entity, name: cat.matchedName, type: cat.type };
+    });
+    const brandHit = categorized.find(e => e.type === 'brand');
+    console.log('   ✅ GPT categorization complete — brand found: ' + (brandHit ? brandHit.name : 'none'));
+  } catch (catErr) {
+    console.warn('   ⚠️  GPT categorization failed, using fallback: ' + catErr.message);
+    categorized = categorizeEntitiesFallback(rawEntities, brandName, competitorNames);
+  }
   const merged = mergeEntities(categorized);
   const totalMentions = merged.reduce((sum, e) => sum + e.mentions, 0);
 
