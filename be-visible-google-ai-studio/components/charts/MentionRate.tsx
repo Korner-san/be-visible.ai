@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MessageSquare, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface MentionRateProps {
   value?: number;
@@ -12,32 +11,20 @@ interface MentionRateProps {
 }
 
 export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, trend, timePeriodLabel, isLoading, brandId }) => {
-  const [mentionValue, setMentionValue] = useState(55);
-  // When a real brand is set but no data yet, show 0 — never show fake 55% mock value
-  const displayValue = propValue ?? (brandId ? 0 : mentionValue);
-  const [fillColor, setFillColor] = useState('#d5002b');
+  const [demoValue, setDemoValue] = useState(55);
+  const displayValue = propValue ?? (brandId ? 0 : demoValue);
 
-  // Palette: Navy → Indigo → Violet → Orange
+  // Color palette: navy → indigo → violet → orange
   const palette = [
-    { pct: 0,   color: '#1e1b4b' }, // Navy
-    { pct: 33,  color: '#6366f1' }, // Indigo
-    { pct: 66,  color: '#a855f7' }, // Violet
-    { pct: 100, color: '#f97316' }, // Orange
+    { pct: 0,   r: 30,  g: 27,  b: 75  },
+    { pct: 33,  r: 99,  g: 102, b: 241 },
+    { pct: 66,  r: 168, g: 85,  b: 247 },
+    { pct: 100, r: 249, g: 115, b: 22  },
   ];
-
-  const hexToRgb = (hex: string) => {
-    const bigint = parseInt(hex.slice(1), 16);
-    return {
-      r: (bigint >> 16) & 255,
-      g: (bigint >> 8) & 255,
-      b: bigint & 255
-    };
-  };
 
   const getColor = (value: number) => {
     let lower = palette[0];
     let upper = palette[palette.length - 1];
-
     for (let i = 0; i < palette.length - 1; i++) {
       if (value >= palette[i].pct && value <= palette[i + 1].pct) {
         lower = palette[i];
@@ -45,114 +32,124 @@ export const MentionRate: React.FC<MentionRateProps> = ({ value: propValue, tren
         break;
       }
     }
-
-    if (lower.pct === upper.pct) return lower.color;
-
-    const range = upper.pct - lower.pct;
-    const progress = (value - lower.pct) / range;
-
-    const lowerRgb = hexToRgb(lower.color);
-    const upperRgb = hexToRgb(upper.color);
-
-    const r = Math.round(lowerRgb.r + (upperRgb.r - lowerRgb.r) * progress);
-    const g = Math.round(lowerRgb.g + (upperRgb.g - lowerRgb.g) * progress);
-    const b = Math.round(lowerRgb.b + (upperRgb.b - lowerRgb.b) * progress);
-
+    if (lower.pct === upper.pct) return `rgb(${lower.r}, ${lower.g}, ${lower.b})`;
+    const t = (value - lower.pct) / (upper.pct - lower.pct);
+    const r = Math.round(lower.r + (upper.r - lower.r) * t);
+    const g = Math.round(lower.g + (upper.g - lower.g) * t);
+    const b = Math.round(lower.b + (upper.b - lower.b) * t);
     return `rgb(${r}, ${g}, ${b})`;
   };
 
-  useEffect(() => {
-    setFillColor(getColor(displayValue));
-  }, [displayValue]);
+  const fillColor = getColor(displayValue);
+  const fillColorSoft = fillColor.replace('rgb', 'rgba').replace(')', ', 0.12)');
 
-  const data = [
-    { name: 'Mentioned', value: displayValue },
-    { name: 'Remaining', value: 100 - displayValue },
-  ];
+  // SVG circle progress
+  const radius = 62;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (displayValue / 100) * circumference;
 
   if (isLoading) {
     return (
-      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm h-full flex flex-col items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
-        <span className="text-xs text-gray-400 mt-2">Loading mention data...</span>
+      <div className="bg-white h-full flex flex-col items-center justify-center rounded-2xl shadow-card" style={{ border: '1px solid #e8edf4' }}>
+        <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
+        <span className="text-xs text-slate-400 mt-2">Loading mention data…</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm h-full flex flex-col">
-      <div className="mb-4">
-        <h3 className="text-[15px] font-black text-gray-400 tracking-wide">Mention rate</h3>
-        <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Frequency of brand appearance</p>
-      </div>
-
-      <div className="flex-1 relative w-full min-h-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius="70%"
-              outerRadius="90%"
-              startAngle={90}
-              endAngle={-270}
-              dataKey="value"
-              stroke="none"
-              cornerRadius={12}
-              paddingAngle={4}
-            >
-              {data.map((entry, index) => {
-                if (index === 0) {
-                   return <Cell key={`cell-${index}`} fill={fillColor} className="transition-all duration-300" />;
-                }
-                return <Cell key={`cell-${index}`} fill="#f1f5f9" />;
-              })}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-
-        {/* Center Label */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none space-y-0.5">
-          <span className="text-4xl font-black transition-colors duration-300" style={{ color: fillColor }}>
-            {Number(displayValue).toFixed(2)}%
-          </span>
-          <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Rate</span>
+    <div className="bg-white rounded-2xl h-full flex flex-col shadow-card hover:shadow-elevated transition-smooth" style={{ border: '1px solid #e8edf4', padding: '20px' }}>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-[15px] font-semibold text-slate-800 leading-tight">Mention rate</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Frequency of brand appearance</p>
+        </div>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: fillColorSoft }}>
+          <MessageSquare size={16} style={{ color: fillColor }} />
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-         <div className="flex items-center gap-2">
-           {propValue !== undefined ? (
-             <span className="text-[8px] font-bold text-green-500 bg-green-50 px-2 py-1 rounded-lg border border-green-100">LIVE DATA</span>
-           ) : (
-             <>
-               <span className="text-[10px] font-black text-gray-400 uppercase w-8">Test</span>
-               <input
-                 type="range"
-                 min="0"
-                 max="100"
-                 value={mentionValue}
-                 onChange={(e) => setMentionValue(Number(e.target.value))}
-                 className="w-24 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                 style={{ accentColor: fillColor }}
-               />
-             </>
-           )}
-         </div>
-         {trend != null && (
-           <span
-             className="text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 border whitespace-nowrap"
-             style={trend > 0
-               ? { color: '#16a34a', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
-               : trend < 0
-               ? { color: '#dc2626', backgroundColor: '#fef2f2', borderColor: '#fecaca' }
-               : { color: '#94a3b8', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
-             }
-           >
-             {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'}{trend > 0 ? '+' : ''}{trend.toFixed(1)}% <span className="opacity-70 ml-0.5">{timePeriodLabel || 'vs prev'}</span>
-           </span>
-         )}
+      {/* SVG Circle Progress */}
+      <div className="flex items-center justify-center flex-1 py-1">
+        <div className="relative w-44 h-44">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 160 160">
+            {/* Track */}
+            <circle
+              cx="80" cy="80" r={radius}
+              fill="none"
+              stroke="#f1f5f9"
+              strokeWidth="14"
+            />
+            {/* Progress arc */}
+            <circle
+              cx="80" cy="80" r={radius}
+              fill="none"
+              stroke="url(#mentionGradient)"
+              strokeWidth="14"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+              style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }}
+            />
+            <defs>
+              <linearGradient id="mentionGradient" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor={fillColor} />
+                <stop offset="100%" stopColor={fillColor.replace('rgb', 'rgba').replace(')', ', 0.6)')} />
+              </linearGradient>
+            </defs>
+          </svg>
+          {/* Center text */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: fillColor }}>
+              {Number(displayValue).toFixed(1)}<span className="text-xl text-slate-400">%</span>
+            </div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 mt-1 font-semibold">Rate</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mini stat comparison */}
+      <div className="grid grid-cols-2 gap-2 mt-1">
+        <div className="stat-box">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Current</div>
+          <div className="text-sm font-bold text-slate-800 tabular-nums">{Number(displayValue).toFixed(1)}%</div>
+        </div>
+        <div className="stat-box">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Prev period</div>
+          <div className="text-sm font-bold text-slate-800 tabular-nums">
+            {trend != null ? `${(displayValue - trend).toFixed(1)}%` : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: '1px solid #f1f3f8' }}>
+        {propValue !== undefined ? (
+          <span className="badge-live">
+            <span className="pulse-dot"></span>
+            Live Data
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase">Demo</span>
+            <input
+              type="range"
+              min="0" max="100"
+              value={demoValue}
+              onChange={(e) => setDemoValue(Number(e.target.value))}
+              className="w-20 h-0.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+              style={{ accentColor: fillColor }}
+            />
+          </div>
+        )}
+        {trend != null && (
+          <span className={trend > 0 ? 'trend-up' : trend < 0 ? 'trend-down' : 'trend-flat'}>
+            {trend > 0 ? <TrendingUp size={11} /> : trend < 0 ? <TrendingDown size={11} /> : '→'}
+            {trend > 0 ? '+' : ''}{trend.toFixed(1)}%
+            <span className="opacity-60 ml-0.5 text-[10px]">{timePeriodLabel || 'vs prev'}</span>
+          </span>
+        )}
       </div>
     </div>
   );

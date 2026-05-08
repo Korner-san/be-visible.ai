@@ -1,0 +1,168 @@
+/* ── Design System Variables ───────────────────────────────────────────────── */
+:root {
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.05);
+  --shadow-elevated: 0 8px 32px rgba(15, 23, 42, 0.10);
+  --transition-smooth: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  --border-subtle: hsl(220, 18%, 91%);
+  --radius-card: 16px;
+}
+
+/* ── Global Resets ─────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #f0f2f7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Shadow Utilities ──────────────────────────────────────────────────────── */
+.shadow-card   { box-shadow: var(--shadow-card); }
+.shadow-elevated { box-shadow: var(--shadow-elevated); }
+.hover\:shadow-elevated:hover { box-shadow: var(--shadow-elevated); }
+
+/* ── Transition Utility ────────────────────────────────────────────────────── */
+.transition-smooth { transition: var(--transition-smooth); }
+
+/* ── Status Badge Utilities ────────────────────────────────────────────────── */
+.badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: hsl(150, 52%, 93%);
+  color: hsl(152, 60%, 34%);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.badge-live .pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: hsl(152, 60%, 40%);
+  animation: pulse-dot 2s infinite;
+}
+.badge-sample {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: #f1f5f9;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.badge-loading {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: #fffbeb;
+  color: #d97706;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.badge-computing {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: #fffbeb;
+  color: #d97706;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Trend Badges ──────────────────────────────────────────────────────────── */
+.trend-up {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 999px;
+  background: hsl(150, 52%, 93%); color: hsl(152, 60%, 34%);
+  font-size: 11px; font-weight: 600;
+}
+.trend-down {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 999px;
+  background: hsl(0, 80%, 96%); color: hsl(0, 72%, 51%);
+  font-size: 11px; font-weight: 600;
+}
+.trend-flat {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 8px; border-radius: 999px;
+  background: #f1f5f9; color: #94a3b8;
+  font-size: 11px; font-weight: 600;
+}
+
+/* ── Score Badges (PromptPerformance) ──────────────────────────────────────── */
+.score-high  { background: hsl(150, 52%, 93%); color: hsl(152, 60%, 34%); }
+.score-mid   { background: hsl(238, 90%, 94%); color: #3730a3; }
+.score-low   { background: hsl(14, 95%, 95%);  color: hsl(14, 90%, 50%); }
+
+/* ── Pulsing Dot Animation ─────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* ── Custom scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Card base ─────────────────────────────────────────────────────────────── */
+.card {
+  background: white;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  transition: var(--transition-smooth);
+}
+.card:hover { box-shadow: var(--shadow-elevated); }
+
+/* ── Sidebar gradient avatar ───────────────────────────────────────────────── */
+.avatar-gradient {
+  background: linear-gradient(135deg, #1e1b4b 0%, #6366f1 100%);
+  color: white;
+}
+.avatar-accent {
+  background: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+  color: white;
+}
+
+/* ── Pill nav container ────────────────────────────────────────────────────── */
+.pill-nav {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #eef0f5;
+  border-radius: 12px;
+  padding: 4px;
+  border: 1px solid #e2e6ed;
+}
+
+/* ── Stat mini box ─────────────────────────────────────────────────────────── */
+.stat-box {
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+.stat-box-primary {
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%);
+  border: none;
+}

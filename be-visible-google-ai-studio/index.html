@@ -29,29 +29,30 @@
               dark: {
                 800: '#1e293b',
                 900: '#0f172a',
+              },
+              surface: {
+                bg: '#f0f2f7',
+                card: '#ffffff',
+                subtle: '#f6f8fc',
+              },
+              border: {
+                DEFAULT: '#e4e8f0',
+                subtle: '#edf0f5',
               }
-            }
+            },
+            borderRadius: {
+              '2xl': '16px',
+              '3xl': '20px',
+            },
+            boxShadow: {
+              'card': '0 1px 3px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.05)',
+              'elevated': '0 8px 32px rgba(15,23,42,0.10)',
+              'glow': '0 0 0 3px rgba(99,102,241,0.12)',
+            },
           }
         }
       }
     </script>
-    <style>
-      /* Custom scrollbar for webkit */
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 3px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-      }
-    </style>
   <script type="importmap">
 {
   "imports": {
@@ -66,7 +67,7 @@
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-gray-50 text-slate-800 antialiased">
+  <body class="bg-[#f0f2f7] text-slate-800 antialiased">
     <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

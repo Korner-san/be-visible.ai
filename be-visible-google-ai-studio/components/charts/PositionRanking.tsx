@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { TimeRange } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, ArrowRight, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 interface PromptScore {
   promptText: string;
@@ -45,7 +45,6 @@ function getDateRanges(timeRange: TimeRange, customDateRange?: { from: string; t
 
   const currentFrom = new Date(now);
   currentFrom.setDate(currentFrom.getDate() - days);
-
   const previousFrom = new Date(currentFrom);
   previousFrom.setDate(previousFrom.getDate() - days);
 
@@ -69,11 +68,10 @@ const MOCK_DATA: PromptScore[] = [
   { promptText: '"Best distributed compiling solutions for C++ codebases"', currentScore: 30, previousScore: null },
 ];
 
-// Color gradient based on score 0-100: slate → orange
 const stops = [
-  { r: 148, g: 163, b: 184 }, // slate-400 (0)
-  { r: 251, g: 146, b: 60  }, // orange-400 (50)
-  { r: 249, g: 115, b: 22  }, // orange-500 (100)
+  { r: 148, g: 163, b: 184 },
+  { r: 251, g: 146, b: 60  },
+  { r: 249, g: 115, b: 22  },
 ];
 
 function getScoreColor(score: number): string {
@@ -81,18 +79,22 @@ function getScoreColor(score: number): string {
   const scaledT = t * (stops.length - 1);
   const index = Math.floor(scaledT);
   const fraction = scaledT - index;
-
   if (index >= stops.length - 1) {
     const s = stops[stops.length - 1];
     return `rgb(${s.r}, ${s.g}, ${s.b})`;
   }
-
   const start = stops[index];
   const end = stops[index + 1];
   const r = Math.round(start.r + (end.r - start.r) * fraction);
   const g = Math.round(start.g + (end.g - start.g) * fraction);
   const b = Math.round(start.b + (end.b - start.b) * fraction);
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+function getScoreToneClass(score: number): string {
+  if (score >= 75) return 'score-high';
+  if (score >= 50) return 'score-mid';
+  return 'score-low';
 }
 
 export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeRange = TimeRange.THIRTY_DAYS, customDateRange, selectedModels, onNavigateToPrompts }) => {
@@ -108,20 +110,18 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
       try {
         const { current, previous } = getDateRanges(timeRange, customDateRange);
 
-        // Step 1: Always load the brand's active prompts — show them even before any results exist
         const { data: brandPrompts, error: promptsError } = await supabase
           .from('brand_prompts')
           .select('id, raw_prompt, improved_prompt')
           .eq('brand_id', brandId)
           .eq('status', 'active')
-          .order('improved_prompt', { ascending: true }); // alphabetical default
+          .order('improved_prompt', { ascending: true });
 
         if (promptsError || !brandPrompts || brandPrompts.length === 0) {
           setHasRealData(false);
           return;
         }
 
-        // Step 2: Get daily report IDs for current and previous periods
         const [{ data: currentReports }, { data: previousReports }] = await Promise.all([
           supabase.from('daily_reports').select('id').eq('brand_id', brandId).eq('status', 'completed')
             .gte('report_date', current.from).lte('report_date', current.to),
@@ -132,7 +132,6 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
         const currentIds = (currentReports || []).map((r: any) => r.id);
         const previousIds = (previousReports || []).map((r: any) => r.id);
 
-        // Step 3: Fetch avgN (entities per response) and per-prompt entity stats from most recent report
         let avgN = 8;
         let perPromptEntityStats: Record<string, { avg_entity_mention_rate: number }> = {};
         if (currentIds.length > 0) {
@@ -150,16 +149,11 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
 
           if (sovReport?.share_of_voice_data) {
             const sov = sovReport.share_of_voice_data as any;
-            if (sov.total_mentions > 0 && sov.total_responses > 0) {
-              avgN = sov.total_mentions / sov.total_responses;
-            }
+            if (sov.total_mentions > 0 && sov.total_responses > 0) avgN = sov.total_mentions / sov.total_responses;
           }
-          if (sovReport?.per_prompt_entity_stats) {
-            perPromptEntityStats = sovReport.per_prompt_entity_stats as any;
-          }
+          if (sovReport?.per_prompt_entity_stats) perPromptEntityStats = sovReport.per_prompt_entity_stats as any;
         }
 
-        // Step 4: Aggregate per-prompt: mention count, total runs, position scores (on mentioned runs)
         const promptAgg: Record<string, { mentions: number; total: number; posScores: number[] }> = {};
         brandPrompts.forEach((p: any) => { promptAgg[p.id] = { mentions: 0, total: 0, posScores: [] }; });
 
@@ -170,9 +164,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
             .in('daily_report_id', currentIds)
             .not('brand_mentioned', 'is', null)
             .eq('provider_status', 'ok');
-          if (selectedModels && selectedModels.length > 0) {
-            q = q.in('provider', selectedModels);
-          }
+          if (selectedModels && selectedModels.length > 0) q = q.in('provider', selectedModels);
           const { data: currentResults } = await q;
 
           for (const r of (currentResults || [])) {
@@ -188,7 +180,6 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           }
         }
 
-        // Step 5: Previous period — same structure
         let prevAvgN = avgN;
         let prevPerPromptEntityStats: Record<string, { avg_entity_mention_rate: number }> = perPromptEntityStats;
         if (previousIds.length > 0) {
@@ -208,9 +199,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
             const sov = prevSovReport.share_of_voice_data as any;
             if (sov.total_mentions > 0 && sov.total_responses > 0) prevAvgN = sov.total_mentions / sov.total_responses;
           }
-          if (prevSovReport?.per_prompt_entity_stats) {
-            prevPerPromptEntityStats = prevSovReport.per_prompt_entity_stats as any;
-          }
+          if (prevSovReport?.per_prompt_entity_stats) prevPerPromptEntityStats = prevSovReport.per_prompt_entity_stats as any;
         }
 
         let prevScoreMap: Record<string, number> = {};
@@ -221,9 +210,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
             .in('daily_report_id', previousIds)
             .not('brand_mentioned', 'is', null)
             .eq('provider_status', 'ok');
-          if (selectedModels && selectedModels.length > 0) {
-            pq = pq.in('provider', selectedModels);
-          }
+          if (selectedModels && selectedModels.length > 0) pq = pq.in('provider', selectedModels);
           const { data: prevResults } = await pq;
 
           if (prevResults && prevResults.length > 0) {
@@ -234,9 +221,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
               prevAgg[key].total++;
               if (r.brand_mentioned) {
                 prevAgg[key].mentions++;
-                if (r.brand_position != null) {
-                  prevAgg[key].posScores.push(Math.max(0, (prevAvgN - r.brand_position) / prevAvgN));
-                }
+                if (r.brand_position != null) prevAgg[key].posScores.push(Math.max(0, (prevAvgN - r.brand_position) / prevAvgN));
               }
             }
             for (const [key, agg] of Object.entries(prevAgg)) {
@@ -244,15 +229,12 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
               const entityStats = (prevPerPromptEntityStats[key] as any);
               const avgEMR = entityStats?.avg_entity_mention_rate;
               const relMS = avgEMR && avgEMR > 0 ? Math.min(1, mr / avgEMR) : mr;
-              const pi = agg.posScores.length > 0
-                ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length
-                : 0;
+              const pi = agg.posScores.length > 0 ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length : 0;
               prevScoreMap[key] = Math.round((0.5 * relMS + 0.5 * pi) * 100);
             }
           }
         }
 
-        // Step 6: Build scores array for all prompts using new formula
         const scores: PromptScore[] = brandPrompts.map((p: any) => {
           const text = p.improved_prompt || p.raw_prompt || 'Unknown prompt';
           const short = text.length > 60 ? text.substring(0, 57) + '...' : text;
@@ -261,9 +243,7 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           const entityStats = (perPromptEntityStats[p.id] as any);
           const avgEMR = entityStats?.avg_entity_mention_rate;
           const relMentionScore = avgEMR && avgEMR > 0 ? Math.min(1, mentionRate / avgEMR) : mentionRate;
-          const posImpact = agg.posScores.length > 0
-            ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length
-            : 0;
+          const posImpact = agg.posScores.length > 0 ? agg.posScores.reduce((a: number, b: number) => a + b, 0) / agg.posScores.length : 0;
           const currentScore = Math.round((0.5 * relMentionScore + 0.5 * posImpact) * 100);
           return {
             promptText: `"${short}"`,
@@ -272,12 +252,8 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
           };
         });
 
-        // Step 7: Sort — high to low if any scores > 0, otherwise keep alphabetical order
         const anyHasScore = scores.some(s => s.currentScore > 0);
-        if (anyHasScore) {
-          scores.sort((a, b) => b.currentScore - a.currentScore);
-        }
-        // (already alphabetical from the DB query if all 0)
+        if (anyHasScore) scores.sort((a, b) => b.currentScore - a.currentScore);
 
         setPromptScores(scores.slice(0, 5));
         setHasRealData(true);
@@ -292,80 +268,109 @@ export const PositionRanking: React.FC<PositionRankingProps> = ({ brandId, timeR
     fetchPromptScores();
   }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, (selectedModels || []).join(',')]);
 
-  // When a real brand is set but no data yet, show empty list — never show Incredibuild mock prompts
   const data = hasRealData ? promptScores : (brandId ? [] : MOCK_DATA);
 
   return (
-    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white rounded-2xl h-full flex flex-col shadow-card hover:shadow-elevated transition-smooth" style={{ border: '1px solid #e8edf4', padding: '20px' }}>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
-            Prompt performance
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[15px] font-semibold text-slate-800 leading-tight">Prompt performance</h3>
             <span className="relative group cursor-help">
-              <HelpCircle size={14} className="text-gray-300 group-hover:text-gray-400 transition-colors" />
-              <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-[10px] font-medium rounded-lg shadow-2xl z-50 pointer-events-none leading-relaxed border border-white/10">
-                Each bar shows how strongly a specific prompt triggers your brand in AI answers — combining how often you're mentioned and how highly you rank vs. other entities.<br /><br />
-                <span className="text-slate-300">e.g. mentioned in 8/10 responses, ranked 2nd out of 8 entities → score 70</span>
+              <HelpCircle size={13} className="text-slate-300 group-hover:text-slate-400 transition-smooth" />
+              <div className="absolute left-0 top-full mt-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-[10px] rounded-xl shadow-elevated z-50 pointer-events-none leading-relaxed" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                Each row shows how strongly a specific prompt triggers your brand in AI answers — combining how often you're mentioned and how highly you rank vs. other entities.
+                <br /><br />
+                <span className="text-slate-300">e.g. mentioned in 8/10 responses, ranked 2nd out of 8 → score 70</span>
               </div>
             </span>
-          </h3>
-          <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Visibility index per prompt</p>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">Visibility index per prompt</p>
         </div>
         {isLoading ? (
-          <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+          <span className="badge-loading">Loading</span>
         ) : hasRealData ? (
-          <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+          <span className="badge-live"><span className="pulse-dot"></span>Live Data</span>
         ) : (
-          <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
+          <span className="badge-sample">Sample</span>
         )}
       </div>
 
-      <div className="flex-1 flex flex-col justify-center space-y-4">
-        {data.map((item, index) => {
-          const itemColor = getScoreColor(item.currentScore);
-          const pctChange = item.previousScore !== null && item.previousScore > 0
-            ? Math.round(((item.currentScore - item.previousScore) / item.previousScore) * 100)
-            : null;
+      {/* Column headers */}
+      <div className="grid gap-4 px-3 pb-2" style={{ gridTemplateColumns: '1fr auto auto' }}>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Prompt</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right w-16">Trend</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right w-12">Score</span>
+      </div>
 
-          return (
-            <div key={index} className="space-y-1">
-              <div className="flex justify-between items-baseline px-1 gap-2">
-                <span className="text-[11px] font-medium text-slate-700 italic leading-tight truncate flex-1 min-w-0">{item.promptText}</span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {pctChange !== null && (
-                    <span className={`text-[9px] font-bold ${pctChange > 0 ? 'text-emerald-500' : pctChange < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                      {pctChange > 0 ? '+' : ''}{pctChange}%
+      {/* Prompt rows */}
+      <div className="flex-1 space-y-0.5 overflow-y-auto">
+        {data.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-xs text-slate-400">No prompt data available yet</p>
+          </div>
+        ) : (
+          data.map((item, index) => {
+            const pctChange = item.previousScore !== null && item.previousScore > 0
+              ? Math.round(((item.currentScore - item.previousScore) / item.previousScore) * 100)
+              : null;
+            const up = pctChange !== null && pctChange >= 0;
+
+            return (
+              <div
+                key={index}
+                className="grid gap-4 items-center px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-smooth cursor-pointer group"
+                style={{ gridTemplateColumns: '1fr auto auto' }}
+              >
+                {/* Prompt text with row number */}
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <span className="text-[10px] font-bold text-slate-300 tabular-nums w-4 shrink-0 group-hover:text-slate-400">
+                    {index + 1}
+                  </span>
+                  <p className="text-xs text-slate-700 truncate italic">{item.promptText}</p>
+                </div>
+
+                {/* Trend badge */}
+                <div className="flex items-center justify-end w-16">
+                  {pctChange !== null ? (
+                    <span
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${
+                        up ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
+                      }`}
+                    >
+                      {up ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                      {Math.abs(pctChange)}%
                     </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-300">—</span>
                   )}
-                  <span className="text-xs font-black transition-colors duration-500" style={{ color: itemColor }}>
+                </div>
+
+                {/* Score badge */}
+                <div className="w-12 text-right">
+                  <span
+                    className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-lg text-xs font-bold tabular-nums ${getScoreToneClass(item.currentScore)}`}
+                  >
                     {item.currentScore}
                   </span>
                 </div>
               </div>
-
-              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
-                <div
-                  className="h-full rounded-full transition-all duration-700 ease-out shadow-xs"
-                  style={{
-                    width: `${item.currentScore}%`,
-                    backgroundColor: itemColor
-                  }}
-                ></div>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
+      {/* Footer */}
       {onNavigateToPrompts && (
-        <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
-          <button
-            onClick={onNavigateToPrompts}
-            className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-800 transition-colors"
-          >
-            All prompts
-          </button>
-        </div>
+        <button
+          onClick={onNavigateToPrompts}
+          className="w-full mt-3 pt-3 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-brand-brown hover:text-brand-indigo transition-smooth"
+          style={{ borderTop: '1px solid #f1f3f8' }}
+        >
+          All Prompts
+          <ArrowRight size={13} />
+        </button>
       )}
     </div>
   );
