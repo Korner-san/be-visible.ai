@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
+const SKIP_CITATION_DOMAINS = ['tile.mapbox.com', 'openstreetmap.org', 'tiles.stadiamaps.com', 'api.mapbox.com']
+
 function getProviderCitations(result: any): string[] {
   const p = result.provider
   let arr: any[] = []
@@ -9,7 +11,20 @@ function getProviderCitations(result: any): string[] {
   else if (p === 'claude') arr = result.claude_citations || []
   else if (p === 'google_ai_overview') arr = result.google_ai_overview_citations || []
   else arr = result.citations || []
-  return arr.map((c: any) => (typeof c === 'string' ? c : c?.url)).filter(Boolean)
+  const urls = arr.map((c: any) => (typeof c === 'string' ? c : c?.url)).filter(Boolean)
+
+  // Fallback: when chatgpt_citations is empty, parse citation URLs from response text.
+  // ChatGPT embeds inline citation links as <a href> tags in the response HTML, which
+  // htmlToMarkdown preserves as markdown links. These are missed by the Sources-panel
+  // diff in chatgpt-executor because they exist in the DOM before Sources is clicked.
+  if (urls.length === 0 && p === 'chatgpt' && result.chatgpt_response) {
+    const urlRe = /https?:\/\/[^\s\)\]"'<>]+/g
+    const found: string[] = (result.chatgpt_response.match(urlRe) || [])
+      .map((u: string) => u.replace(/[.,;:!?]+$/, ''))
+    return [...new Set(found.filter((u: string) => !SKIP_CITATION_DOMAINS.some(d => u.includes(d))))]
+  }
+
+  return urls
 }
 
 function getProviderResponse(result: any): string {

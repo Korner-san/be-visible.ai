@@ -761,9 +761,36 @@ async function extractCitations(page) {
   const sourcesButton = page.locator('button').filter({ hasText: /sources/i }).first();
   const hasSourcesButton = await sourcesButton.count() > 0;
 
+  // Collect inline citation links from the response body.
+  // ChatGPT embeds citation links directly as <a href> tags in the response HTML
+  // (e.g. href="https://site.com?utm_source=chatgpt.com"). These links exist in the
+  // DOM before the Sources panel opens, so the before/after diff misses them entirely.
+  const inlineCitations = new Set();
+  try {
+    const responseLinks = await page.locator('[data-message-author-role="assistant"] a[href^="http"]').all();
+    for (const link of responseLinks) {
+      const href = await link.getAttribute('href');
+      if (!href) continue;
+      let url = href;
+      if (url.includes('chatgpt.com/link')) {
+        try {
+          const actualUrl = new URL(url).searchParams.get('url');
+          if (actualUrl) url = actualUrl;
+        } catch (e) {}
+      }
+      try {
+        const { hostname } = new URL(url);
+        if (!hostname.includes('chatgpt.com')) inlineCitations.add(url);
+      } catch (e) {}
+    }
+  } catch (e) {
+    console.warn('   ⚠️  Could not collect inline response links:', e.message);
+  }
+
   if (!hasSourcesButton) {
-    console.log('   ⚠️  No Sources button found - response may not have citations');
-    return [];
+    console.log('   ⚠️  No Sources button found - using inline citations only');
+    console.log('   ✅ Extracted ' + inlineCitations.size + ' inline citations');
+    return [...inlineCitations];
   }
 
   // Get links BEFORE clicking Sources
@@ -787,10 +814,10 @@ async function extractCitations(page) {
     if (href) hrefsAfter.push(href);
   }
 
-  // Find NEW links that appeared
+  // Find NEW links that appeared (Sources panel diff)
   const newLinks = hrefsAfter.filter(href => !hrefsBefore.has(href));
 
-  // Process citations
+  // Process Sources panel citations
   const citations = [];
   for (const href of newLinks) {
     try {
@@ -814,8 +841,10 @@ async function extractCitations(page) {
     }
   }
 
-  console.log('   ✅ Extracted ' + citations.length + ' valid citations');
-  return citations;
+  // Merge Sources panel citations with inline response citations (deduplicated)
+  const allCitations = [...new Set([...citations, ...inlineCitations])];
+  console.log('   ✅ Extracted ' + allCitations.length + ' citations (panel: ' + citations.length + ', inline: ' + inlineCitations.size + ')');
+  return allCitations;
 }
 
 /**
