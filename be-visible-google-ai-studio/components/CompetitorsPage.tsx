@@ -627,27 +627,35 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     fetchCompetitorMetrics();
   }, [brandId, timeRange, customDateRange?.from, customDateRange?.to, selectedModels.join(',')]);
 
-  // Auto-resolve domains for competitors that have no website set
+  // Auto-resolve domains for competitors with no website, and for detected entities
   useEffect(() => {
-    if (!brandId || !competitors.length) return;
-    const missing = competitors.filter(c => !c.website);
-    if (!missing.length) return;
-    missing.forEach(async (comp) => {
+    if (!brandId) return;
+    const registeredNames = new Set(competitors.map(c => c.name.toLowerCase()));
+    const toResolve: string[] = [
+      // Registered competitors missing a website
+      ...competitors.filter(c => !c.website).map(c => c.name),
+      // Detected entities not already registered (and not already resolved)
+      ...detectedEntities
+        .filter(e => !registeredNames.has(e.name.toLowerCase()) && !resolvedDomains[e.name.toLowerCase()])
+        .map(e => e.name),
+    ];
+    if (!toResolve.length) return;
+    toResolve.forEach(async (name) => {
       try {
         const res = await fetch('/api/resolve-competitor-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brandId, entityName: comp.name }),
+          body: JSON.stringify({ brandId, entityName: name }),
         });
         if (res.ok) {
           const json = await res.json();
           if (json.url) {
-            setResolvedDomains(prev => ({ ...prev, [comp.name.toLowerCase()]: json.url }));
+            setResolvedDomains(prev => ({ ...prev, [name.toLowerCase()]: json.url }));
           }
         }
       } catch {}
     });
-  }, [brandId, competitors.map(c => c.name).join(',')]);
+  }, [brandId, competitors.map(c => c.name).join(','), detectedEntities.map(e => e.name).join(',')]);
 
   const showSample = !brandId;
 
