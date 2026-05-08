@@ -119,9 +119,11 @@ const FaviconImg: React.FC<{ domain?: string; name: string; size?: number; bgCol
       </div>
     );
   }
+  // icon.horse returns a real 404 when no favicon is found, so onError triggers
+  // our letter fallback cleanly. Google's service always returns a generic globe.
   return (
     <img
-      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+      src={`https://icon.horse/icon/${domain}`}
       alt={name}
       style={{ width: size, height: size, objectFit: 'contain', borderRadius: Math.round(size * 0.25), flexShrink: 0 }}
       onError={() => setErr(true)}
@@ -776,7 +778,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     return (
       <g transform={`translate(${x},${y + 2})`}>
         {domain ? (
-          <image href={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} x={-8} y={0} width={16} height={16} />
+          <image href={`https://icon.horse/icon/${domain}`} x={-8} y={0} width={16} height={16} />
         ) : null}
         <text x={0} y={domain ? 24 : 10} textAnchor="middle" fill="#475569" fontSize={8} fontWeight={800} fontFamily="inherit">{shortName}</text>
       </g>
@@ -852,7 +854,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                           return (
                             <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
                               {ttDomain ? (
-                                <img src={`https://www.google.com/s2/favicons?domain=${ttDomain}&sz=32`} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
+                                <img src={`https://icon.horse/icon/${ttDomain}`} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
                               ) : (
                                 <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
                               )}
@@ -871,7 +873,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', paddingTop: '10px' }}>
                       {(payload || []).map((entry: any) => {
                         const domain = getEntityDomain(entry.dataKey);
-                        const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+                        const faviconUrl = domain ? `https://icon.horse/icon/${domain}` : null;
                         return (
                           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 700, color: '#475569' }}>
                             {faviconUrl ? (
@@ -890,7 +892,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 {trendLineKeys.map((key, idx) => {
                   const domain = getEntityDomain(key);
                   const color = COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length];
-                  const faviconHref = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : null;
+                  const faviconHref = domain ? `https://icon.horse/icon/${domain}` : null;
                   const renderDot = (props: any) => {
                     const { cx, cy } = props;
                     if (cx == null || cy == null) return <g />;
