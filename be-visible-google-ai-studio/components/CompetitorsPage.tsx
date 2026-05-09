@@ -885,23 +885,62 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   tickFormatter={(v) => `${v}`}
                 />
                 <Tooltip
-                  contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px', padding: '8px 12px' }}
+                  cursor={{ stroke: '#e8edf4', strokeWidth: 1, strokeDasharray: '4 2' }}
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
+                    const sorted = [...payload].sort((a: any, b: any) => {
+                      if (a.dataKey === brandName) return -1;
+                      if (b.dataKey === brandName) return 1;
+                      return (b.value ?? 0) - (a.value ?? 0);
+                    });
                     return (
-                      <div style={{ background: 'white', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '8px 12px', fontSize: '11px', border: '1px solid #f1f5f9' }}>
-                        <p style={{ color: '#94a3b8', fontWeight: 600, fontSize: '10px', marginBottom: '6px' }}>{label}</p>
-                        {payload.map((entry: any) => {
+                      <div style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
+                        padding: '10px 14px',
+                        border: '1px solid #e8edf4',
+                        minWidth: '185px',
+                        maxWidth: '240px',
+                        fontFamily: 'inherit',
+                      }}>
+                        <div style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: '#94a3b8',
+                          marginBottom: '8px',
+                          paddingBottom: '7px',
+                          borderBottom: '1px solid #f1f5f9',
+                          textTransform: 'uppercase' as const,
+                          letterSpacing: '0.07em',
+                        }}>{label}</div>
+                        {sorted.map((entry: any) => {
                           const ttDomain = getEntityDomain(entry.dataKey);
+                          const isBrand = entry.dataKey === brandName;
                           return (
-                            <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                              {ttDomain ? (
-                                <img src={getFaviconSrc(ttDomain)!} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
-                              ) : (
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
-                              )}
-                              <span style={{ fontWeight: 700, color: '#475569' }}>{entry.dataKey}:</span>
-                              <span style={{ fontWeight: 800, color: entry.color }}>{Number(entry.value).toFixed(1)}</span>
+                            <div key={entry.dataKey} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '4px 0',
+                              borderBottom: '1px solid #f8fafc',
+                            }}>
+                              <FaviconImg domain={ttDomain} name={entry.dataKey} size={18} bgColor={entry.color} />
+                              <span style={{
+                                flex: 1,
+                                fontSize: '11px',
+                                fontWeight: isBrand ? 800 : 700,
+                                color: isBrand ? entry.color : '#475569',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap' as const,
+                              }}>{entry.dataKey}</span>
+                              <span style={{
+                                fontSize: '12px',
+                                fontWeight: 900,
+                                color: entry.color,
+                                flexShrink: 0,
+                              }}>{Number(entry.value ?? 0).toFixed(0)}</span>
                             </div>
                           );
                         })}
@@ -932,31 +971,19 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   );
                 }} />
                 {trendLineKeys.map((key, idx) => {
-                  const domain = getEntityDomain(key);
                   const color = key === brandName ? BRAND_COLOR : COMPETITOR_COLORS[(idx - 1 + COMPETITOR_COLORS.length) % COMPETITOR_COLORS.length];
-                  const faviconHref = getFaviconSrc(domain);
-                  const renderDot = (props: any) => {
-                    const { cx, cy } = props;
-                    if (cx == null || cy == null) return <g />;
-                    if (!faviconHref) return <circle cx={cx} cy={cy} r={5} fill={color} stroke="white" strokeWidth={1.5} />;
-                    const s = 16;
-                    return (
-                      <g key={`dot-${cx}-${cy}`}>
-                        <circle cx={cx} cy={cy} r={s / 2 + 2} fill="white" stroke="#e2e8f0" strokeWidth={1} />
-                        <image href={faviconHref} x={cx - s / 2} y={cy - s / 2} width={s} height={s} />
-                      </g>
-                    );
-                  };
+                  const isBrand = key === brandName;
+                  const r = isBrand ? 5 : 4;
                   return (
                     <Line
                       key={key}
                       type="monotone"
                       dataKey={key}
                       stroke={color}
-                      strokeWidth={idx === 0 ? 3 : 2}
-                      dot={renderDot}
-                      activeDot={faviconHref ? renderDot : { r: 5 }}
-                      strokeDasharray={idx === 0 ? undefined : '5 5'}
+                      strokeWidth={isBrand ? 3 : 2}
+                      dot={{ r, fill: color, stroke: 'white', strokeWidth: 2 }}
+                      activeDot={{ r: r + 2, fill: color, stroke: 'white', strokeWidth: 2.5 }}
+                      strokeDasharray={isBrand ? undefined : '5 5'}
                     />
                   );
                 })}
