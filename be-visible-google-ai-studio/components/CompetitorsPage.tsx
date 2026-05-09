@@ -10,6 +10,11 @@ import { supabase } from '../lib/supabase';
 // Competitor color palette
 const COMPETITOR_COLORS = ['#FFBD00', '#FB5607', '#D90226', '#970E33', '#481643'];
 
+// Custom favicon overrides — local files served from /public/favicons/
+const CUSTOM_FAVICON_OVERRIDES: Record<string, string> = {
+  'africa-israel.co.il': '/favicons/africa-israel.ico',
+};
+
 // Mock data used when no real data is available
 const MOCK_COMPETITORS = [
   { name: 'Incredibuild', score: 94, mentionRate: 78, voice: 45, citation: 35, color: '#FFBD00', website: 'incredibuild.com' },
@@ -119,11 +124,10 @@ const FaviconImg: React.FC<{ domain?: string; name: string; size?: number; bgCol
       </div>
     );
   }
-  // icon.horse returns a real 404 when no favicon is found, so onError triggers
-  // our letter fallback cleanly. Google's service always returns a generic globe.
+  const src = CUSTOM_FAVICON_OVERRIDES[domain] ?? `https://icon.horse/icon/${domain}`;
   return (
     <img
-      src={`https://icon.horse/icon/${domain}`}
+      src={src}
       alt={name}
       style={{ width: size, height: size, objectFit: 'contain', borderRadius: Math.round(size * 0.25), flexShrink: 0 }}
       onError={() => setErr(true)}
@@ -273,6 +277,14 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         if (otherMentions > 0) {
           const pct = parseFloat(((otherMentions / totalMentions) * 100).toFixed(2));
           if (pct > 0) slices.push({ name: 'Other', voice: pct, color: '#94a3b8' });
+        }
+
+        // Add registered competitors that had 0 mentions (absent from SOV data entirely)
+        const sliceNames = new Set(slices.map(s => s.name.toLowerCase()));
+        for (const comp of competitors) {
+          if (!sliceNames.has(comp.name.toLowerCase())) {
+            slices.push({ name: comp.name, voice: 0, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
+          }
         }
 
         setSovSlices(slices);
