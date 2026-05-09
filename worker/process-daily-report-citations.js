@@ -235,21 +235,34 @@ async function extractChatGPTCitations(dailyReportId) {
 // ========== STEP 2: Categorize URLs ==========
 async function categorizeUrls(citations) {
   const uniqueUrls = [...new Set(citations.map(c => c.url))];
-  
-  // Check existing URLs in database
-  const { data: existingUrlsData } = await supabase
-    .from('url_inventory')
-    .select(`
-      id,
-      url,
-      content_extracted,
-      retry_count,
-      url_content_facts(id, content_structure_category)
-    `)
-    .in('url', uniqueUrls);
-  
+
+  // Batch the url_inventory lookup in small chunks.
+  // Israeli real estate URLs can be 400+ chars when percent-encoded (Hebrew + srsltid params),
+  // so a batch of 100 easily exceeds PostgREST's ~8KB GET URL limit and silently returns null.
+  // Use batches of 20 to stay well under the limit.
+  const URL_LOOKUP_BATCH = 20;
+  const allExistingData = [];
+  for (let i = 0; i < uniqueUrls.length; i += URL_LOOKUP_BATCH) {
+    const batch = uniqueUrls.slice(i, i + URL_LOOKUP_BATCH);
+    const { data, error } = await supabase
+      .from('url_inventory')
+      .select(`
+        id,
+        url,
+        content_extracted,
+        retry_count,
+        url_content_facts(id, content_structure_category)
+      `)
+      .in('url', batch);
+    if (error) {
+      console.error(`⚠️  [CATEGORIZE] url_inventory lookup failed (batch ${Math.floor(i / URL_LOOKUP_BATCH) + 1}):`, error.message);
+    }
+    if (data) allExistingData.push(...data);
+  }
+  console.log(`📋 [CATEGORIZE] Found ${allExistingData.length}/${uniqueUrls.length} unique URLs already in url_inventory`);
+
   const existingUrlMap = new Map();
-  (existingUrlsData || []).forEach(u => {
+  (allExistingData || []).forEach(u => {
     existingUrlMap.set(u.url, {
       id: u.id,
       contentExtracted: u.content_extracted,
@@ -445,8 +458,8 @@ async function updateRetryCounters(failedExtractions, urlList) {
 
 // ========== STEP 4: Prepare Classification Inputs ==========
 async function prepareClassificationInputs(urls) {
-  // Batch to 50 to avoid PostgREST URL length limit with long URL strings
-  const BATCH_SIZE = 50;
+  // Batch to 20 — long Israeli RE URLs can make batches of 50 exceed the 8KB GET limit
+  const BATCH_SIZE = 20;
   const allData = [];
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, i + BATCH_SIZE);
@@ -773,8 +786,9 @@ async function storeClassifications(classifications, inputs) {
 // Concept B: Citation Occurrence — one row per (URL × prompt_result_id) pair.
 // This runs for ALL citations including already-known URLs. Never skip this.
 async function linkCitationsToPrompts(citations, urlList) {
-  // Batch URL lookups to avoid "fetch failed" errors with large arrays (>100 URLs)
-  const BATCH_SIZE = 100;
+  // Use small batches — Israeli RE URLs are 400+ chars when percent-encoded,
+  // so 20 URLs per batch keeps the PostgREST GET request well under 8KB.
+  const BATCH_SIZE = 20;
   const allUrlInventory = [];
 
   for (let i = 0; i < urlList.length; i += BATCH_SIZE) {
@@ -796,6 +810,10 @@ async function linkCitationsToPrompts(citations, urlList) {
 
   const citationRecords = [];
   const droppedUrls = new Set();
+  // Deduplicate by (url_id, prompt_result_id, provider) — if chatgpt_citations array
+  // contains the same URL twice, normalizeUrl makes them identical, causing
+  // PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  const seenKeys = new Set();
 
   for (const citation of citations) {
     const urlId = urlMap.get(citation.url);
@@ -803,6 +821,9 @@ async function linkCitationsToPrompts(citations, urlList) {
       droppedUrls.add(citation.url);
       continue;
     }
+    const key = `${urlId}:${citation.promptResultId}:chatgpt`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
     citationRecords.push({
       url_id: urlId,
       prompt_result_id: citation.promptResultId,
