@@ -66,8 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
   selectedModels = ['chatgpt', 'google_ai_overview'],
   onModelsChange,
 }) => {
-  const tabs = ['Visibility', 'Competitors', 'Citations', 'Prompts', 'Improve'];
-
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customFromInput, setCustomFromInput] = useState('');
   const [customToInput, setCustomToInput] = useState('');
@@ -126,24 +124,8 @@ export const Header: React.FC<HeaderProps> = ({
       }`}
       style={{ borderColor: '#e8edf4' }}
     >
-      {/* Tabs inside pill container */}
-      <nav className="flex items-center h-full">
-        <div className="pill-nav">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-smooth ${
-                activeTab === tab
-                  ? 'bg-brand-brown text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* Page title */}
+      <span className="text-sm font-semibold text-slate-700 tracking-tight">{activeTab}</span>
 
       {/* Right controls */}
       <div className="flex items-center gap-2.5">

@@ -461,6 +461,7 @@ function AppContent() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'Overview':
       case 'Getting Started':
         return <OverviewPage onNavigate={handleTabChange} />;
       case 'Competitors':
