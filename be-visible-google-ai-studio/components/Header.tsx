@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { TimeRange } from '../types';
 
 interface HeaderProps {
@@ -147,12 +147,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right controls */}
       <div className="flex items-center gap-2.5">
-        {/* Globe indicator */}
-        <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border text-xs font-medium text-slate-700" style={{ borderColor: '#e8edf4' }}>
-          <Globe size={13} className="text-brand-indigo" />
-          <span>(1/3)</span>
-        </div>
-
         {/* Time range pills */}
         <div className="pill-nav">
           {[TimeRange.SEVEN_DAYS, TimeRange.THIRTY_DAYS, TimeRange.NINETY_DAYS].map((range) => (
