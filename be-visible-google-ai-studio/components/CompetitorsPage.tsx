@@ -13,6 +13,16 @@ const COMPETITOR_COLORS = ['#FFBD00', '#FB5607', '#D90226', '#970E33', '#481643'
 // Custom favicon overrides — local files served from /public/favicons/
 const CUSTOM_FAVICON_OVERRIDES: Record<string, string> = {
   'africa-israel.co.il': '/favicons/africa-israel.ico',
+  'shbn.co.il': '/favicons/shbn.ico',
+  'zarfati-zvi.com': '/favicons/zarfati-zvi.png',
+  'shaviro.co.il': '/favicons/shaviro.jpg',
+};
+
+// Returns a favicon URL that is guaranteed to render (never a broken image).
+// Checks local overrides first; falls back to Google's favicon CDN.
+const getFaviconSrc = (domain: string | undefined): string | null => {
+  if (!domain) return null;
+  return CUSTOM_FAVICON_OVERRIDES[domain] ?? `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
 };
 
 // Mock data used when no real data is available
@@ -124,10 +134,9 @@ const FaviconImg: React.FC<{ domain?: string; name: string; size?: number; bgCol
       </div>
     );
   }
-  const src = CUSTOM_FAVICON_OVERRIDES[domain] ?? `https://icon.horse/icon/${domain}`;
   return (
     <img
-      src={src}
+      src={getFaviconSrc(domain)!}
       alt={name}
       style={{ width: size, height: size, objectFit: 'contain', borderRadius: Math.round(size * 0.25), flexShrink: 0 }}
       onError={() => setErr(true)}
@@ -265,26 +274,24 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         const others = entities.filter(e => e.type === 'other');
         const otherMentions = others.reduce((sum, e) => sum + e.mentions, 0);
 
-        // ── SOV slices ──
+        // ── SOV slices — order: brand → mentioned competitors → 0% registered → Other ──
         const slices: SovSlice[] = [];
         let colorIdx = 0;
         if (brand) slices.push({ name: brand.name, voice: parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         for (const comp of trackedComps) {
           const pct = parseFloat(((comp.mentions / totalMentions) * 100).toFixed(2));
-          // Always include registered competitors so they appear in the legend, even at 0%
           slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
         }
-        if (otherMentions > 0) {
-          const pct = parseFloat(((otherMentions / totalMentions) * 100).toFixed(2));
-          if (pct > 0) slices.push({ name: 'Other', voice: pct, color: '#94a3b8' });
-        }
-
-        // Add registered competitors that had 0 mentions (absent from SOV data entirely)
+        // Registered competitors with 0 mentions appear before "Other"
         const sliceNames = new Set(slices.map(s => s.name.toLowerCase()));
         for (const comp of competitors) {
           if (!sliceNames.has(comp.name.toLowerCase())) {
             slices.push({ name: comp.name, voice: 0, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
           }
+        }
+        if (otherMentions > 0) {
+          const pct = parseFloat(((otherMentions / totalMentions) * 100).toFixed(2));
+          if (pct > 0) slices.push({ name: 'Other', voice: pct, color: '#94a3b8' });
         }
 
         setSovSlices(slices);
@@ -790,7 +797,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     return (
       <g transform={`translate(${x},${y + 2})`}>
         {domain ? (
-          <image href={`https://icon.horse/icon/${domain}`} x={-8} y={0} width={16} height={16} />
+          <image href={getFaviconSrc(domain)!} x={-8} y={0} width={16} height={16} />
         ) : null}
         <text x={0} y={domain ? 24 : 10} textAnchor="middle" fill="#475569" fontSize={8} fontWeight={800} fontFamily="inherit">{shortName}</text>
       </g>
@@ -866,7 +873,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                           return (
                             <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
                               {ttDomain ? (
-                                <img src={`https://icon.horse/icon/${ttDomain}`} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
+                                <img src={getFaviconSrc(ttDomain)!} style={{ width: 12, height: 12, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} alt={entry.dataKey} />
                               ) : (
                                 <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block', flexShrink: 0 }} />
                               )}
@@ -885,7 +892,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', paddingTop: '10px' }}>
                       {(payload || []).map((entry: any) => {
                         const domain = getEntityDomain(entry.dataKey);
-                        const faviconUrl = domain ? `https://icon.horse/icon/${domain}` : null;
+                        const faviconUrl = getFaviconSrc(domain);
                         return (
                           <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', fontWeight: 700, color: '#475569' }}>
                             {faviconUrl ? (
@@ -904,7 +911,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 {trendLineKeys.map((key, idx) => {
                   const domain = getEntityDomain(key);
                   const color = COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length];
-                  const faviconHref = domain ? `https://icon.horse/icon/${domain}` : null;
+                  const faviconHref = getFaviconSrc(domain);
                   const renderDot = (props: any) => {
                     const { cx, cy } = props;
                     if (cx == null || cy == null) return <g />;
