@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Calendar, Globe, Maximize2, RefreshCw, Monitor, ChevronDown } from 'lucide-react';
+import { Globe, ChevronDown } from 'lucide-react';
 import { TimeRange } from '../types';
 
 interface HeaderProps {
@@ -254,13 +254,6 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Icon buttons */}
-        <div className="flex items-center gap-0.5">
-          <IconBtn icon={<Calendar size={16} />} />
-          <IconBtn icon={<Monitor size={16} />} />
-          <IconBtn icon={<RefreshCw size={16} />} />
-          <IconBtn icon={<Maximize2 size={16} />} />
-        </div>
       </div>
     </header>
   );
