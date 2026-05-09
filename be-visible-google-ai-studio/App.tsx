@@ -522,10 +522,10 @@ function AppContent() {
           onModelsChange={setSelectedModels}
         />
         <main
-          className="flex-1 overflow-y-auto px-4 md:px-6 py-4 pt-20 scroll-smooth"
+          className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 xl:px-10 py-4 pt-20 scroll-smooth"
           onScroll={handleScroll}
         >
-          <div className="max-w-[1280px] mx-auto">
+          <div className="w-full">
             {activeBrand?.first_report_status === 'phase1_complete' && activeBrandId && (
               <PartialReportBanner
                 brandId={activeBrandId}
