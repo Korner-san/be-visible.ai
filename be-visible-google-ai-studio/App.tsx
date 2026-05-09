@@ -74,7 +74,7 @@ function AppContent() {
 
   // ── Dashboard state ──────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('Visibility');
-  const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.THIRTY_DAYS);
+  const [timeRange, setTimeRange] = useState<TimeRange>(TimeRange.SEVEN_DAYS);
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo] = useState<string>('');
   const [userTimezone, setUserTimezone] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone);
