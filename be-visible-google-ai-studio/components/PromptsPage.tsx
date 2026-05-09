@@ -557,7 +557,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           </div>
         );
         return (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden animate-fadeIn" style={{ border: '1px solid #e8edf4' }}>
             <table className="w-full text-left text-[11px] border-collapse">
               <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
                 <tr>
@@ -639,7 +639,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           </div>
         );
         return (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden animate-fadeIn" style={{ border: '1px solid #e8edf4' }}>
             <table className="w-full text-left text-[11px] table-auto">
               <thead className="bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
                 <tr>
@@ -679,7 +679,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       }
       case 'Sample history':
         return (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden animate-fadeIn" style={{ border: '1px solid #e8edf4' }}>
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200">
@@ -763,7 +763,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
         </div>
       )}
       <div className={`space-y-6 animate-fadeIn pb-20 font-sans relative transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none select-none' : 'opacity-100'}`}>
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="bg-white p-5 rounded-2xl shadow-card transition-smooth flex flex-col md:flex-row gap-4 items-center justify-between" style={{ border: '1px solid #e8edf4' }}>
           <div className="relative w-full md:w-96">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
@@ -796,7 +796,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden flex flex-col" style={{ border: '1px solid #e8edf4' }}>
           <table className="w-full text-left table-fixed border-collapse">
             <thead className="bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase tracking-widest border-b-2 border-gray-200 sticky top-0 z-10">
               <tr>
@@ -824,7 +824,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                   <React.Fragment key={category}>
                     {/* Category Row */}
                     <tr
-                      className="group transition-all bg-white border-b border-gray-200 hover:bg-gray-50 cursor-pointer"
+                      className="group transition-smooth bg-white border-b border-gray-200 hover:bg-slate-50 cursor-pointer"
                       onClick={() => handleSelectCategory(category)}
                     >
                       <td className="px-8 py-5">
@@ -869,7 +869,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                       return (
                         <tr
                           key={prompt.id}
-                          className={`group hover:bg-slate-50 transition-all cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-brown ${pIdx === group.prompts.length - 1 ? 'border-b border-gray-200' : 'border-b border-gray-100'}`}
+                          className={`group hover:bg-slate-50 transition-smooth cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-brown ${pIdx === group.prompts.length - 1 ? 'border-b border-gray-200' : 'border-b border-gray-100'}`}
                           onClick={() => handleSelectPrompt(prompt)}
                         >
                           <td className="pl-16 pr-8 py-4 text-sm font-semibold text-slate-500 truncate">
@@ -1011,7 +1011,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                ) : (
                  <>
                    <div className="grid grid-cols-12 gap-6 items-stretch">
-                     <div className="col-span-12 lg:col-span-7 bg-white rounded-[24px] border-2 border-gray-200 shadow-sm p-6 flex flex-col h-[300px]">
+                     <div className="col-span-12 lg:col-span-7 bg-white rounded-2xl shadow-card p-6 flex flex-col h-[300px]" style={{ border: '1px solid #e8edf4' }}>
                        <div className="flex items-start justify-between mb-2">
                          <span className="text-[10px] font-black text-gray-400 tracking-widest">
                             {activeChartMetric === 'avgPosition' ? 'Position trend' :

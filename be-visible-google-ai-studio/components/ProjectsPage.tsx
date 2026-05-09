@@ -114,7 +114,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ brandId }) => {
     <div className="space-y-6 animate-fadeIn pb-24">
 
       {/* Header */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex items-center justify-between">
+      <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-5 flex items-center justify-between" style={{ border: '1px solid #e8edf4' }}>
         <div>
           <div className="flex items-center gap-2 mb-0.5">
             <Building2 size={16} className="text-brand-brown" />
@@ -132,21 +132,21 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ brandId }) => {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth p-5" style={{ border: '1px solid #e8edf4' }}>
           <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Projects Tracked</p>
           <p className="text-3xl font-black text-slate-900">{projects.length}</p>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth p-5" style={{ border: '1px solid #e8edf4' }}>
           <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Mentioned</p>
           <p className="text-3xl font-black text-slate-900">{projects.filter(p => p.mention_count > 0).length}</p>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth p-5" style={{ border: '1px solid #e8edf4' }}>
           <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Avg Mention Rate</p>
           <p className="text-3xl font-black text-slate-900">
             {(projects.reduce((s, p) => s + p.mention_rate, 0) / Math.max(projects.length, 1)).toFixed(0)}%
           </p>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth p-5" style={{ border: '1px solid #e8edf4' }}>
           <p className="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-1">Top Project</p>
           <p className="text-base font-black text-slate-900 truncate">
             {projects.sort((a, b) => b.mention_rate - a.mention_rate)[0]?.project_name || '—'}
@@ -155,7 +155,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ brandId }) => {
       </div>
 
       {/* Projects Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
           <BarChart2 size={15} className="text-slate-400" />
           <h3 className="text-sm font-black text-slate-700 tracking-tight">Mention Rate by Project</h3>
@@ -164,7 +164,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ brandId }) => {
           {[...projects]
             .sort((a, b) => b.mention_rate - a.mention_rate)
             .map((project, idx) => (
-              <div key={project.project_name} className="px-6 py-5 hover:bg-gray-50/50 transition-colors">
+              <div key={project.project_name} className="px-6 py-5 hover:bg-slate-50 transition-smooth">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-black text-slate-300 w-5">#{idx + 1}</span>
@@ -225,7 +225,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ brandId }) => {
 
       {/* 7-day trend (if history available) */}
       {history.length > 1 && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth p-6" style={{ border: '1px solid #e8edf4' }}>
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={15} className="text-slate-400" />
             <h3 className="text-sm font-black text-slate-700 tracking-tight">Trend — Last {history.length} Reports</h3>

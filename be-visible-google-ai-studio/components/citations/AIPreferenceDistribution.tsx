@@ -256,10 +256,10 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
+    <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth overflow-hidden flex flex-col h-full" style={{ border: '1px solid #e8edf4' }}>
       <div className="p-5 border-b border-gray-100 bg-white">
         <div className="space-y-1">
-          <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2 leading-none">
+          <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide flex items-center gap-2 leading-none">
             Content type analysis
             <div className="group relative inline-block">
               <Info size={13} className="text-gray-300 cursor-help hover:text-gray-400 transition-colors shrink-0" />
@@ -270,12 +270,9 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
                 </div>
               </div>
             </div>
-            {hasRealData && (
-              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
-            )}
-            {!hasRealData && !isLoading && (
-              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
-            )}
+            {isLoading && <span className="badge-loading">LOADING</span>}
+            {hasRealData && !isLoading && <span className="badge-live"><span className="pulse-dot" />Live</span>}
+            {!hasRealData && !isLoading && <span className="badge-sample">SAMPLE</span>}
           </h3>
           <p className="text-[11px] text-slate-500 font-medium mt-0.5">
             Content formats most influencing AI model answers
@@ -320,7 +317,7 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
                 <React.Fragment key={index}>
                   <tr
                     onClick={() => toggleRow(row.type)}
-                    className={`hover:bg-gray-50/80 transition-all group cursor-pointer ${isExpanded ? 'bg-slate-50/60' : ''}`}
+                    className={`hover:bg-slate-50 transition-smooth group cursor-pointer ${isExpanded ? 'bg-slate-50/60' : ''}`}
                   >
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">

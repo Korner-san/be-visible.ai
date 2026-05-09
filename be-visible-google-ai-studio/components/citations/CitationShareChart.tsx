@@ -222,10 +222,10 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
   const ticks = getTicks(data, 7);
 
   return (
-    <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-full">
+    <div className="bg-white p-5 rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex flex-col h-full" style={{ border: '1px solid #e8edf4' }}>
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
+          <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide flex items-center gap-2">
             Citation share over time
             <div className="group relative">
                <HelpCircle size={14} className="text-gray-300 cursor-help" />
@@ -235,10 +235,13 @@ export const CitationShareChart: React.FC<CitationShareChartProps> = ({ brandId,
                </div>
             </div>
             {hasRealData && (
-              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
+              <span className="badge-live"><span className="pulse-dot" />Live</span>
             )}
-            {!hasRealData && (
-              <span className="ml-1 px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
+            {!hasRealData && !isLoading && (
+              <span className="badge-sample">SAMPLE</span>
+            )}
+            {isLoading && (
+              <span className="badge-loading">LOADING</span>
             )}
           </h3>
           {brandDomain && <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Percentage of total citations linking to {brandDomain}</p>}

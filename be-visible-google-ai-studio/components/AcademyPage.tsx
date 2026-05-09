@@ -137,7 +137,7 @@ export const AcademyPage: React.FC<AcademyPageProps> = ({ initialArticleId }) =>
     if (!article) return <div>Article not found</div>;
     
     return (
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+      <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden animate-fadeIn" style={{ border: '1px solid #e8edf4' }}>
         <div className="p-8 max-w-4xl mx-auto">
           <button 
             onClick={() => setSelectedArticle(null)}
@@ -212,7 +212,8 @@ export const AcademyPage: React.FC<AcademyPageProps> = ({ initialArticleId }) =>
           <div 
             key={article.id}
             onClick={() => setSelectedArticle(article.id)}
-            className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md transition-all cursor-pointer group flex flex-col h-full"
+            className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-6 cursor-pointer group flex flex-col h-full"
+            style={{ border: '1px solid #e8edf4' }}
           >
             <div className="flex items-start justify-between mb-4">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${

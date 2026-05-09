@@ -132,7 +132,7 @@ export const PersonasPage: React.FC<PersonasPageProps> = ({ brandId }) => {
 
   return (
     <div className="max-w-3xl space-y-6 animate-fadeIn pb-24">
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+      <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-6" style={{ border: '1px solid #e8edf4' }}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -185,7 +185,7 @@ export const PersonasPage: React.FC<PersonasPageProps> = ({ brandId }) => {
         </form>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
         <div className="px-6 py-4 border-b border-gray-100">
           <h3 className="text-sm font-black text-slate-800">Saved personas</h3>
         </div>

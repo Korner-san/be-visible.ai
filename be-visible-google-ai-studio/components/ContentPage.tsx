@@ -278,20 +278,16 @@ export const ContentPage: React.FC<ContentPageProps> = ({ brandId, timeRange = T
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden flex flex-col" style={{ border: '1px solid #e8edf4' }}>
         <div className="p-8 border-b border-gray-100 bg-white">
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-            Content Structure Analysis
-            {hasRealData && (
-              <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
-            )}
-            {!hasRealData && !isLoading && (
-              <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
-            )}
-          </h3>
-          <p className="text-2xl font-black text-slate-900 tracking-tight">
-            AI Preference Distribution
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide">AI Preference Distribution</h3>
+            <div className="flex items-center gap-2">
+              {isLoading && <span className="badge-loading">LOADING</span>}
+              {hasRealData && !isLoading && <span className="badge-live"><span className="pulse-dot" />Live</span>}
+              {!hasRealData && !isLoading && <span className="badge-sample">SAMPLE</span>}
+            </div>
+          </div>
           <p className="text-sm text-slate-500 mt-2 font-medium italic">
             Content types that have the most effect on how AI models answer questions based on citations
           </p>
@@ -353,7 +349,7 @@ export const ContentPage: React.FC<ContentPageProps> = ({ brandId, timeRange = T
                    <React.Fragment key={index}>
                      <tr
                        onClick={() => toggleRow(row.type)}
-                       className={`hover:bg-gray-50/80 transition-all group cursor-pointer ${isExpanded ? 'bg-slate-50/60' : ''}`}
+                       className={`hover:bg-slate-50 transition-smooth group cursor-pointer ${isExpanded ? 'bg-slate-50/60' : ''}`}
                      >
                        <td className="px-8 py-5">
                          <div className="flex items-center gap-4">

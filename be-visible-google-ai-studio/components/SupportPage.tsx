@@ -32,7 +32,7 @@ export const SupportPage: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto pb-20 animate-fadeIn flex flex-col items-center">
       {/* Centered Message Form Card */}
-      <div className="w-full bg-white rounded-[40px] border border-gray-200 shadow-xl shadow-brand-brown/5 p-10 md:p-14 relative overflow-hidden">
+      <div className="w-full bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-10 md:p-14 relative overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
         {/* Background Decorative Element */}
         <div className="absolute -top-12 -right-12 opacity-[0.03] pointer-events-none">
            <HelpCircle size={240} className="text-brand-brown" />

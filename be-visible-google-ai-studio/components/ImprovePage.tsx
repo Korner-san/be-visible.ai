@@ -6,7 +6,7 @@ export const ImprovePage: React.FC = () => {
 
   return (
     <div className="h-[60vh] flex items-center justify-center animate-fadeIn">
-      <div className="max-w-md w-full text-center space-y-8 p-10 bg-white rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+      <div className="max-w-md w-full text-center space-y-8 p-10 bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth relative overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
         {/* Decorative background elements */}
         <div className="absolute top-0 right-0 p-4 opacity-5">
            <Hammer size={80} style={{ color: brandTerracotta }} />

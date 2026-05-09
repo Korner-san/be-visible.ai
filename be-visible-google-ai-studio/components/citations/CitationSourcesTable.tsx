@@ -316,17 +316,14 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
   const pagedData = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-card transition-smooth flex flex-col overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
       {/* Table Header Section */}
       <div className="p-5 border-b border-gray-200 bg-white">
-        <h3 className="text-[15px] font-bold text-gray-400 tracking-wide leading-none flex items-center gap-2">
+        <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide leading-none flex items-center gap-2">
           Citation sources
-          {hasRealData && (
-            <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-emerald-100 text-emerald-700 rounded">LIVE DATA</span>
-          )}
-          {!hasRealData && !isLoading && (
-            <span className="px-1.5 py-0.5 text-[8px] font-black tracking-widest bg-amber-100 text-amber-600 rounded">SAMPLE</span>
-          )}
+          {isLoading && <span className="badge-loading">LOADING</span>}
+          {hasRealData && !isLoading && <span className="badge-live"><span className="pulse-dot" />Live</span>}
+          {!hasRealData && !isLoading && <span className="badge-sample">SAMPLE</span>}
         </h3>
         <p className="text-[11px] text-slate-500 mt-1 font-medium">
           Unique URLs per domain across all AI responses. Click a domain to expand.
@@ -379,7 +376,7 @@ export const CitationSourcesTable: React.FC<CitationSourcesTableProps> = ({ bran
               return (
                 <React.Fragment key={row.id}>
                   <tr
-                    className={`hover:bg-gray-50 transition-all cursor-pointer group ${isExpanded ? 'bg-slate-50' : ''}`}
+                    className={`hover:bg-slate-50 transition-smooth cursor-pointer group ${isExpanded ? 'bg-slate-50' : ''}`}
                     onClick={() => toggleRow(row.id)}
                   >
                     <td className="px-5 py-4">

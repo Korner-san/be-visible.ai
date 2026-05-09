@@ -209,7 +209,7 @@ export const UserSettingsPage: React.FC<UserSettingsPageProps> = ({ onNavigateTo
       <div className="space-y-6">
 
         {/* Profile & Security Card */}
-        <div className="bg-white rounded-[40px] border border-gray-200 shadow-xl shadow-brand-brown/5 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
           <div className="p-8 md:p-12">
             <form onSubmit={handleSave} className="space-y-12">
 

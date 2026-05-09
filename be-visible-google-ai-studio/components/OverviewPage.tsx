@@ -60,7 +60,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
       {/* Premium Hero Section - Scaled Down */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden relative group">
+      <div className="bg-white rounded-2xl shadow-card overflow-hidden relative group transition-smooth" style={{ border: '1px solid #e8edf4' }}>
         <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500 shadow-[0_1px_6px_rgba(59,130,246,0.2)]" />
         <div className="px-8 py-8 flex items-center justify-between">
           <div className="space-y-1">
@@ -81,7 +81,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
         {workstreams.map((ws, idx) => (
           <div 
             key={idx} 
-            className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-slate-300 hover:shadow-md transition-all flex items-center p-6 group cursor-default"
+            className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex items-center p-6 group cursor-default"
+            style={{ border: '1px solid #e8edf4' }}
           >
             {/* Icon Surface */}
             <div 

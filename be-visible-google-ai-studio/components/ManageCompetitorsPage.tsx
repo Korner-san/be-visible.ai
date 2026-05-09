@@ -182,7 +182,7 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
       )}
 
       {/* Header with Search and Toggle Add */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-2xl shadow-card transition-smooth flex flex-col md:flex-row items-center justify-between gap-4" style={{ border: '1px solid #e8edf4' }}>
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
@@ -265,7 +265,7 @@ export const ManageCompetitorsPage: React.FC<ManageCompetitorsPageProps> = ({ co
       {/* Competitors List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredCompetitors.map(comp => (
-          <div key={comp.id} className="bg-white rounded-[24px] border border-gray-200 shadow-sm p-6 group hover:border-brand-brown/30 hover:shadow-md transition-all flex flex-col h-full">
+          <div key={comp.id} className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-6 group flex flex-col h-full" style={{ border: '1px solid #e8edf4' }}>
             <div className="flex items-start justify-between mb-4">
                <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-center p-2 group-hover:bg-white transition-colors">

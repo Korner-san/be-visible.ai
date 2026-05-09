@@ -40,7 +40,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
   const brandTerracotta = '#874B34';
   
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-slate-300 hover:shadow-md transition-all p-6 flex flex-col group h-full">
+    <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-6 flex flex-col group h-full" style={{ border: '1px solid #e8edf4' }}>
       <div className="flex items-start justify-between mb-4">
         <div className="w-12 h-12 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-center shrink-0 p-2 overflow-hidden">
           <img src={logo} alt={`${name} logo`} className="w-full h-full object-contain" />
@@ -143,7 +143,7 @@ export const IntegrationsPage: React.FC = () => {
       {/* Available Integrations Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Google Search Console */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 flex flex-col space-y-6">
+        <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-8 flex flex-col space-y-6" style={{ border: '1px solid #e8edf4' }}>
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-center p-2.5">
               <img src={logos.gsc} alt="Google Search Console logo" className="w-full h-full object-contain" />
@@ -175,7 +175,7 @@ export const IntegrationsPage: React.FC = () => {
         </div>
 
         {/* Google Analytics 4 */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 flex flex-col space-y-6">
+        <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-8 flex flex-col space-y-6" style={{ border: '1px solid #e8edf4' }}>
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-center p-2.5">
               <img src={logos.ga4} alt="Google Analytics 4 logo" className="w-full h-full object-contain" />

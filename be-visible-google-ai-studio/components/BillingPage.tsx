@@ -18,7 +18,7 @@ export const BillingPage: React.FC = () => {
     <div className="space-y-6 pb-20 animate-fadeIn">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Plan Overview */}
-        <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm p-8 flex flex-col justify-between">
+        <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-8 flex flex-col justify-between" style={{ border: '1px solid #e8edf4' }}>
           <div className="flex items-start justify-between">
             <div className="space-y-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Current Plan</span>
@@ -39,7 +39,7 @@ export const BillingPage: React.FC = () => {
         </div>
 
         {/* Payment Method */}
-        <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm p-8 flex flex-col justify-between">
+        <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth p-8 flex flex-col justify-between" style={{ border: '1px solid #e8edf4' }}>
           <div className="space-y-6">
             <div className="space-y-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Payment Method</span>
@@ -74,7 +74,7 @@ export const BillingPage: React.FC = () => {
       </div>
 
       {/* Billing History */}
-      <div className="bg-white rounded-[32px] border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-card transition-smooth overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
         <div className="p-8 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none">Billing History</h3>

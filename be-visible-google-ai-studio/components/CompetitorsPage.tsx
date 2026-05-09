@@ -843,10 +843,10 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
     <div className="space-y-6 animate-fadeIn pb-12">
       <div className="grid grid-cols-12 gap-6 items-stretch">
         {/* Visibility Trend vs Competitors */}
-        <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[420px]">
+        <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex flex-col h-[420px]" style={{ border: '1px solid #e8edf4' }}>
           <div className="flex items-start justify-between mb-4">
             <div className="space-y-1">
-              <h3 className="text-[15px] font-bold text-gray-400 tracking-wide flex items-center gap-2">
+              <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide flex items-center gap-2">
                 Visibility index vs competitors
                 <HelpCircle size={14} className="text-gray-300" />
               </h3>
@@ -967,20 +967,20 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         </div>
 
         {/* Share of Voice Donut */}
-        <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[420px]">
+        <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex flex-col h-[420px]" style={{ border: '1px solid #e8edf4' }}>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Share of voice</h3>
+              <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide">Share of voice</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Market share distribution</p>
             </div>
             {isLoadingSov ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+              <span className="badge-loading">LOADING</span>
             ) : hasRealSov ? (
-              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+              <span className="badge-live"><span className="pulse-dot" />Live</span>
             ) : brandId ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
+              <span className="badge-computing">COMPUTING</span>
             ) : (
-              <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
+              <span className="badge-sample">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 relative min-h-0">
@@ -1027,20 +1027,20 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         </div>
 
         {/* Mention Rate Benchmark */}
-        <div className="col-span-12 lg:col-span-6 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[380px]">
+        <div className="col-span-12 lg:col-span-6 bg-white p-5 rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex flex-col h-[380px]" style={{ border: '1px solid #e8edf4' }}>
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Mention rate benchmark</h3>
+              <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide">Mention rate benchmark</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 font-medium italic">Efficiency of brand capture across models</p>
             </div>
             {isLoadingMetrics ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+              <span className="badge-loading">LOADING</span>
             ) : hasRealMetrics ? (
-              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+              <span className="badge-live"><span className="pulse-dot" />Live</span>
             ) : brandId ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
+              <span className="badge-computing">COMPUTING</span>
             ) : (
-              <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
+              <span className="badge-sample">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 min-h-0">
@@ -1098,20 +1098,20 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         </div>
 
         {/* Citation Share Ranking */}
-        <div className="col-span-12 lg:col-span-6 bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[380px]">
+        <div className="col-span-12 lg:col-span-6 bg-white p-5 rounded-2xl shadow-card hover:shadow-elevated transition-smooth flex flex-col h-[380px]" style={{ border: '1px solid #e8edf4' }}>
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Citation share ranking</h3>
+              <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide">Citation share ranking</h3>
               <p className="text-[11px] text-slate-500 mt-0.5 font-medium italic">Relative performance in citation volume</p>
             </div>
             {isLoadingMetrics ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+              <span className="badge-loading">LOADING</span>
             ) : hasRealMetrics ? (
-              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LIVE DATA</span>
+              <span className="badge-live"><span className="pulse-dot" />Live</span>
             ) : brandId ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">COMPUTING</span>
+              <span className="badge-computing">COMPUTING</span>
             ) : (
-              <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">SAMPLE</span>
+              <span className="badge-sample">SAMPLE</span>
             )}
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar">
@@ -1147,25 +1147,23 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
 
       {/* ── Detected Entities ─────────────────────────────────────────────── */}
       {brandId && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-card hover:shadow-elevated transition-smooth overflow-hidden" style={{ border: '1px solid #e8edf4' }}>
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-brand-brown/5 text-brand-brown flex items-center justify-center">
                 <Radar size={16} />
               </div>
               <div>
-                <h3 className="text-[15px] font-bold text-gray-400 tracking-wide">Detected Entities</h3>
+                <h3 className="text-[15px] font-semibold text-slate-800 tracking-wide">Detected Entities</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
                   Entities appearing in your AI responses — add any as a tracked competitor
                 </p>
               </div>
             </div>
             {isLoadingEntities ? (
-              <span className="text-[9px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">LOADING</span>
+              <span className="badge-loading">LOADING</span>
             ) : detectedEntities.length > 0 ? (
-              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                {detectedEntities.length} ENTITIES
-              </span>
+              <span className="badge-live"><span className="pulse-dot" />{detectedEntities.length} entities</span>
             ) : null}
           </div>
 
@@ -1222,7 +1220,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                         <div className="col-span-2" />
                       </div>
                     )}
-                    <div className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-gray-50/50 transition-colors">
+                    <div className="grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-slate-50 transition-smooth">
                     <div className="col-span-5 flex items-center gap-3">
                       <FaviconImg domain={getEntityDomain(entity.name)} name={entity.name} size={28} />
                       <span className="text-xs font-bold text-slate-800 truncate">{entity.name}</span>
