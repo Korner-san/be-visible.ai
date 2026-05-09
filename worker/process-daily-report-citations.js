@@ -91,8 +91,13 @@ async function processDailyReportCitations(dailyReportId) {
     }
     
     // Step 2: Deduplicate and categorize URLs
+    // Concept A: URL content entity — each unique URL is scraped/classified once.
+    // Concept B: Citation occurrence — every (URL × prompt_result_id) pair gets its own url_citations row.
     const { newUrls, existingUrls, needsClassification } = await categorizeUrls(citations);
-    console.log(`📊 [DEDUP] ${newUrls.length} new URLs, ${existingUrls.length} existing, ${needsClassification.length} need classification`);
+    const totalUniqueUrls = newUrls.length + existingUrls.length;
+    console.log(`📊 [DEDUP] ${totalUniqueUrls} unique URLs across ${citations.length} total occurrences`);
+    console.log(`   Concept A (content): ${newUrls.length} new URLs need Tavily, ${existingUrls.length} existing URLs skip Tavily`);
+    console.log(`   Concept B (occurrences): ALL ${citations.length} citation occurrences will be linked to url_citations`);
     
     // Step 3: Extract content from new URLs using Tavily
     let extractedCount = 0;
@@ -131,10 +136,12 @@ async function processDailyReportCitations(dailyReportId) {
       console.log(`[REAL ESTATE IL] Stored ${realEstateClassifiedCount} brand-specific content classifications`);
     }
 
-    // Step 5: Link ALL citations to prompts (including existing URLs)
+    // Step 5: Link ALL citation occurrences to prompts (Concept B — ALWAYS runs, even for existing URLs)
+    // This creates one url_citations row per (url × prompt_result_id) pair.
+    // Already-known URLs still produce new occurrence rows if prompt_result_id is new.
     const allUrls = [...newUrls, ...existingUrls];
     const linkedCount = await linkCitationsToPrompts(citations, allUrls);
-    console.log(`🔗 [LINKING] Linked ${linkedCount} citations to prompts`);
+    console.log(`🔗 [LINKING] Created ${linkedCount} citation occurrence records out of ${citations.length} total occurrences`);
     
     // Step 6: Mark URL processing as complete
     await updateUrlProcessingStatus(dailyReportId, 'complete', {
@@ -364,13 +371,28 @@ async function extractUrlsViaTavily(urls) {
 // ========== STEP 3b: Store URL Content ==========
 async function storeUrlContent(extractions, urlList) {
   for (const extraction of extractions) {
-    const { data: urlInventory } = await supabase
+    // Tavily may return a URL that differs slightly from the stored normalized form.
+    // Try normalized first; fall back to the raw URL Tavily returned.
+    const normalizedExtractionUrl = normalizeUrl(extraction.url);
+    let { data: urlInventory } = await supabase
       .from('url_inventory')
       .select('id')
-      .eq('url', extraction.url)
+      .eq('url', normalizedExtractionUrl)
       .single();
-    
-    if (!urlInventory) continue;
+
+    if (!urlInventory && normalizedExtractionUrl !== extraction.url) {
+      const fallback = await supabase
+        .from('url_inventory')
+        .select('id')
+        .eq('url', extraction.url)
+        .single();
+      urlInventory = fallback.data;
+    }
+
+    if (!urlInventory) {
+      console.warn(`⚠️  [STORE_CONTENT] url_inventory row not found for: ${extraction.url}`);
+      continue;
+    }
     
     // Store content facts
     await supabase
@@ -748,48 +770,74 @@ async function storeClassifications(classifications, inputs) {
 }
 
 // ========== STEP 5: Link Citations to Prompts ==========
+// Concept B: Citation Occurrence — one row per (URL × prompt_result_id) pair.
+// This runs for ALL citations including already-known URLs. Never skip this.
 async function linkCitationsToPrompts(citations, urlList) {
-  // Batch URL lookups to avoid "fetch failed" errors with large arrays (>250 URLs)
+  // Batch URL lookups to avoid "fetch failed" errors with large arrays (>100 URLs)
   const BATCH_SIZE = 100;
   const allUrlInventory = [];
 
   for (let i = 0; i < urlList.length; i += BATCH_SIZE) {
     const batch = urlList.slice(i, i + BATCH_SIZE);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('url_inventory')
       .select('id, url')
       .in('url', batch);
+    if (error) {
+      console.error(`⚠️  [LINKING] url_inventory batch lookup failed (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, error.message);
+    }
     if (data) allUrlInventory.push(...data);
   }
 
   const urlMap = new Map();
   allUrlInventory.forEach(u => urlMap.set(u.url, u.id));
 
-  const citationRecords = citations.map(citation => {
-    const urlId = urlMap.get(citation.url);
-    if (!urlId) return null;
+  console.log(`🔗 [LINKING] url_inventory resolved ${urlMap.size}/${urlList.length} unique URLs`);
 
-    return {
+  const citationRecords = [];
+  const droppedUrls = new Set();
+
+  for (const citation of citations) {
+    const urlId = urlMap.get(citation.url);
+    if (!urlId) {
+      droppedUrls.add(citation.url);
+      continue;
+    }
+    citationRecords.push({
       url_id: urlId,
       prompt_result_id: citation.promptResultId,
       provider: 'chatgpt',
       cited_at: new Date().toISOString()
-    };
-  }).filter(Boolean);
+    });
+  }
 
-  if (citationRecords.length === 0) return 0;
+  if (droppedUrls.size > 0) {
+    console.warn(`⚠️  [LINKING] ${droppedUrls.size} URLs not found in url_inventory — citation occurrences dropped:`);
+    droppedUrls.forEach(u => console.warn(`   dropped: ${u}`));
+  }
 
-  // Use upsert to avoid duplicates
-  const { error } = await supabase
-    .from('url_citations')
-    .upsert(citationRecords, { onConflict: 'url_id,prompt_result_id,provider' });
-
-  if (error) {
-    console.error(`⚠️  Error linking citations:`, error.message);
+  if (citationRecords.length === 0) {
+    console.log(`🔗 [LINKING] No citation records to insert`);
     return 0;
   }
 
-  return citationRecords.length;
+  // Upsert in batches to avoid payload size limits
+  const UPSERT_BATCH = 200;
+  let totalInserted = 0;
+  for (let i = 0; i < citationRecords.length; i += UPSERT_BATCH) {
+    const batch = citationRecords.slice(i, i + UPSERT_BATCH);
+    const { error } = await supabase
+      .from('url_citations')
+      .upsert(batch, { onConflict: 'url_id,prompt_result_id,provider' });
+    if (error) {
+      console.error(`⚠️  [LINKING] url_citations upsert failed (batch ${Math.floor(i / UPSERT_BATCH) + 1}):`, error.message);
+    } else {
+      totalInserted += batch.length;
+    }
+  }
+
+  console.log(`🔗 [LINKING] Inserted/upserted ${totalInserted} citation occurrence records (${citationRecords.length - totalInserted} failed)`);
+  return totalInserted;
 }
 
 // ========== UPDATE STATUS ==========
