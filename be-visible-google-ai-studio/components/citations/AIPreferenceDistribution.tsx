@@ -192,10 +192,13 @@ export const AIPreferenceDistribution: React.FC<AIPreferenceDistributionProps> =
         // When filtered to a single provider, pass it to the RPC (requires p_provider support in the DB function)
         const providerParam = isFiltered && selectedModels.length === 1 ? selectedModels[0] : null;
 
-        const rpcParams: any = { p_brand_id: brandId, p_from_date: from, p_to_date: to };
-        if (providerParam) rpcParams.p_provider = providerParam;
-
-        const { data: rows, error } = await supabase.rpc('get_content_type_stats', rpcParams);
+        // Always pass p_provider (null = no filter) so PostgREST always resolves the 4-param overload
+        const { data: rows, error } = await supabase.rpc('get_content_type_stats', {
+          p_brand_id: brandId,
+          p_from_date: from,
+          p_to_date: to,
+          p_provider: providerParam,
+        });
 
         if (error) {
           console.error('Content type stats RPC error:', error);
