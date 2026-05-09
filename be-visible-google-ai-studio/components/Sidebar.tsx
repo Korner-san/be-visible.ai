@@ -14,6 +14,7 @@ import {
   MapPin,
   Plug,
   CreditCard,
+  KeyRound,
   Rocket,
   HelpCircle,
   ChevronDown,
@@ -126,6 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
         {/* Account & System */}
         <SidebarSection title="Account & System">
           <NavItem icon={<Plug size={15} />}       label="Integrations" active={activeTab === 'Integrations'} onClick={() => nav('Integrations')} />
+          <NavItem icon={<KeyRound size={15} />}   label="API Key"      active={activeTab === 'API Key'}      onClick={() => nav('API Key')} />
           <NavItem icon={<CreditCard size={15} />} label="Billing"      active={activeTab === 'Billing'}      onClick={() => nav('Billing')} />
         </SidebarSection>
 

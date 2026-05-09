@@ -31,6 +31,7 @@ import { UserSettingsPage } from './components/UserSettingsPage';
 import { ForensicPage } from './components/ForensicPage';
 import { OnboardingForensicPage } from './components/OnboardingForensicPage';
 import { ContentPage } from './components/ContentPage';
+import { ApiKeyPage } from './components/ApiKeyPage';
 import { PartialReportBanner } from './components/PartialReportBanner';
 import { TimeRange, PromptStats, Competitor } from './types';
 import { supabase } from './lib/supabase';
@@ -500,6 +501,8 @@ function AppContent() {
         return <ImprovePage />;
       case 'Integrations':
         return <IntegrationsPage />;
+      case 'API Key':
+        return <ApiKeyPage />;
       case 'Academy':
         return <AcademyPage initialArticleId={academyArticleId} />;
       case 'Billing':
