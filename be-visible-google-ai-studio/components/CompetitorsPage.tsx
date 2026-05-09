@@ -10,6 +10,9 @@ import { supabase } from '../lib/supabase';
 // Competitor color palette
 const COMPETITOR_COLORS = ['#FFBD00', '#FB5607', '#D90226', '#970E33', '#481643'];
 
+// Brand always renders in this navy so it stands out from every competitor color
+const BRAND_COLOR = '#1e1b4b';
+
 // Custom favicon overrides — local files served from /public/favicons/
 const CUSTOM_FAVICON_OVERRIDES: Record<string, string> = {
   'africa-israel.co.il': '/favicons/africa-israel.ico',
@@ -277,7 +280,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
         // ── SOV slices — order: brand → mentioned competitors → 0% registered → Other ──
         const slices: SovSlice[] = [];
         let colorIdx = 0;
-        if (brand) slices.push({ name: brand.name, voice: parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)), color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
+        if (brand) { slices.push({ name: brand.name, voice: parseFloat(((brand.mentions / totalMentions) * 100).toFixed(2)), color: BRAND_COLOR }); colorIdx++; }
         for (const comp of trackedComps) {
           const pct = parseFloat(((comp.mentions / totalMentions) * 100).toFixed(2));
           slices.push({ name: comp.name, voice: pct, color: COMPETITOR_COLORS[colorIdx++ % COMPETITOR_COLORS.length] });
@@ -609,7 +612,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             name,
             mentionRate: currRate,
             citation: 0,
-            color: COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length],
+            color: name === bName ? BRAND_COLOR : COMPETITOR_COLORS[(idx - 1 + COMPETITOR_COLORS.length) % COMPETITOR_COLORS.length],
             website: '',
             trend: prevRate !== null ? currRate - prevRate : null,
           };
@@ -628,7 +631,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
             name,
             mentionRate: 0,
             citation: currShare,
-            color: COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length],
+            color: name === bName ? BRAND_COLOR : COMPETITOR_COLORS[(idx - 1 + COMPETITOR_COLORS.length) % COMPETITOR_COLORS.length],
             website: '',
             trend: prevShare !== null ? parseFloat((currShare - prevShare).toFixed(1)) : null,
           };
@@ -792,14 +795,34 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
   const FaviconTick = (props: any) => {
     const { x, y, payload } = props;
     const name: string = payload?.value || '';
+    const isBrand = name.toLowerCase() === brandName.toLowerCase();
     const domain = getEntityDomain(name);
-    const shortName = name.length > 9 ? name.slice(0, 8) + '…' : name;
+    const textFill = isBrand ? BRAND_COLOR : '#475569';
+    const iconSize = 20;
+    // Split name into two lines for long names
+    const words = name.split(' ');
+    const half = Math.ceil(words.length / 2);
+    const line1 = words.slice(0, half).join(' ');
+    const line2 = words.length > 1 ? words.slice(half).join(' ') : null;
+    const totalTextHeight = line2 ? 24 : 13;
+    const bgH = iconSize + totalTextHeight + (isBrand ? 12 : 6);
     return (
       <g transform={`translate(${x},${y + 2})`}>
+        {isBrand && (
+          <rect x={-22} y={-4} width={44} height={bgH} rx={5} fill="#eef0fb" opacity={0.85} />
+        )}
         {domain ? (
-          <image href={getFaviconSrc(domain)!} x={-8} y={0} width={16} height={16} />
-        ) : null}
-        <text x={0} y={domain ? 24 : 10} textAnchor="middle" fill="#475569" fontSize={8} fontWeight={800} fontFamily="inherit">{shortName}</text>
+          <image href={getFaviconSrc(domain)!} x={-iconSize / 2} y={0} width={iconSize} height={iconSize} />
+        ) : (
+          <circle cx={0} cy={iconSize / 2} r={iconSize / 2} fill={isBrand ? BRAND_COLOR : '#e2e8f0'} />
+        )}
+        <text x={0} y={iconSize + 11} textAnchor="middle" fill={textFill} fontSize={9} fontWeight={isBrand ? 900 : 700} fontFamily="inherit">{line1}</text>
+        {line2 && (
+          <text x={0} y={iconSize + 22} textAnchor="middle" fill={textFill} fontSize={9} fontWeight={isBrand ? 900 : 700} fontFamily="inherit">{line2}</text>
+        )}
+        {isBrand && (
+          <text x={0} y={iconSize + totalTextHeight + 10} textAnchor="middle" fill={BRAND_COLOR} fontSize={7} fontWeight={900} fontFamily="inherit" opacity={0.65}>YOU</text>
+        )}
       </g>
     );
   };
@@ -910,7 +933,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                 }} />
                 {trendLineKeys.map((key, idx) => {
                   const domain = getEntityDomain(key);
-                  const color = COMPETITOR_COLORS[idx % COMPETITOR_COLORS.length];
+                  const color = key === brandName ? BRAND_COLOR : COMPETITOR_COLORS[(idx - 1 + COMPETITOR_COLORS.length) % COMPETITOR_COLORS.length];
                   const faviconHref = getFaviconSrc(domain);
                   const renderDot = (props: any) => {
                     const { cx, cy } = props;
@@ -983,13 +1006,15 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           {/* Legend with trend badges */}
           <div className="mt-3 space-y-1.5 overflow-y-auto custom-scrollbar max-h-[108px] shrink-0">
             {allPieData.map(c => {
+              const isBrand = c.name.toLowerCase() === brandName.toLowerCase();
               const trend = sovEntityTrends[c.name];
               const domain = c.name === 'Other' ? undefined : getEntityDomain(c.name);
               return (
-                <div key={c.name} className="flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
+                <div key={c.name} className={`flex items-center justify-between text-[10px] font-bold uppercase ${isBrand ? '' : 'text-slate-500'}`} style={isBrand ? { color: BRAND_COLOR } : undefined}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <FaviconImg domain={domain} name={c.name} size={14} bgColor={c.color} />
-                    <span className="truncate max-w-[90px]">{c.name}</span>
+                    <FaviconImg domain={domain} name={c.name} size={14} bgColor={isBrand ? BRAND_COLOR : c.color} />
+                    <span className="truncate max-w-[75px]">{c.name}</span>
+                    {isBrand && <span className="text-[7px] font-black shrink-0 px-1 py-0.5 rounded" style={{ color: BRAND_COLOR, backgroundColor: '#eef0fb' }}>YOU</span>}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span>{Number(c.voice).toFixed(2)}%</span>
@@ -1031,7 +1056,7 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
                   tick={<FaviconTick />}
                   axisLine={false}
                   tickLine={false}
-                  height={40}
+                  height={65}
                 />
                 <YAxis
                   domain={[0, 100]}
@@ -1092,24 +1117,30 @@ export const CompetitorsPage: React.FC<CompetitorsPageProps> = ({
           <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar">
             {!isLoadingMetrics && !hasRealMetrics && !showSample && !isPlaceholderMetrics ? (
               <ComputingPlaceholder />
-            ) : activeCitation.map((c: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50/50 rounded-xl border border-gray-100 hover:border-slate-200 transition-all">
-                <div className="flex items-center gap-3">
-                  <FaviconImg domain={getEntityDomain(c.name)} name={c.name} size={32} bgColor={c.color} />
-                  <div>
-                    <div className="text-xs font-black text-slate-800">{c.name}</div>
-                    {c.website && <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.website}</div>}
+            ) : activeCitation.map((c: any, idx: number) => {
+              const isBrand = c.name.toLowerCase() === brandName.toLowerCase();
+              return (
+                <div key={idx} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${isBrand ? 'border-[#1e1b4b]/20 hover:border-[#1e1b4b]/40' : 'bg-gray-50/50 border-gray-100 hover:border-slate-200'}`} style={isBrand ? { backgroundColor: '#eef0fb' } : undefined}>
+                  <div className="flex items-center gap-3">
+                    <FaviconImg domain={getEntityDomain(c.name)} name={c.name} size={32} bgColor={isBrand ? BRAND_COLOR : c.color} />
+                    <div>
+                      <div className={`text-xs font-black ${isBrand ? '' : 'text-slate-800'}`} style={isBrand ? { color: BRAND_COLOR } : undefined}>{c.name}</div>
+                      {isBrand
+                        ? <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: `${BRAND_COLOR}99` }}>YOUR BRAND</div>
+                        : c.website && <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.website}</div>
+                      }
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendBadge trend={c.trend} />
+                    <div className="text-right">
+                      <div className={`text-sm font-black ${isBrand ? '' : 'text-slate-900'}`} style={isBrand ? { color: BRAND_COLOR } : undefined}>{isPlaceholderMetrics ? '—' : `${c.citation}%`}</div>
+                      <div className="text-[8px] font-bold text-slate-400 uppercase">Share</div>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <TrendBadge trend={c.trend} />
-                  <div className="text-right">
-                    <div className="text-sm font-black text-slate-900">{isPlaceholderMetrics ? '—' : `${c.citation}%`}</div>
-                    <div className="text-[8px] font-bold text-slate-400 uppercase">Share</div>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
