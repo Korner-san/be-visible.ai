@@ -10,6 +10,7 @@ import { Dashboard } from './components/Dashboard';
 import { CitationsPage } from './components/CitationsPage';
 import { AcademyPage } from './components/AcademyPage';
 import { OverviewPage } from './components/OverviewPage';
+import { GettingStartedPage } from './components/GettingStartedPage';
 import { ImprovePage } from './components/ImprovePage';
 import { CompetitorsPage } from './components/CompetitorsPage';
 import { PromptsPage } from './components/PromptsPage';
@@ -462,8 +463,18 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'Overview':
+        return (
+          <OverviewPage
+            brandId={activeBrandId}
+            timeRange={timeRange}
+            customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined}
+            selectedModels={selectedModels}
+            brandName={activeBrand?.name}
+            onNavigate={handleTabChange}
+          />
+        );
       case 'Getting Started':
-        return <OverviewPage onNavigate={handleTabChange} />;
+        return <GettingStartedPage onNavigate={handleTabChange} />;
       case 'Competitors':
         return <CompetitorsPage
           brandId={activeBrandId}
