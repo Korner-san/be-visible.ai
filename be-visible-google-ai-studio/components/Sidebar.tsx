@@ -38,17 +38,17 @@ const SidebarSection: React.FC<{ title: string; children: React.ReactNode }> = (
   </div>
 );
 
-const NavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }> = ({ icon, label, active, onClick }) => (
+const NavItem: React.FC<{ icon: React.ReactNode; label: React.ReactNode; active?: boolean; onClick?: () => void }> = ({ icon, label, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-smooth ${
+    className={`w-full flex items-start gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-smooth ${
       active
         ? 'bg-brand-brown text-white shadow-sm'
         : 'text-slate-600 hover:bg-indigo-50/70 hover:text-brand-brown'
     }`}
   >
-    <span className={`shrink-0 ${active ? 'text-white' : 'text-slate-400'}`}>{icon}</span>
-    <span className="truncate min-w-0">{label}</span>
+    <span className={`shrink-0 mt-[2px] ${active ? 'text-white' : 'text-slate-400'}`}>{icon}</span>
+    <span className="leading-tight">{label}</span>
   </button>
 );
 
@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
         {/* Setup */}
         <SidebarSection title="Setup">
           <NavItem icon={<SlidersHorizontal size={15} />} label="Manage Prompts"      active={activeTab === 'Manage Prompts'}      onClick={() => nav('Manage Prompts')} />
-          <NavItem icon={<Shield size={15} />}            label="Manage Competitors"  active={activeTab === 'Manage Competitors'}  onClick={() => nav('Manage Competitors')} />
+          <NavItem icon={<Shield size={15} />}            label={<>Manage<br />Competitors</>}  active={activeTab === 'Manage Competitors'}  onClick={() => nav('Manage Competitors')} />
           <NavItem icon={<UserRound size={15} />}         label="Personas"            active={activeTab === 'Personas'}            onClick={() => nav('Personas')} />
           <NavItem icon={<Tag size={15} />}               label="Brands"              active={activeTab === 'Brands'}              onClick={() => nav('Brands')} />
           {isRealEstate && (
