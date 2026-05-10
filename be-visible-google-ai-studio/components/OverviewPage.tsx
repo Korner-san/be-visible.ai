@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { TimeRange, TrendDataPoint } from '../types';
 import { supabase } from '../lib/supabase';
 import { VisibilityTrend } from './charts/VisibilityTrend';
-import { ArrowRight, Globe, Award, MessageSquare, TrendingUp, ExternalLink } from 'lucide-react';
+import { ArrowRight, Globe, MessageSquare, TrendingUp, ExternalLink } from 'lucide-react';
 
 const ALL_MODELS = ['chatgpt', 'google_ai_overview', 'claude'];
 
@@ -103,10 +103,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
   const [trendPercent, setTrendPercent] = useState<number | undefined>();
   const [isLoadingVis, setIsLoadingVis] = useState(false);
 
-  // Sections 2+3: SOV entities + percentile rank
+  // Section 2: SOV entities
   const [entities, setEntities] = useState<{ name: string; mentions: number; type: string }[]>([]);
-  const [percentileRank, setPercentileRank] = useState<number | null>(null);
-  const [brandMentions, setBrandMentions] = useState<number>(0);
   const [isLoadingSov, setIsLoadingSov] = useState(false);
 
   // Section 4: Citation sources
@@ -234,13 +232,6 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
         if (totalMentions > 0) {
           const sorted = Object.values(entityMap).sort((a, b) => b.mentions - a.mentions);
           setEntities(sorted);
-
-          const brand = sorted.find(e => e.type === 'brand');
-          if (brand) {
-            setBrandMentions(brand.mentions);
-            const countBelow = sorted.filter(e => e.mentions < brand.mentions).length;
-            setPercentileRank(Math.round((countBelow / sorted.length) * 100));
-          }
         }
       } catch (err) {
         console.error('[Overview] SOV fetch error:', err);
@@ -363,53 +354,11 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
         />
       </div>
 
-      {/* Row 2: Percentile rank + Top 10 entities */}
+      {/* Row 2: Top 10 entities */}
       <div className="grid grid-cols-12 gap-6">
 
-        {/* Section 2: Percentile Rank */}
-        <div className="col-span-12 md:col-span-4">
-          <div className="bg-white rounded-2xl shadow-card p-6 h-full flex flex-col" style={{ border: '1px solid #e8edf4' }}>
-            <div className="flex items-center gap-2 mb-4">
-              <Award size={15} className="text-brand-brown" />
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Percentile Rank</span>
-            </div>
-            {isLoadingSov ? (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-slate-200 border-t-brand-brown rounded-full animate-spin" />
-              </div>
-            ) : percentileRank !== null ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                <div className="relative w-36 h-36 flex items-center justify-center">
-                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 120 120">
-                    <circle cx="60" cy="60" r="50" fill="none" stroke="#f1f5f9" strokeWidth="10" />
-                    <circle
-                      cx="60" cy="60" r="50"
-                      fill="none"
-                      stroke="#874B34"
-                      strokeWidth="10"
-                      strokeDasharray={`${(percentileRank / 100) * 314.16} 314.16`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="text-center z-10">
-                    <div className="text-4xl font-black text-slate-900 leading-none">{percentileRank}<span className="text-xl font-bold text-slate-500">th</span></div>
-                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">percentile</div>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 text-center leading-relaxed max-w-[180px]">
-                  <span className="font-semibold text-slate-700">{brandName || 'Your brand'}</span> outranks{' '}
-                  <span className="font-bold text-brand-brown">{percentileRank}%</span> of all entities mentioned by AI
-                </p>
-                <p className="text-[10px] text-slate-400">{brandMentions.toLocaleString()} total mentions in period</p>
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400">No data yet</div>
-            )}
-          </div>
-        </div>
-
-        {/* Section 3: Top 10 Entities */}
-        <div className="col-span-12 md:col-span-8">
+        {/* Section 2: Top 10 Entities */}
+        <div className="col-span-12">
           <div className="bg-white rounded-2xl shadow-card h-full flex flex-col" style={{ border: '1px solid #e8edf4' }}>
             <SectionHeader
               icon={<TrendingUp size={14} className="text-brand-brown" />}

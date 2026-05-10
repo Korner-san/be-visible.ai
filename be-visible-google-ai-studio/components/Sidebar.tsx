@@ -48,7 +48,7 @@ const NavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean
     }`}
   >
     <span className={`shrink-0 ${active ? 'text-white' : 'text-slate-400'}`}>{icon}</span>
-    {label}
+    <span className="truncate min-w-0">{label}</span>
   </button>
 );
 
