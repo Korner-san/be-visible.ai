@@ -48,7 +48,7 @@ const NavItem: React.FC<{ icon: React.ReactNode; label: React.ReactNode; active?
     }`}
   >
     <span className={`shrink-0 mt-[2px] ${active ? 'text-white' : 'text-slate-400'}`}>{icon}</span>
-    <span className="leading-tight">{label}</span>
+    <span className="leading-tight text-left">{label}</span>
   </button>
 );
 
