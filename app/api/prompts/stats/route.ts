@@ -243,22 +243,14 @@ export async function GET(request: NextRequest) {
       .in('brand_prompt_id', promptIds)
       .in('provider', selectedModels)
       .eq('daily_reports.status', 'completed')
+      .or('chatgpt_response.not.is.null,claude_response.not.is.null,google_ai_overview_response.not.is.null')
       .order('created_at', { ascending: false })
     if (from) rq = rq.gte('daily_reports.report_date', from)
     if (to) rq = rq.lte('daily_reports.report_date', to)
-    const { data: rawResults } = await rq
-
-    // Exclude rows where the model returned no response (e.g. failed API calls that
-    // still created a DB row). These empty rows would dilute mention rates unfairly.
-    const results = (rawResults || []).filter(r => {
-      if (r.provider === 'chatgpt') return !!r.chatgpt_response
-      if (r.provider === 'claude') return !!r.claude_response
-      if (r.provider === 'google_ai_overview') return !!r.google_ai_overview_response
-      return true
-    })
+    const { data: results } = await rq
 
     // Fetch previous period results for trend
-    const { data: rawPrevResults } = await supabase
+    const { data: prevResults } = await supabase
       .from('prompt_results')
       .select(`
         id,
@@ -275,15 +267,9 @@ export async function GET(request: NextRequest) {
       .in('brand_prompt_id', promptIds)
       .in('provider', selectedModels)
       .eq('daily_reports.status', 'completed')
+      .or('chatgpt_response.not.is.null,claude_response.not.is.null,google_ai_overview_response.not.is.null')
       .gte('daily_reports.report_date', prevFromDate)
       .lte('daily_reports.report_date', prevToDate)
-
-    const prevResults = (rawPrevResults || []).filter(r => {
-      if (r.provider === 'chatgpt') return !!r.chatgpt_response
-      if (r.provider === 'claude') return !!r.claude_response
-      if (r.provider === 'google_ai_overview') return !!r.google_ai_overview_response
-      return true
-    })
 
     // Group results by prompt_id
     const byPrompt = new Map<string, any[]>()

@@ -317,7 +317,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
       })
       .catch(() => {})
       .finally(() => setPopupLoading(false));
-  }, [selectedEntity?.data?.id ?? selectedEntity?.data?.category, popupDays, brandId]);
+  }, [selectedEntity?.data?.id ?? selectedEntity?.data?.category, popupDays, brandId, selectedModels?.join(',')]);
 
   const toggleCategory = (category: string, e: React.MouseEvent) => {
     e.stopPropagation();
