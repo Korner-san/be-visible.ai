@@ -206,7 +206,7 @@ export async function GET(request: NextRequest) {
     // Fetch active brand prompts
     let bpQuery = supabase
       .from('brand_prompts')
-      .select('id, raw_prompt, improved_prompt, category, status')
+      .select('id, raw_prompt, improved_prompt, category, status, demand_score, demand_label, demand_reason')
       .eq('brand_id', brandId)
       .is('deleted_at', null)
     if (promptId) bpQuery = bpQuery.eq('id', promptId)
@@ -444,6 +444,9 @@ export async function GET(request: NextRequest) {
         recentResults,
         citationDomains,
         contentTypeBreakdown: byPromptBreakdown.get(prompt.id) || [],
+        demandScore: (prompt as any).demand_score ?? null,
+        demandLabel: (prompt as any).demand_label ?? null,
+        demandReason: (prompt as any).demand_reason ?? null,
       }
     }
 

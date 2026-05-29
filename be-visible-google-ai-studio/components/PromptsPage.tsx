@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { PromptStats, MetricType } from '../types';
+import { DemandBar } from './DemandBar';
 
 interface PromptsPageProps {
   prompts: PromptStats[];
@@ -876,6 +877,7 @@ export const PromptsPage: React.FC<PromptsPageProps> = ({ prompts, onNavigateToM
                             <div className="flex items-center gap-3">
                               <div className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${isQueued ? 'bg-amber-300' : 'bg-slate-300 group-hover:bg-brand-brown'}`}></div>
                               <span className="truncate flex-1">{prompt.text}</span>
+                              <DemandBar score={prompt.demandScore} label={prompt.demandLabel} reason={prompt.demandReason} />
                               {isQueued && (
                                 <span className="shrink-0 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-full border" style={{ color: '#92400e', backgroundColor: '#fffbeb', borderColor: '#fcd34d' }}>
                                   QUEUED

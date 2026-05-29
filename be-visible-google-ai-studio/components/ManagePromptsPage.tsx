@@ -18,6 +18,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { PromptStats } from '../types';
+import { DemandBar } from './DemandBar';
 
 interface ManagePromptsPageProps {
   prompts: PromptStats[];
@@ -767,6 +768,7 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
                     <div className="flex items-center gap-1.5">Prompt text <ArrowUpDown size={10} /></div>
                   </th>
                   <th className="w-32 px-6 py-4 text-[10px] font-black text-slate-400 text-center">Status</th>
+                  <th className="w-28 px-6 py-4 text-[10px] font-black text-slate-400 text-center">Demand</th>
                   <th className="w-64 px-6 py-4 text-[10px] font-black text-slate-400 text-center">Category</th>
                   <th className="w-28 px-6 py-4 text-[10px] font-black text-slate-400 text-center">Lang</th>
                   <th className="w-36 px-6 py-4 text-[10px] font-black text-slate-400 text-center">Region</th>
@@ -820,6 +822,11 @@ export const ManagePromptsPage: React.FC<ManagePromptsPageProps> = ({ prompts, s
                         <span className={`text-[9px] font-black ${prompt.isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
                           {prompt.isActive ? 'Active' : 'Inactive'}
                         </span>
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <div className="flex justify-center">
+                          <DemandBar score={prompt.demandScore} label={prompt.demandLabel} reason={prompt.demandReason} size="md" />
+                        </div>
                       </td>
                       <td className="px-6 py-5 text-center">
                         <span className="text-[10px] font-black text-slate-500">{formatCategory(prompt.category)}</span>

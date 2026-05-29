@@ -59,6 +59,10 @@ export interface PromptStats {
   citationTrend: number;
   lastRun: string;
   history: PromptHistoryPoint[];
+  // Demand signal fields
+  demandScore?: number | null;
+  demandLabel?: string | null;
+  demandReason?: string | null;
   // Management fields
   isActive: boolean;
   isCopy?: boolean;
