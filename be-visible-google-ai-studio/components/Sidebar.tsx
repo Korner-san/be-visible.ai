@@ -6,6 +6,7 @@ import {
   Link2,
   MessageSquare,
   Zap,
+  TrendingUp,
   SlidersHorizontal,
   Shield,
   UserRound,
@@ -102,8 +103,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onSig
           <NavItem icon={<Eye size={15} />}           label="Visibility"   active={activeTab === 'Visibility'}   onClick={() => nav('Visibility')} />
           <NavItem icon={<BarChart2 size={15} />}     label="Competitors"  active={activeTab === 'Competitors'}  onClick={() => nav('Competitors')} />
           <NavItem icon={<Link2 size={15} />}         label="Citations"    active={activeTab === 'Citations'}    onClick={() => nav('Citations')} />
-          <NavItem icon={<MessageSquare size={15} />} label="Prompts"      active={activeTab === 'Prompts'}      onClick={() => nav('Prompts')} />
-          <NavItem icon={<Zap size={15} />}           label="Improve"      active={activeTab === 'Improve'}      onClick={() => nav('Improve')} />
+          <NavItem icon={<MessageSquare size={15} />} label="Prompts"       active={activeTab === 'Prompts'}        onClick={() => nav('Prompts')} />
+          <NavItem icon={<TrendingUp size={15} />}   label={<>Prompt<br />Demand</>} active={activeTab === 'Prompt Demand'} onClick={() => nav('Prompt Demand')} />
+          <NavItem icon={<Zap size={15} />}           label="Improve"       active={activeTab === 'Improve'}        onClick={() => nav('Improve')} />
         </SidebarSection>
 
         <Divider />

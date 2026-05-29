@@ -63,6 +63,8 @@ export interface PromptStats {
   demandScore?: number | null;
   demandLabel?: string | null;
   demandReason?: string | null;
+  demandSource?: string | null;
+  demandScoredAt?: string | null;
   // Management fields
   isActive: boolean;
   isCopy?: boolean;

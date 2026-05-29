@@ -32,6 +32,7 @@ import { ForensicPage } from './components/ForensicPage';
 import { OnboardingForensicPage } from './components/OnboardingForensicPage';
 import { ContentPage } from './components/ContentPage';
 import { ApiKeyPage } from './components/ApiKeyPage';
+import { PromptDemandPage } from './components/PromptDemandPage';
 import { PartialReportBanner } from './components/PartialReportBanner';
 import { TimeRange, PromptStats, Competitor } from './types';
 import { supabase } from './lib/supabase';
@@ -221,7 +222,7 @@ function AppContent() {
     const fetchPrompts = async () => {
       const { data, error } = await supabase
         .from('brand_prompts')
-        .select('id, raw_prompt, improved_prompt, category, status, is_active, created_at')
+        .select('id, raw_prompt, improved_prompt, category, status, is_active, created_at, demand_score, demand_label, demand_reason, demand_source, demand_scored_at')
         .eq('brand_id', activeBrandId)
         .is('deleted_at', null)
         .order('category')
@@ -235,6 +236,11 @@ function AppContent() {
         text: p.improved_prompt || p.raw_prompt,
         category: (p.category || 'General').toUpperCase(),
         isActive: p.status === 'active',
+        demandScore: (p as any).demand_score ?? null,
+        demandLabel: (p as any).demand_label ?? null,
+        demandReason: (p as any).demand_reason ?? null,
+        demandSource: (p as any).demand_source ?? null,
+        demandScoredAt: (p as any).demand_scored_at ?? null,
         visibilityScore: 0,
         visibilityTrend: 0,
         avgPosition: null,
@@ -298,6 +304,9 @@ function AppContent() {
               lastRun: s.lastRun,
               history: s.history,
               recentResults: s.recentResults,
+              demandScore: s.demandScore ?? p.demandScore ?? null,
+              demandLabel: s.demandLabel ?? p.demandLabel ?? null,
+              demandReason: s.demandReason ?? p.demandReason ?? null,
             };
           }));
         }
@@ -499,6 +508,8 @@ function AppContent() {
         return <PromptsPage prompts={prompts} onNavigateToManage={() => setActiveTab('Manage Prompts')} brandId={activeBrandId} brandName={activeBrand?.name} timeRangeDays={timeRangeDays} selectedModels={selectedModels} customDateRange={timeRange === TimeRange.CUSTOM && customFrom && customTo ? { from: customFrom, to: customTo } : undefined} isLoading={promptsLoading} promptLimit={promptLimit} />;
       case 'Improve':
         return <ImprovePage />;
+      case 'Prompt Demand':
+        return <PromptDemandPage prompts={prompts} brandName={activeBrand?.name} />;
       case 'Integrations':
         return <IntegrationsPage />;
       case 'API Key':
