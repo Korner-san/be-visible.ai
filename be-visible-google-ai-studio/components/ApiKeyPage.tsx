@@ -1,45 +1,38 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Key, Copy, RefreshCw, ExternalLink, Check, Bot,
-  Zap, BarChart2, Link2, TrendingUp, ChevronRight,
+  Zap, BarChart2, Link2, TrendingUp, ChevronRight, Loader2,
 } from 'lucide-react';
 import { Terminal, TypingAnimation, AnimatedSpan } from './ui/terminal';
+import { supabase } from '../lib/supabase';
 
 // ── Timing map (all delays in ms) ────────────────────────────────────────────
-// Each entry's delay is chosen so it appears just after the previous one
-// finishes typing. Typing speed is 15ms/char (set in terminal.tsx).
-// cmd_done ≈ delay + len(text) * 15
-// ─────────────────────────────────────────────────────────────────────────────
-
 const D = {
-  cmd1: 300,        // `> bevisible auth verify ...`   ~49 chars → done ≈ 1035ms
+  cmd1: 300,
   r1a:  1150,
   r1b:  1350,
-  cmd2: 1900,       // `> bevisible reports list ...`  ~40 chars → done ≈ 2500ms
+  cmd2: 1900,
   r2a:  2600,
   r2b:  2800,
   r2c:  3000,
-  cmd3: 3600,       // `> bevisible visibility get ...` ~51 chars → done ≈ 4365ms
+  cmd3: 3600,
   r3a:  4500,
   r3b:  4700,
   r3c:  4900,
-  cmd4: 5450,       // `> bevisible entities rank ...`  ~38 chars → done ≈ 6020ms
+  cmd4: 5450,
   r4a:  6100,
   r4b:  6300,
   r4c:  6500,
-  cmd5: 7000,       // `> bevisible citations list ...` ~41 chars → done ≈ 7615ms
+  cmd5: 7000,
   r5a:  7750,
   r5b:  7950,
   r5c:  8150,
-  cmd6: 8650,       // `> bevisible insights generate ...` ~44 chars → done ≈ 9310ms
+  cmd6: 8650,
   r6a:  9450,
   r6b:  9750,
   r6c:  10100,
   r6d:  10500,
 };
-
-// ── Mock API key (UI-only) ────────────────────────────────────────────────────
-const MOCK_KEY = 'sk_live_bv_a8f3d2c1e9b7f4a2d6c8e0f1b3a5d7c9';
 
 // ── Use cases ─────────────────────────────────────────────────────────────────
 const USE_CASES = [
@@ -55,42 +48,127 @@ const USE_CASES = [
   },
   {
     icon: <TrendingUp size={15} className="text-emerald-600" />,
-    prompt: '"Compare my brand against the top 10 entities this week."',
+    prompt: '"Compare my brand against competitors this week."',
     detail: 'Fetch SOV data, compute visibility indices, and output a ranked comparison table.',
   },
   {
     icon: <Zap size={15} className="text-brand-brown" />,
-    prompt: '"Summarize visibility changes over the last 30 days."',
-    detail: 'Read the full date range, compute trend lines, and write an executive summary.',
+    prompt: '"Which prompts have high demand but low visibility?"',
+    detail: 'Identify the highest-leverage content gaps where competitors are winning.',
   },
 ];
+
+const API_BASE = 'https://be-visible.ai';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export const ApiKeyPage: React.FC = () => {
   const [keyVisible, setKeyVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedInstruction, setCopiedInstruction] = useState(false);
-  const [terminalKey, setTerminalKey] = useState(0); // increment to remount & replay
+  const [terminalKey, setTerminalKey] = useState(0);
 
-  const displayKey = keyVisible ? MOCK_KEY : MOCK_KEY.slice(0, 12) + '••••••••••••••••••••••';
+  // Real key state
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [keyId, setKeyId] = useState<string | null>(null);
+  const [keyCreatedAt, setKeyCreatedAt] = useState<string | null>(null);
+  const [keyLastUsed, setKeyLastUsed] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false); // raw key only shown once
 
-  const copyKey = useCallback(() => {
-    navigator.clipboard.writeText(MOCK_KEY).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // ── Load existing key metadata on mount ─────────────────────────────────
+  useEffect(() => {
+    async function loadKey() {
+      setLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { setLoading(false); return; }
+
+        const res = await fetch('/api/agent/keys', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          credentials: 'include',
+        });
+        const json = await res.json();
+        if (json.ok && json.keys?.length > 0) {
+          const first = json.keys[0];
+          setKeyId(first.id);
+          setKeyCreatedAt(first.created_at);
+          setKeyLastUsed(first.last_used_at);
+          // Raw key not stored server-side — show placeholder unless just generated
+        }
+      } catch {}
+      setLoading(false);
+    }
+    loadKey();
   }, []);
 
-  const agentInstruction =
-    `You have access to the BeVisible API.\n` +
-    `Use my API key to fetch my visibility reports, citation sources, AI responses, ` +
-    `entity rankings, and improvement recommendations.\n` +
-    `Analyze the data and provide clear, actionable AI-visibility insights.`;
+  // ── Generate / regenerate key ────────────────────────────────────────────
+  const handleGenerate = useCallback(async () => {
+    setGenerating(true);
+    try {
+      // Revoke old key if exists
+      if (keyId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await fetch('/api/agent/keys', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify({ id: keyId }),
+          });
+        }
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const res = await fetch('/api/agent/keys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ label: 'Default' }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setApiKey(json.key);         // raw key shown once
+        setKeyId(json.id);
+        setKeyCreatedAt(json.createdAt);
+        setKeyLastUsed(null);
+        setJustGenerated(true);
+      }
+    } catch {}
+    setGenerating(false);
+  }, [keyId]);
+
+  const displayKey = !apiKey
+    ? (keyId ? 'sk_bv_••••••••••••••••••••••••••••••••' : null)
+    : (keyVisible ? apiKey : apiKey.slice(0, 12) + '••••••••••••••••••••••');
+
+  const copyKey = useCallback(() => {
+    if (!apiKey) return;
+    navigator.clipboard.writeText(apiKey).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [apiKey]);
+
+  const agentInstruction = apiKey
+    ? `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=YOUR_BRAND_ID&days=7\nAuthorization: Bearer ${apiKey}\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`
+    : `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=YOUR_BRAND_ID&days=7\nAuthorization: Bearer YOUR_API_KEY\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`;
 
   const copyInstruction = useCallback(() => {
     navigator.clipboard.writeText(agentInstruction).catch(() => {});
     setCopiedInstruction(true);
     setTimeout(() => setCopiedInstruction(false), 2000);
   }, [agentInstruction]);
+
+  const hasKey = !!keyId;
+  const canCopy = !!apiKey;
 
   return (
     <div className="space-y-6 pb-16 animate-fadeIn">
@@ -122,45 +200,79 @@ export const ApiKeyPage: React.FC = () => {
           <div className="flex items-center gap-2 mb-4">
             <Key size={13} className="text-slate-400" />
             <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Your API Key</span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Active</span>
+            {loading ? (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-400 border border-slate-100">Loading…</span>
+            ) : hasKey ? (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">Active</span>
+            ) : (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">Not created</span>
+            )}
           </div>
 
-          {/* Key display row */}
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ background: '#f8fafc', border: '1px solid #e8edf4', fontFamily: 'monospace' }}
-          >
-            <span className="text-xs text-slate-600 flex-1 truncate select-all">{displayKey}</span>
-            <button
-              onClick={() => setKeyVisible(v => !v)}
-              className="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors shrink-0 px-2 py-1 rounded-lg hover:bg-slate-100"
-            >
-              {keyVisible ? 'Hide' : 'Show'}
-            </button>
-          </div>
+          {/* Key display */}
+          {loading ? (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #e8edf4' }}>
+              <Loader2 size={13} className="animate-spin text-slate-300" />
+              <span className="text-xs text-slate-300">Loading key…</span>
+            </div>
+          ) : hasKey || justGenerated ? (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #e8edf4', fontFamily: 'monospace' }}>
+              <span className="text-xs text-slate-600 flex-1 truncate select-all">{displayKey}</span>
+              {apiKey && (
+                <button
+                  onClick={() => setKeyVisible(v => !v)}
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors shrink-0 px-2 py-1 rounded-lg hover:bg-slate-100"
+                >
+                  {keyVisible ? 'Hide' : 'Show'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="px-4 py-3 rounded-xl text-xs text-slate-400 italic" style={{ background: '#f8fafc', border: '1px solid #e8edf4' }}>
+              No API key yet — click "Generate Key" to create one.
+            </div>
+          )}
 
-          {/* Actions row */}
+          {justGenerated && (
+            <p className="mt-2 text-[10px] text-amber-600 font-medium">
+              ⚠ Copy this key now — it will not be shown again after you leave this page.
+            </p>
+          )}
+
+          {keyLastUsed && (
+            <p className="mt-1.5 text-[10px] text-slate-400">
+              Last used: {new Date(keyLastUsed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          )}
+
+          {/* Actions */}
           <div className="flex items-center gap-2 mt-3">
             <button
               onClick={copyKey}
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg transition-all"
+              disabled={!canCopy}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ backgroundColor: copied ? '#f0fdf4' : '#f8fafc', color: copied ? '#16a34a' : '#475569', border: '1px solid', borderColor: copied ? '#bbf7d0' : '#e8edf4' }}
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? 'Copied!' : 'Copy Key'}
             </button>
             <button
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 transition-all"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 transition-all disabled:opacity-50"
             >
-              <RefreshCw size={12} />
-              Regenerate
+              {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {hasKey ? 'Regenerate' : 'Generate Key'}
             </button>
-            <button
+            <a
+              href={`${API_BASE}/api/agent/report-summary`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 transition-all"
             >
               <ExternalLink size={12} />
-              View Docs
-            </button>
+              Endpoint
+            </a>
           </div>
         </div>
       </div>
@@ -185,102 +297,49 @@ export const ApiKeyPage: React.FC = () => {
           </div>
 
           <Terminal key={terminalKey} className="h-[480px]">
-
-            {/* Command 1 — auth */}
             <TypingAnimation delay={D.cmd1} className="text-[#79c0ff]">
-              {'> bevisible auth verify --api-key sk_live_bv_****'}
+              {'> bevisible auth verify --api-key sk_bv_****'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r1a} className="text-[#3fb950]">
-              {'  ✔ API key verified — Workspace: Pro Plan'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r1b} className="text-[#3fb950]">
-              {'  ✔ Connected to brand: Incredibuild'}
-            </AnimatedSpan>
-
-            {/* spacer */}
+            <AnimatedSpan delay={D.r1a} className="text-[#3fb950]">{'  ✔ API key verified — Workspace: Pro Plan'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r1b} className="text-[#3fb950]">{'  ✔ Connected to brand: Incredibuild'}</AnimatedSpan>
             <AnimatedSpan delay={D.cmd2 - 100} className="text-transparent">{'.'}</AnimatedSpan>
-
-            {/* Command 2 — reports list */}
             <TypingAnimation delay={D.cmd2} className="text-[#79c0ff]">
               {'> bevisible reports list --brand current'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r2a} className="text-[#8b949e]">
-              {'  [2025-05-09]  completed   visibility: 82.4'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r2b} className="text-[#8b949e]">
-              {'  [2025-05-08]  completed   visibility: 79.1'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r2c} className="text-[#8b949e]">
-              {'  [2025-05-07]  completed   visibility: 77.8'}
-            </AnimatedSpan>
-
+            <AnimatedSpan delay={D.r2a} className="text-[#8b949e]">{'  [2026-05-30]  completed   visibility: 26%'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r2b} className="text-[#8b949e]">{'  [2026-05-29]  completed   visibility: 24%'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r2c} className="text-[#8b949e]">{'  [2026-05-28]  completed   visibility: 28%'}</AnimatedSpan>
             <AnimatedSpan delay={D.cmd3 - 100} className="text-transparent">{'.'}</AnimatedSpan>
-
-            {/* Command 3 — visibility get */}
             <TypingAnimation delay={D.cmd3} className="text-[#79c0ff]">
               {'> bevisible visibility get --date latest --model all'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r3a} className="text-[#e3b341]">
-              {'  Visibility Index:   82.4'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r3b} className="text-[#e3b341]">
-              {'  Trend (7d):         +4.1%'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r3c} className="text-[#8b949e]">
-              {'  Models: ChatGPT / Claude / Google AIO'}
-            </AnimatedSpan>
-
+            <AnimatedSpan delay={D.r3a} className="text-[#e3b341]">{'  Mention Rate:   26%  (119 / 451 results)'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r3b} className="text-[#e3b341]">{'  ChatGPT: 41%   Claude: 0%   Google AIO: 28%'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r3c} className="text-[#8b949e]">{'  ⚠ Claude: 0 mentions across 137 results'}</AnimatedSpan>
             <AnimatedSpan delay={D.cmd4 - 100} className="text-transparent">{'.'}</AnimatedSpan>
-
-            {/* Command 4 — entities rank */}
             <TypingAnimation delay={D.cmd4} className="text-[#79c0ff]">
               {'> bevisible entities rank --date latest'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r4a} className="text-[#3fb950]">
-              {'  #1  Incredibuild   ← YOUR BRAND      82.4'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r4b} className="text-[#8b949e]">
-              {'  #2  GitLab CI                         71.2'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r4c} className="text-[#8b949e]">
-              {'  #3  CircleCI                          58.9'}
-            </AnimatedSpan>
-
+            <AnimatedSpan delay={D.r4a} className="text-[#3fb950]">{'  #1  Incredibuild   ← YOUR BRAND      119 resp'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r4b} className="text-[#8b949e]">{'  #2  Jenkins                              78 resp'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r4c} className="text-[#8b949e]">{'  #3  GitLab CI                            71 resp'}</AnimatedSpan>
             <AnimatedSpan delay={D.cmd5 - 100} className="text-transparent">{'.'}</AnimatedSpan>
-
-            {/* Command 5 — citations */}
             <TypingAnimation delay={D.cmd5} className="text-[#79c0ff]">
               {'> bevisible citations list --date latest'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r5a} className="text-[#8b949e]">
-              {'  reddit.com          890 mentions  (35.2%)'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r5b} className="text-[#8b949e]">
-              {'  stackoverflow.com   540 mentions  (21.4%)'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r5c} className="text-[#8b949e]">
-              {'  github.com          320 mentions  (12.7%)'}
-            </AnimatedSpan>
-
+            <AnimatedSpan delay={D.r5a} className="text-[#8b949e]">{'  incredibuild.com     89 mentions  (18%)'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r5b} className="text-[#8b949e]">{'  github.com           44 mentions   (9%)'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r5c} className="text-[#8b949e]">{'  stackoverflow.com   31 mentions   (6%)'}</AnimatedSpan>
             <AnimatedSpan delay={D.cmd6 - 100} className="text-transparent">{'.'}</AnimatedSpan>
-
-            {/* Command 6 — insights generate */}
             <TypingAnimation delay={D.cmd6} className="text-[#79c0ff]">
               {'> bevisible insights generate --type visibility-summary'}
             </TypingAnimation>
-            <AnimatedSpan delay={D.r6a} className="text-[#8b949e]">
-              {'  Analyzing visibility trends…'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r6b} className="text-[#8b949e]">
-              {'  Comparing against 8 competitors…'}
-            </AnimatedSpan>
-            <AnimatedSpan delay={D.r6c} className="text-[#8b949e]">
-              {'  Ranking citation source influence…'}
-            </AnimatedSpan>
+            <AnimatedSpan delay={D.r6a} className="text-[#8b949e]">{'  Analyzing visibility trends…'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r6b} className="text-[#8b949e]">{'  Comparing against 6 competitors…'}</AnimatedSpan>
+            <AnimatedSpan delay={D.r6c} className="text-[#8b949e]">{'  Ranking citation source influence…'}</AnimatedSpan>
             <AnimatedSpan delay={D.r6d} className="text-[#3fb950] font-bold">
-              {'  ✔ Insight summary ready. 4 recommendations generated.'}
+              {'  ✔ Insight summary ready. 3 action items generated.'}
             </AnimatedSpan>
-
           </Terminal>
         </div>
 
@@ -292,7 +351,6 @@ export const ApiKeyPage: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-card flex flex-col flex-1" style={{ border: '1px solid #e8edf4' }}>
-            {/* instruction text */}
             <div
               className="flex-1 px-5 py-4 text-xs text-slate-600 leading-relaxed font-mono"
               style={{ background: '#fafbfc', borderRadius: '16px 16px 0 0', borderBottom: '1px solid #e8edf4', whiteSpace: 'pre-wrap', minHeight: '120px' }}
@@ -317,7 +375,6 @@ export const ApiKeyPage: React.FC = () => {
             </div>
           </div>
 
-          {/* What the API can return */}
           <div className="bg-white rounded-2xl shadow-card px-5 py-4" style={{ border: '1px solid #e8edf4' }}>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">What the agent can access</p>
             <div className="space-y-2">
@@ -326,8 +383,8 @@ export const ApiKeyPage: React.FC = () => {
                 'Brand mention rate per AI model',
                 'Competitor & entity rankings (SOV)',
                 'Citation sources and domain influence',
-                'AI response content per prompt',
-                'Improvement recommendations',
+                'Top and weak prompts with demand scores',
+                'Derived action items and recommendations',
               ].map((item) => (
                 <div key={item} className="flex items-center gap-2">
                   <ChevronRight size={11} className="text-brand-brown shrink-0" />
