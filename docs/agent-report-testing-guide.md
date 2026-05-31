@@ -5,7 +5,7 @@
 This document explains how to test the Agent Report Summary API v1 end-to-end on the live Vercel deployment.
 
 All environment variables (Supabase URL, service role key, anon key) are already configured in Vercel.
-No local setup is required. Tests run against the production app at `https://be-visible.ai`.
+No local setup is required. Tests run against the production app at `https://app.be-visible.ai`.
 
 The goal is to verify:
 - API key generation works (frontend + DB)
@@ -48,10 +48,10 @@ ALTER TABLE user_api_keys ENABLE ROW LEVEL SECURITY;
 
 | What | URL |
 |---|---|
-| App (live) | `https://be-visible.ai` |
+| App (live) | `https://app.be-visible.ai` |
 | API Key page | Dashboard → API Key (sidebar) |
-| Summary endpoint | `GET https://be-visible.ai/api/agent/report-summary` |
-| Key management | `POST https://be-visible.ai/api/agent/keys` |
+| Summary endpoint | `GET https://app.be-visible.ai/api/agent/report-summary` |
+| Key management | `POST https://app.be-visible.ai/api/agent/keys` |
 
 ---
 
@@ -102,7 +102,7 @@ Confirm the new row has:
 ## 7. Step 3 — Test: No API Key → 401
 
 ```bash
-curl "https://be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d"
+curl "https://app.be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d"
 ```
 
 Expected response (HTTP 401):
@@ -120,7 +120,7 @@ Expected response (HTTP 401):
 
 ```bash
 curl -H "Authorization: Bearer sk_bv_thisisnotreal" \
-  "https://be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d"
+  "https://app.be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d"
 ```
 
 Expected response (HTTP 401):
@@ -139,7 +139,7 @@ Replace `sk_bv_xxxxx` with the key you generated in Step 1.
 
 ```bash
 curl -H "Authorization: Bearer sk_bv_xxxxx" \
-  "https://be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=7"
+  "https://app.be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=7"
 ```
 
 Expected response (HTTP 200):
@@ -203,7 +203,7 @@ Any brand ID that is not `b1a37d48-...` and is owned by a different user will wo
 
 ```bash
 curl -H "Authorization: Bearer sk_bv_xxxxx" \
-  "https://be-visible.ai/api/agent/report-summary?brandId=00000000-0000-0000-0000-000000000000"
+  "https://app.be-visible.ai/api/agent/report-summary?brandId=00000000-0000-0000-0000-000000000000"
 ```
 
 Expected response (HTTP 404):
@@ -222,7 +222,7 @@ The endpoint intentionally returns 404 (not 403) to avoid leaking that a brand I
 
 ```bash
 curl -H "Authorization: Bearer sk_bv_xxxxx" \
-  "https://be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=1"
+  "https://app.be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=1"
 ```
 
 If no report ran today, expected response:
@@ -251,7 +251,7 @@ Paste the following into Claude (claude.ai or Claude Desktop):
 You have access to BeVisible data.
 
 Call this endpoint to get the latest brand visibility report:
-GET https://be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=7
+GET https://app.be-visible.ai/api/agent/report-summary?brandId=b1a37d48-375f-477a-b838-38486e5e1c2d&days=7
 Authorization: Bearer sk_bv_xxxxx
 
 The response is JSON. Analyze it and answer:

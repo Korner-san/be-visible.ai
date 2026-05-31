@@ -58,7 +58,7 @@ const USE_CASES = [
   },
 ];
 
-const API_BASE = 'https://be-visible.ai';
+const API_BASE = 'https://app.be-visible.ai';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export const ApiKeyPage: React.FC = () => {
