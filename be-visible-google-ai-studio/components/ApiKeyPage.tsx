@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   Key, Copy, RefreshCw, ExternalLink, Check, Bot,
   Zap, BarChart2, Link2, TrendingUp, ChevronRight, Loader2,
+  MessageSquare,
 } from 'lucide-react';
 import { Terminal, TypingAnimation, AnimatedSpan } from './ui/terminal';
 import { supabase } from '../lib/supabase';
@@ -60,11 +61,21 @@ const USE_CASES = [
 
 const API_BASE = 'https://app.be-visible.ai';
 
+interface ActiveBrand {
+  id: string;
+  name: string;
+}
+
+interface Props {
+  activeBrand?: ActiveBrand | null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
-export const ApiKeyPage: React.FC = () => {
+export const ApiKeyPage: React.FC<Props> = ({ activeBrand }) => {
   const [keyVisible, setKeyVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedInstruction, setCopiedInstruction] = useState(false);
+  const [copiedFullPrompt, setCopiedFullPrompt] = useState(false);
   const [terminalKey, setTerminalKey] = useState(0);
 
   // Real key state
@@ -74,7 +85,7 @@ export const ApiKeyPage: React.FC = () => {
   const [keyLastUsed, setKeyLastUsed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [justGenerated, setJustGenerated] = useState(false); // raw key only shown once
+  const [justGenerated, setJustGenerated] = useState(false);
 
   // ── Load existing key metadata on mount ─────────────────────────────────
   useEffect(() => {
@@ -94,7 +105,6 @@ export const ApiKeyPage: React.FC = () => {
           setKeyId(first.id);
           setKeyCreatedAt(first.created_at);
           setKeyLastUsed(first.last_used_at);
-          // Raw key not stored server-side — show placeholder unless just generated
         }
       } catch {}
       setLoading(false);
@@ -106,7 +116,6 @@ export const ApiKeyPage: React.FC = () => {
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
     try {
-      // Revoke old key if exists
       if (keyId) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
@@ -136,7 +145,7 @@ export const ApiKeyPage: React.FC = () => {
       });
       const json = await res.json();
       if (json.ok) {
-        setApiKey(json.key);         // raw key shown once
+        setApiKey(json.key);
         setKeyId(json.id);
         setKeyCreatedAt(json.createdAt);
         setKeyLastUsed(null);
@@ -157,9 +166,10 @@ export const ApiKeyPage: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   }, [apiKey]);
 
+  // ── System prompt snippet (short, for custom integrations) ───────────────
   const agentInstruction = apiKey
-    ? `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=YOUR_BRAND_ID&days=7\nAuthorization: Bearer ${apiKey}\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`
-    : `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=YOUR_BRAND_ID&days=7\nAuthorization: Bearer YOUR_API_KEY\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`;
+    ? `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=${activeBrand?.id ?? 'YOUR_BRAND_ID'}&days=7\nAuthorization: Bearer ${apiKey}\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`
+    : `You have access to BeVisible data via:\nGET ${API_BASE}/api/agent/report-summary?brandId=${activeBrand?.id ?? 'YOUR_BRAND_ID'}&days=7\nAuthorization: Bearer YOUR_API_KEY\n\nUse this endpoint to answer questions about brand visibility, weak prompts, competitors, citation sources, and recommended actions.`;
 
   const copyInstruction = useCallback(() => {
     navigator.clipboard.writeText(agentInstruction).catch(() => {});
@@ -167,8 +177,33 @@ export const ApiKeyPage: React.FC = () => {
     setTimeout(() => setCopiedInstruction(false), 2000);
   }, [agentInstruction]);
 
+  // ── Full ready-to-use analysis prompt (for Codex / Claude / ChatGPT) ─────
+  const brandId = activeBrand?.id ?? 'YOUR_BRAND_ID';
+  const keyValue = apiKey ?? (keyId ? 'sk_bv_[regenerate to get key]' : 'YOUR_API_KEY');
+  const fullPrompt = `You have access to the BeVisible API which tracks brand visibility in AI-generated answers.
+
+Fetch this endpoint:
+GET ${API_BASE}/api/agent/report-summary?brandId=${brandId}&days=7
+Authorization: Bearer ${keyValue}
+
+The response is JSON. Analyze it and answer:
+1. What is the overall brand visibility this week?
+2. Which AI model shows the weakest brand presence?
+3. Which prompts have the highest mention rate?
+4. Which prompts have high demand but 0% visibility (content gaps)?
+5. Who are the main competitor threats?
+6. Which citation domains should we target to increase visibility?
+7. What are the top 3 recommended actions?`;
+
+  const copyFullPrompt = useCallback(() => {
+    navigator.clipboard.writeText(fullPrompt).catch(() => {});
+    setCopiedFullPrompt(true);
+    setTimeout(() => setCopiedFullPrompt(false), 2000);
+  }, [fullPrompt]);
+
   const hasKey = !!keyId;
   const canCopy = !!apiKey;
+  const promptReady = !!apiKey && !!activeBrand?.id;
 
   return (
     <div className="space-y-6 pb-16 animate-fadeIn">
@@ -184,7 +219,7 @@ export const ApiKeyPage: React.FC = () => {
             </div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">API Key</h2>
             <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xl">
-              Connect BeVisible data to Claude, custom agents, automations, or internal dashboards.
+              Connect BeVisible data to Claude, Codex, custom agents, automations, or internal dashboards.
               Your API key grants read access to all your reports, citation sources, entities, and visibility metrics.
             </p>
           </div>
@@ -277,6 +312,62 @@ export const ApiKeyPage: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Ready-to-use Codex / Claude prompt ── */}
+      <div
+        className="bg-white rounded-2xl shadow-card overflow-hidden"
+        style={{ border: promptReady ? '1px solid #c7d7f4' : '1px solid #e8edf4' }}
+      >
+        <div
+          className="px-6 py-4 flex items-center justify-between"
+          style={{ borderBottom: '1px solid #e8edf4', background: promptReady ? '#f5f8ff' : '#fafbfc' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center">
+              <MessageSquare size={13} className="text-indigo-500" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-700">
+                Ready-to-use analysis prompt
+                {activeBrand?.name && (
+                  <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 border border-indigo-100">
+                    {activeBrand.name}
+                  </span>
+                )}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Paste directly into Claude, Codex, or any AI assistant — key and brand ID are pre-filled
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={copyFullPrompt}
+            className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl transition-all shrink-0"
+            style={{
+              backgroundColor: copiedFullPrompt ? '#f0fdf4' : '#4f46e5',
+              color: copiedFullPrompt ? '#16a34a' : '#ffffff',
+              border: '1px solid',
+              borderColor: copiedFullPrompt ? '#bbf7d0' : '#4338ca',
+            }}
+          >
+            {copiedFullPrompt ? <Check size={12} /> : <Copy size={12} />}
+            {copiedFullPrompt ? 'Copied!' : 'Copy Prompt'}
+          </button>
+        </div>
+        <div
+          className="px-6 py-4 text-xs text-slate-600 leading-relaxed font-mono"
+          style={{ whiteSpace: 'pre-wrap', background: '#fafbfc' }}
+        >
+          {fullPrompt}
+        </div>
+        {!promptReady && (
+          <div className="px-6 pb-4 text-[10px] text-amber-600 font-medium">
+            {!apiKey && !keyId && '⚠ Generate an API key above first. '}
+            {apiKey && !activeBrand?.id && '⚠ No active brand found — select a brand from the dashboard first.'}
+            {!apiKey && keyId && '⚠ Regenerate your key to include it in this prompt (the raw key is not stored).'}
+          </div>
+        )}
+      </div>
+
       {/* ── Terminal + Claude instruction (2-col) ── */}
       <div className="grid grid-cols-12 gap-6">
 
@@ -346,8 +437,8 @@ export const ApiKeyPage: React.FC = () => {
         {/* Claude instruction card */}
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-3">
           <div>
-            <p className="text-sm font-bold text-slate-700">Claude agent instructions</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Paste this into Claude to give it access to your BeVisible data</p>
+            <p className="text-sm font-bold text-slate-700">System prompt snippet</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">For custom agent integrations and Claude Projects</p>
           </div>
 
           <div className="bg-white rounded-2xl shadow-card flex flex-col flex-1" style={{ border: '1px solid #e8edf4' }}>
@@ -358,7 +449,7 @@ export const ApiKeyPage: React.FC = () => {
               {agentInstruction}
             </div>
             <div className="px-5 py-3 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 font-medium">System prompt snippet</span>
+              <span className="text-[10px] text-slate-400 font-medium">Paste as system prompt</span>
               <button
                 onClick={copyInstruction}
                 className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all"

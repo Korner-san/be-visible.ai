@@ -513,7 +513,7 @@ function AppContent() {
       case 'Integrations':
         return <IntegrationsPage />;
       case 'API Key':
-        return <ApiKeyPage />;
+        return <ApiKeyPage activeBrand={activeBrand ? { id: activeBrand.id, name: activeBrand.name } : null} />;
       case 'Academy':
         return <AcademyPage initialArticleId={academyArticleId} />;
       case 'Billing':
